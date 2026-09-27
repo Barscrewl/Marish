@@ -26,6 +26,7 @@
 // and every other map with a player count of 12 or more.
 #include "maps/all_that_simmers.as"
 #include "maps/all_that_smolders.as"
+#include "maps/angel_crossing.as"
 #include "maps/ascendancy.as"
 #include "maps/azurite_shores.as"
 #include "maps/baryon_tar_lake.as"
@@ -52,11 +53,13 @@
 #include "maps/mescaline.as"
 #include "maps/moonshine_run.as"
 #include "maps/nuclear_winter_bar.as"
+#include "maps/otago.as"
 #include "maps/pawn_retreat.as"
 #include "maps/pinch_point.as"
 #include "maps/plains_and_passes.as"
 #include "maps/project_sd_129.as"
 #include "maps/proving_grounds.as"
+#include "maps/pyroclast.as"
 #include "maps/riverrun.as"
 #include "maps/rosetta.as"
 #include "maps/rustcrown_canyon.as"
@@ -107,6 +110,7 @@ namespace Maps {
         // popular16p pool and 12p-and-up maps
         mapManager.RegisterMapConfig(AllThatSimmers::config);
         mapManager.RegisterMapConfig(AllThatSmolders::config);
+        mapManager.RegisterMapConfig(AngelCrossing::config);
         mapManager.RegisterMapConfig(Ascendancy::config);
         mapManager.RegisterMapConfig(AzuriteShores::config);
         mapManager.RegisterMapConfig(BaryonTarLake::config);
@@ -133,11 +137,13 @@ namespace Maps {
         mapManager.RegisterMapConfig(Mescaline::config);
         mapManager.RegisterMapConfig(MoonshineRun::config);
         mapManager.RegisterMapConfig(NuclearWinterBar::config);
+        mapManager.RegisterMapConfig(Otago::config);
         mapManager.RegisterMapConfig(PawnRetreat::config);
         mapManager.RegisterMapConfig(PinchPoint::config);
         mapManager.RegisterMapConfig(PlainsAndPasses::config);
         mapManager.RegisterMapConfig(ProjectSD129::config);
         mapManager.RegisterMapConfig(ProvingGrounds::config);
+        mapManager.RegisterMapConfig(Pyroclast::config);
         mapManager.RegisterMapConfig(Riverrun::config);
         mapManager.RegisterMapConfig(Rosetta::config);
         mapManager.RegisterMapConfig(RustcrownCanyon::config);
