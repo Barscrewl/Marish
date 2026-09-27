@@ -4,6 +4,7 @@
 #include "porc_policy.as"
 #include "spam.as"
 #include "ferry.as"
+#include "bomber_stock.as"
 
 namespace Military {
 
@@ -40,6 +41,12 @@ namespace Military {
 		IUnitTask@ t = Spam::MilitaryMakeTask(u);   // spam units join their factory's route
 		if (t !is null) return t;
 
+		// Stocked T2 bombers get no task: they stay idle where the factory left
+		// them until BomberStock::Update parks them under a CPlayerTask. Ahead of
+		// the role policy so AIR's AirWaves hold does not claim them; released
+		// bombers fall through to it.
+		if (BomberStock::Claims(u)) return null;
+
 		RoleConfig@ cfg = (Global::profileController is null) ? null : Global::profileController.RoleCfg;
 		if (cfg !is null && cfg.MilitaryAiMakeTaskHandler !is null) {
 			@t = cfg.MilitaryAiMakeTaskHandler(u);
@@ -71,6 +78,7 @@ namespace Military {
 	void AiUnitAdded(CCircuitUnit@ unit, Unit::UseAs usage)
 	{
 		Team::Ferry::OnUnitAdded(unit);   // claim a transport, ours or a gift
+		BomberStock::OnUnitAdded(unit, usage);   // count every T2 bomber into the stock
 
 		// Delegate to role-specific handler if registered
 		RoleConfig@ cfg = (Global::profileController is null) ? null : Global::profileController.RoleCfg;
@@ -82,6 +90,7 @@ namespace Military {
 	void AiUnitRemoved(CCircuitUnit@ unit, Unit::UseAs usage)
 	{
 		Team::Ferry::OnUnitRemoved(unit);
+		BomberStock::OnUnitRemoved(unit);
 
 		// Delegate to role-specific handler if registered
 		RoleConfig@ cfg = (Global::profileController is null) ? null : Global::profileController.RoleCfg;

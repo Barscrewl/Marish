@@ -10,6 +10,8 @@
 #include "../manager/factory_production.as"
 // T2 bomber waves
 #include "../manager/air_waves.as"
+// Post-T2 reactor ladder, shared with FRONT
+#include "../manager/reactor_ladder.as"
 
 namespace RoleAir {
     IUnitTask@ g_airStrategicFocusTask = null;
@@ -64,7 +66,14 @@ namespace RoleAir {
     IUnitTask@ Air_TryCommanderWind(CCircuitUnit@ commander)
     {
         if (commander is null || commander.circuitDef is null) return null;
-        if (g_airCommanderWindTask !is null) return g_airCommanderWindTask;
+        if (g_airCommanderWindTask !is null) {
+            if (!Air_IsRetiredBuild(g_airCommanderWindTask)) return g_airCommanderWindTask;
+            // Winds retired (ECO RETIREMENT); the cap refuses a new one below. Aborted on
+            // the next update: this runs inside AiMakeTask and the task is likely the
+            // commander's current one (Builder DEFERRED ABORT).
+            Builder::AbortLater(g_airCommanderWindTask);
+            @g_airCommanderWindTask = null;
+        }
 
         const string side = UnitHelpers::GetSideForUnitName(commander.circuitDef.GetName());
         if (!Air_HasCommanderWindOpportunity(side)) return null;
@@ -93,6 +102,126 @@ namespace RoleAir {
             );
         }
         return task;
+    }
+
+    // Advanced solar timing and energy gate, shared by the primary's ladder and the eco crew.
+    bool Air_IsAdvancedSolarReady(const string &in side, float mi, float ei)
+    {
+        const bool timingReady =
+            ai.frame >= Global::RoleSettings::Air::AdvancedSolarEarliestSeconds * SECOND
+            && mi >= Global::RoleSettings::Air::AdvancedSolarMinimumMetalIncome
+            && aiEconomyMgr.metal.current >= Global::RoleSettings::Air::AdvancedSolarMinimumMetalCurrent
+            && !aiEconomyMgr.isEnergyFull
+            && !Air_HasCommanderWindOpportunity(side);
+        if (!timingReady) return false;
+        array<string> t2AirCons = { "armaca", "coraca", "legaca" };
+        return EconomyHelpers::ShouldBuildT1AdvancedSolar(
+            /*energyIncome*/ ei,
+            /*metalIncome*/ mi,
+            /*energyIncomeMinimumThreshold*/ Global::RoleSettings::Air::AdvancedSolarEnergyIncomeMinimum,
+            /*energyIncomeMaximumThreshold*/ Global::RoleSettings::Air::AdvancedSolarEnergyIncomeMaximum,
+            /*t2ConstructorCount*/ UnitDefHelpers::SumUnitDefCounts(t2AirCons),
+            /*t2FactoryCount*/ UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2AircraftPlants()),
+            /*isT2FactoryQueued*/ Factory::IsT2AirPlantBuildQueued(),
+            /*enableT2ProgressGate*/ true,
+            /*metalIncomeFallbackMinimum*/ 6.0f);
+    }
+
+    /******************************************************************************
+
+    ECO CREW
+
+    Every T1 air constructor except the primary tries this before it guards the
+    primary's strategic focus (factory projects) or takes the default task; the
+    primary runs it after its own ladder. Order: converter while energy piles
+    up, wind on a good-wind map, advanced solar once its gate opens, solar below
+    SolarEnergyIncomeMinimum. Wind, advanced solar and solar are enqueued here
+    with a per-type crew cooldown rather than through Builder::EnqueueT1Solar /
+    EnqueueT1AdvancedSolar, whose shared cooldowns answer a second builder with
+    a 200 s guard on the first instead of a building of its own.
+
+    ******************************************************************************/
+    dictionary g_airEcoCrewLastFrame;   // def name -> frame of the last crew enqueue
+
+    bool Air_IsEcoDef(const CCircuitDef@ d, const string &in side)
+    {
+        if (d is null) return false;
+        const string n = d.GetName();
+        return n == UnitHelpers::GetSolarNameForSide(side)
+            || n == UnitHelpers::GetAdvSolarNameForSide(side)
+            || n == UnitHelpers::GetEnergyConverterNameForSide(side)
+            || n == Air_GetWindNameForSide(side);
+    }
+
+    IUnitTask@ Air_EnqueueEcoEnergy(CCircuitUnit@ u, const string &in defName, const string &in why)
+    {
+        if (defName == "") return null;
+        int last = -1000000;
+        if (g_airEcoCrewLastFrame.exists(defName)) g_airEcoCrewLastFrame.get(defName, last);
+        if (ai.frame - last < Global::RoleSettings::Air::EcoCrewCooldownSeconds * SECOND) return null;
+        CCircuitDef@ d = ai.GetCircuitDef(defName);
+        if (d is null || !d.IsAvailable(ai.frame)) return null;
+        IUnitTask@ t = aiBuilderMgr.Enqueue(TaskB::Common(Task::BuildType::ENERGY, Task::Priority::NORMAL,
+            d, u.GetPos(ai.frame), SQUARE_SIZE * 32, true, 30 * SECOND));
+        if (t is null) return null;
+        g_airEcoCrewLastFrame.set(defName, ai.frame);
+        GenericHelpers::LogUtil("[AIR][Eco] " + u.circuitDef.GetName() + " id=" + u.id + " -> " + defName
+            + " (" + why + ")", 2);
+        return t;
+    }
+
+    IUnitTask@ Air_TryEcoBuild(CCircuitUnit@ u)
+    {
+        if (!Global::RoleSettings::Air::EcoCrewEnabled || u is null || u.circuitDef is null) return null;
+        const string side = UnitHelpers::GetSideForUnitName(u.circuitDef.GetName());
+
+        // Keep an eco build in progress. Native re-evaluation probes this function
+        // too; returning the current task stops each probe from queueing another.
+        // A build of a retired def is not kept (ECO RETIREMENT).
+        IBuilderTask@ current = cast<IBuilderTask>(u.task);
+        if (current !is null && Air_IsEcoDef(current.buildDef, side) && !Air_IsRetiredDef(current.buildDef)) return u.task;
+
+        const float mi = Economy::GetMinMetalIncomeLast10s();
+        const float ei = Economy::GetMinEnergyIncomeLast10s();
+
+        if (EconomyHelpers::ShouldBuildT1EnergyConverter(
+            mi, ei, aiEconomyMgr.energy.current, aiEconomyMgr.energy.storage,
+            Global::RoleSettings::Air::BuildT1ConvertersUntilMetalIncome,
+            Global::RoleSettings::Air::BuildT1ConvertersMinimumEnergyIncome,
+            Global::RoleSettings::Air::BuildT1ConvertersMinimumEnergyCurrentPercent))
+        {
+            IUnitTask@ tConv = Builder::EnqueueT1EnergyConverter(side, u.GetPos(ai.frame), SQUARE_SIZE * 32, SECOND * 30);
+            if (tConv !is null) {
+                GenericHelpers::LogUtil("[AIR][Eco] " + u.circuitDef.GetName() + " id=" + u.id + " -> converter", 2);
+                return tConv;
+            }
+        }
+
+        // Converters cost energy; everything below costs metal the factories also need.
+        if (aiEconomyMgr.metal.current < Global::RoleSettings::Air::EcoCrewMinMetalCurrent) return null;
+
+        IUnitTask@ t = null;
+        const string windName = Air_GetWindNameForSide(side);
+        CCircuitDef@ windDef = (windName == "") ? null : ai.GetCircuitDef(windName);
+        if (windDef !is null
+            && aiEconomyMgr.GetEnergyMake(windDef) > Global::RoleSettings::Air::GoodWindMinimumEnergy
+            && windDef.count < Global::RoleSettings::Air::EcoCrewWindMaxCount
+            && ei < Global::RoleSettings::Air::EcoCrewWindEnergyIncomeTarget)
+        {
+            @t = Air_EnqueueEcoEnergy(u, windName, "good wind");
+            if (t !is null) return t;
+        }
+
+        if (Air_IsAdvancedSolarReady(side, mi, ei)) {
+            @t = Air_EnqueueEcoEnergy(u, UnitHelpers::GetAdvSolarNameForSide(side), "advanced solar gate open");
+            if (t !is null) return t;
+        }
+
+        if (EconomyHelpers::ShouldBuildT1Solar(ei, Global::RoleSettings::Air::SolarEnergyIncomeMinimum)) {
+            @t = Air_EnqueueEcoEnergy(u, UnitHelpers::GetSolarNameForSide(side), "energy income " + int(ei));
+            if (t !is null) return t;
+        }
+        return null;
     }
 
     bool Air_IsBuildFocusActive()
@@ -316,6 +445,9 @@ namespace RoleAir {
         g_airGunshipOpenerDone = false;
         g_airStrikeOpenerQueuedCount = 0;
         @g_airCommanderWindTask = null;
+        g_airEcoCrewLastFrame.deleteAll();
+        g_airLastScoutFrame = -1;
+        g_airT2ProductionTurn = 0;
 
         // Apply AIR role settings
         aiTerrainMgr.SetAllyZoneRange(Global::RoleSettings::Air::AllyRange);
@@ -343,6 +475,10 @@ namespace RoleAir {
             " raid.avg=" + aiMilitaryMgr.quota.raid.avg, 3);
 
         Air_ApplyStartLimits();
+        Air_CloseBastionGate();
+        Air_CapT1Strike();
+        Air_InitT2PlantCap();
+        ReactorLadder::InitAfusGate(Air_LadderParams());
         AirWaves::Init();
 
         // Initialize dynamic factory production system for AIR role when enabled
@@ -391,15 +527,182 @@ namespace RoleAir {
 
     /******************************************************************************
 
+    BASTION GATE
+
+    The T1 land defences above are capped at 0, and native DefaultMakeDefence
+    skips an unavailable def without counting its cost; it also skips anti-air
+    (legrl, leglupara) while the enemy has no air. On a Legion porc visit the
+    land chain [leglht, legrl, leghive, leghive, legmg, leghive, leglupara,
+    legjuno, legbastion, ...] therefore reaches legbastion (index 12 of the
+    porcupine list in build_chain_leg.json) right after legjuno, and its
+    defence hub adds three caretakers, a jammer and a shield. Keep it capped at 0
+    until the native average metal income reaches BastionMinAvgMetalIncome, then
+    restore the cap it had. One-way: a later dip does not close it again.
+
+    ******************************************************************************/
+    const string AIR_GATED_BASTION = "legbastion";
+    bool g_airBastionReleased = false;
+    int g_airBastionCap = 0;
+
+    void Air_CloseBastionGate() {
+        g_airBastionReleased = false;
+        CCircuitDef@ d = ai.GetCircuitDef(AIR_GATED_BASTION);
+        if (d is null) {
+            g_airBastionReleased = true;
+            return;
+        }
+        g_airBastionCap = d.maxThisUnit;
+        d.maxThisUnit = 0;
+        GenericHelpers::LogUtil("[AIR][Bastion] " + AIR_GATED_BASTION + " capped at 0 until avg metal income >= "
+            + Global::RoleSettings::Air::BastionMinAvgMetalIncome + " (restores cap " + g_airBastionCap + ")", 2);
+    }
+
+    /******************************************************************************
+
+    T1 STRIKE CAP
+
+    Past the strike opener, native DefaultMakeTask picks T1 bombers and gunships
+    from the plant's factory.json weights (20% each on armap/corap), and those
+    weights are shared with every role. AIR caps each of these defs at
+    T1StrikeCapBeforeT2 alive until Factory::primaryT2AirPlant is set - it is set
+    when the plant is finished, not when it is started - then restores the caps
+    they had. DefaultMakeTask skips an unavailable def, so the weight falls to
+    the rest of the list (fighters, constructors). One-way.
+
+    Metal storages ride on the same latch at cap 0 (Barb4 caps them for AIR
+    outright): native UpdateStorageTasks queues one at HIGH priority whenever
+    metal is full, which for AIR is exactly when it is banking for the T2 plant.
+    Energy storage is untouched.
+
+    ******************************************************************************/
+    const array<string> AIR_T1_STRIKE_DEFS = { "armthund", "armkam", "corshad", "corbw", "legmos", "legcib", "legkam" };
+    const array<string> AIR_METAL_STORAGE_DEFS = { "armmstor", "cormstor", "legmstor", "armuwadvms", "coruwadvms",
+        "legamstor", "leguwmstore", "leganavalmstor" };
+    dictionary g_airT1StrikeCaps;   // def name -> cap to restore
+    bool g_airT1StrikeCapped = false;
+
+    void _Air_CapDefs(const array<string> &in names, int cap) {
+        for (uint i = 0; i < names.length(); ++i) {
+            CCircuitDef@ d = ai.GetCircuitDef(names[i]);
+            if (d is null) continue;
+            g_airT1StrikeCaps.set(names[i], d.maxThisUnit);
+            if (d.maxThisUnit > cap) d.maxThisUnit = cap;
+        }
+    }
+
+    void Air_CapT1Strike() {
+        g_airT1StrikeCaps.deleteAll();
+        const int cap = Global::RoleSettings::Air::T1StrikeCapBeforeT2;
+        _Air_CapDefs(AIR_T1_STRIKE_DEFS, cap);
+        _Air_CapDefs(AIR_METAL_STORAGE_DEFS, 0);
+        g_airT1StrikeCapped = true;
+        GenericHelpers::LogUtil("[AIR][T1Strike] T1 bombers/gunships capped at " + cap
+            + " each, metal storages at 0, until the first T2 aircraft plant is finished", 2);
+    }
+
+    void Air_UpdateT1StrikeCap() {
+        if (!g_airT1StrikeCapped || Factory::primaryT2AirPlant is null) return;
+        g_airT1StrikeCapped = false;
+        array<string>@ names = g_airT1StrikeCaps.getKeys();
+        for (uint i = 0; i < names.length(); ++i) {
+            int orig = 0;
+            CCircuitDef@ d = ai.GetCircuitDef(names[i]);
+            if (d is null || !g_airT1StrikeCaps.get(names[i], orig)) continue;
+            d.maxThisUnit = orig;
+        }
+        GenericHelpers::LogUtil("[AIR][T1Strike] T2 aircraft plant finished: T1 bomber/gunship and metal storage caps restored", 1);
+    }
+
+    void Air_UpdateBastionGate() {
+        if (g_airBastionReleased) return;
+        const float avgMetalIncome = aiEconomyMgr.metal.income;
+        if (avgMetalIncome < Global::RoleSettings::Air::BastionMinAvgMetalIncome) return;
+        g_airBastionReleased = true;
+        CCircuitDef@ d = ai.GetCircuitDef(AIR_GATED_BASTION);
+        if (d is null) return;
+        d.maxThisUnit = g_airBastionCap;
+        GenericHelpers::LogUtil("[AIR][Bastion] avg metal income " + avgMetalIncome + " >= "
+            + Global::RoleSettings::Air::BastionMinAvgMetalIncome + ": " + AIR_GATED_BASTION
+            + " released (cap " + g_airBastionCap + ")", 1);
+    }
+
+    /******************************************************************************
+
     MAIN HOOKS
 
     ******************************************************************************/
 
+    /******************************************************************************
+
+    METAL-STARVED MODE
+
+    At low bonuses AIR's metal bank sat empty while its T2 plant built escorts and
+    heavy air, native fallback production filled in with fighters (factory.json
+    weights them 37-90% at low income), and the shared porc policy's pressure
+    rule - which compares the enemy's surface army with ours, and AIR has little -
+    put every cluster on the FULL porcupine order. Below EcoPriorityEnterPercent
+    of metal storage, until back above EcoPriorityExitPercent, metal goes to
+    wave bombers, fusions and AFUS only. See Global::RoleSettings::Air
+    METAL-STARVED MODE for exactly what is held back.
+
+    ******************************************************************************/
+    bool g_airMetalStarved = false;
+
+    bool Air_IsMetalStarved()
+    {
+        return Global::RoleSettings::Air::EcoPriorityEnabled && g_airMetalStarved;
+    }
+
+    void Air_UpdateEcoPriority()
+    {
+        const float storage = aiEconomyMgr.metal.storage;
+        if (storage <= 0.0f) return;
+        const float pct = aiEconomyMgr.metal.current / storage;
+        const bool was = g_airMetalStarved;
+        if (!g_airMetalStarved && pct < Global::RoleSettings::Air::EcoPriorityEnterPercent) g_airMetalStarved = true;
+        else if (g_airMetalStarved && pct > Global::RoleSettings::Air::EcoPriorityExitPercent) g_airMetalStarved = false;
+        if (was != g_airMetalStarved && Global::RoleSettings::Air::EcoPriorityEnabled) {
+            GenericHelpers::LogUtil("[AIR][EcoPriority] metal bank " + int(pct * 100.0f) + "% of " + int(storage)
+                + (g_airMetalStarved ? ": starved - metal to bombers, fusions and AFUS only"
+                                     : ": recovered - normal production"), 1);
+        }
+    }
+
+    // Porc while starved: the preventive structure per cluster and nothing more.
+    // Otherwise the shared policy (Military::Porc).
+    void Air_AiMakeDefence(int cluster, const AIFloat3& in pos)
+    {
+        // Same opening gate as the handler-less path in Military::AiMakeDefence.
+        if (!((ai.frame > 10 * MINUTE) || (aiEconomyMgr.metal.income > 10.f) || (aiEnemyMgr.mobileThreat > 0.f))) return;
+        if (!Air_IsMetalStarved()) {
+            Military::Porc::MakeDefence(cluster, pos);
+            return;
+        }
+        aiMilitaryMgr.porcMode = Military::Porc::MODE_PREVENT;
+        aiMilitaryMgr.porcBudgetMod = 1.0f;
+        GenericHelpers::LogUtil("[Porc] cluster=" + cluster + " mode=PREVENT (AIR metal-starved)", 3);
+        aiMilitaryMgr.DefaultMakeDefence(cluster, pos);
+    }
+
+    // A factory with nothing it may build while starved waits and asks again,
+    // instead of the native fallback (fighters at low income).
+    IUnitTask@ Air_StarvedFactoryWait(const string &in fname)
+    {
+        GenericHelpers::LogUtil("[AIR][EcoPriority] " + fname + " idles: metal-starved", 3);
+        return aiFactoryMgr.Enqueue(TaskS::Wait(false, Global::RoleSettings::Air::EcoPriorityFactoryWaitSeconds * SECOND));
+    }
+
     void Air_MainUpdate() {
+        Air_UpdateEcoPriority();
+        Air_UpdateEcoRetire();
         // Periodically update dynamic military quotas once the configured delay has passed
         if (ai.frame >= AIR_DYNAMIC_QUOTA_DELAY_FRAMES) {
             Air_UpdateDynamicMilitaryQuotas();
         }
+        Air_UpdateBastionGate();
+        Air_UpdateT1StrikeCap();
+        Air_UpdateT2PlantCap();
+        ReactorLadder::UpdateAfusGate(Air_LadderParams());
         // T2 bomber waves: launch when the hold reaches the target, size the next wave
         AirWaves::Update();
         //LogUtil("Air update logic executed", 5);
@@ -427,6 +730,70 @@ namespace RoleAir {
         if (side == "cortex") return "corbw";
         if (side == "legion") return "legkam";
         return "";
+    }
+
+    /******************************************************************************
+
+    AIR SCOUTS
+
+    One scout early (MinAirScoutCount, first 5 minutes, while none is alive),
+    then one every ScoutIntervalSeconds for the rest of the game, skipped while
+    MaxAliveAirScouts are still flying. The factory.json weight for the scout
+    planes is 0 past tier 0, so without this AIR stops scouting after the opener.
+
+    Before the first T2 aircraft plant is finished, Armada and Cortex build their
+    T1 scout plane (armpeep Blink / corfink Fink) at the T1 plant; after it, every
+    side builds its T2 radar plane (armawac / corawac / legwhisper) at the T2
+    plant. Legion's T1 plant has no scout plane - legfig is an anti_air fighter
+    and would never scout - so Legion has no air scout before T2.
+
+    ******************************************************************************/
+    int g_airLastScoutFrame = -1;
+    int g_airT2ProductionTurn = 0;   // T2 plant production decisions past constructors and scouts
+
+    // Once a T2 aircraft plant is finished every side scouts with its T2 radar
+    // plane from it; before that Armada and Cortex use their T1 scout plane.
+    string Air_ScoutNameFor(const string &in side, bool fromT2Plant)
+    {
+        if (fromT2Plant) {
+            if (side == "armada") return "armawac";
+            if (side == "cortex") return "corawac";
+            if (side == "legion") return "legwhisper";
+            return "";
+        }
+        if (Factory::primaryT2AirPlant !is null) return "";
+        if (side == "armada") return "armpeep";
+        if (side == "cortex") return "corfink";
+        return "";
+    }
+
+    IUnitTask@ Air_TryAirScout(const string &in side, const AIFloat3 &in pos, bool fromT2Plant)
+    {
+        const string name = Air_ScoutNameFor(side, fromT2Plant);
+        if (name == "") return null;
+        CCircuitDef@ d = ai.GetCircuitDef(name);
+        if (d is null || !d.IsAvailable(ai.frame)) return null;
+
+        array<string> scouts = { "armpeep", "corfink", "armawac", "corawac", "legwhisper" };
+        const int alive = UnitDefHelpers::SumUnitDefCounts(scouts);
+        const int interval = Global::RoleSettings::Air::ScoutIntervalSeconds * SECOND;
+
+        string why = "";
+        if (g_airLastScoutFrame < 0) {
+            if (alive < Global::RoleSettings::Air::MinAirScoutCount && ai.frame <= 5 * MINUTE) why = "opener";
+        } else if (interval > 0 && ai.frame - g_airLastScoutFrame >= interval) {
+            if (alive < Global::RoleSettings::Air::MaxAliveAirScouts) why = "every " + Global::RoleSettings::Air::ScoutIntervalSeconds + " s";
+        }
+        // The clock starts at the opener; if the opener window passes unused, at 5 minutes.
+        if (why == "" && g_airLastScoutFrame < 0 && ai.frame > 5 * MINUTE) g_airLastScoutFrame = ai.frame - interval;
+        if (why == "") return null;
+
+        IUnitTask@ t = aiFactoryMgr.Enqueue(
+            TaskS::Recruit(Task::RecruitType::FIREPOWER, Task::Priority::HIGH, d, pos, 64.f));
+        if (t is null) return null;
+        g_airLastScoutFrame = ai.frame;
+        GenericHelpers::LogUtil("[AIR][Scout] " + name + " queued (" + why + ", alive=" + alive + ")", 2);
+        return t;
     }
 
     IUnitTask@ Air_TryT1StrikeOpener(const CCircuitDef@ facDef, const string &in side, const AIFloat3 &in pos)
@@ -505,34 +872,18 @@ namespace RoleAir {
                 );
             }
 
-            // Add one early scout after the first constructor.
-            int scoutTarget = Global::RoleSettings::Air::MinAirScoutCount;
-            const int SCOUT_PRODUCTION_DEADLINE = 5 * 60 * SECOND;
-            if (scoutTarget > 0 && ai.frame <= SCOUT_PRODUCTION_DEADLINE) {
-                array<string> allScouts = UnitHelpers::GetAllT1AircraftScouts();
-                int haveScouts = UnitDefHelpers::SumUnitDefCounts(allScouts);
-                if (haveScouts < scoutTarget) {
-                    string scoutName = UnitHelpers::GetT1AirScoutForSide(side);
-                    CCircuitDef@ scoutDef = ai.GetCircuitDef(scoutName);
-                    if (scoutDef !is null && scoutDef.IsAvailable(ai.frame)) {
-                        // Use HIGH priority to ensure scouts are produced ahead of other unit types
-                        return aiFactoryMgr.Enqueue(
-                            TaskS::Recruit(Task::RecruitType::FIREPOWER, Task::Priority::HIGH, scoutDef, pos, 64.f)
-                        );
-                    }
-                }
-            }
+            // Air scouts: one early, then one every ScoutIntervalSeconds all game.
+            IUnitTask@ tScout = Air_TryAirScout(side, pos, false);
+            if (tScout !is null) return tScout;
 
+            // Barb4-style build power: MinT1AirConstructorCount outright, then one per
+            // T1AirConstructorPerMetalIncome of income, up to MaxT1AirConstructorCount.
+            // Past the first, only an energy stall holds them back.
             int desiredT1Builders = (maxT1Builders < 1 ? maxT1Builders : 1);
-            if (Air_IsEconomyHealthy()
-                && metalIncome >= Global::RoleSettings::Air::SecondT1AirConstructorMetalIncome
-                && energyIncome >= Global::RoleSettings::Air::SecondT1AirConstructorEnergyIncome) {
-                desiredT1Builders = (maxT1Builders < 2 ? maxT1Builders : 2);
-            }
-            if (Air_IsEconomyHealthy()
-                && metalIncome >= Global::RoleSettings::Air::ThirdT1AirConstructorMetalIncome
-                && energyIncome >= Global::RoleSettings::Air::ThirdT1AirConstructorEnergyIncome) {
-                desiredT1Builders = maxT1Builders;
+            if (Air_IsEconomyHealthy()) {
+                const float perCtor = AiMax(Global::RoleSettings::Air::T1AirConstructorPerMetalIncome, 1.0f);
+                desiredT1Builders = AiMax(maxT1Builders, int(metalIncome / perCtor));
+                desiredT1Builders = AiMin(desiredT1Builders, Global::RoleSettings::Air::MaxT1AirConstructorCount);
             }
             if (t1BuildersTotal < desiredT1Builders
                 && t1BuilderDef !is null && t1BuilderDef.IsAvailable(ai.frame)) {
@@ -573,6 +924,16 @@ namespace RoleAir {
 
         // If T2 plant: ensure advanced constructor targets, then apply T2-specific strategy
         if (isT2Plant) {
+            // Metal-starved: wave bombers and the constructor minimum only (see
+            // METAL-STARVED MODE); everything else below is skipped.
+            const bool starved = Air_IsMetalStarved();
+
+            // 0) T2 radar-plane scouts (see Air_TryAirScout).
+            if (!starved) {
+                IUnitTask@ tT2Scout = Air_TryAirScout(side, pos, true);
+                if (tT2Scout !is null) return tT2Scout;
+            }
+
             // 1) Ensure at least MinT2AirConstructorCount advanced air constructors exist globally
             const int maxT2Cons = Global::RoleSettings::Air::MinT2AirConstructorCount;
             int minT2Cons = (maxT2Cons < 1 ? maxT2Cons : 1);
@@ -595,13 +956,19 @@ namespace RoleAir {
                 }
             }
 
-            // 2) Heavy air strike (Legion/Cortex only), capped so this cannot
-            // monopolize every subsequent T2 production decision.
+            // 2) Heavy air strike (Legion/Cortex only), on one T2 production turn in
+            // T2HeavyAirEveryNthTurn. Capping only the alive count did not stop it
+            // monopolizing the plant: Tyrannus / Dragon die in fights, the count
+            // rarely stays at the target, so every turn refilled heavies and the
+            // wave bombers below (legphoenix / corhurc) were almost never reached.
+            ++g_airT2ProductionTurn;
+            const int heavyEvery = Global::RoleSettings::Air::T2HeavyAirEveryNthTurn;
+            const bool heavyTurn = (heavyEvery <= 1) || (g_airT2ProductionTurn % heavyEvery == 0);
             {
                 float mi = metalIncome;
                 float incomeThresh = Global::RoleSettings::Air::T2HeavyAirIncomeThreshold;
                 int batch = Global::RoleSettings::Air::T2HeavyAirBatchPerFactory;
-                if (batch > 0 && mi > incomeThresh && (side == "legion" || side == "cortex")) {
+                if (!starved && heavyTurn && batch > 0 && mi > incomeThresh && (side == "legion" || side == "cortex")) {
                     string heavyName = (side == "legion" ? "legfort" : "corcrwh");
                     CCircuitDef@ heavyDef = ai.GetCircuitDef(heavyName);
                     int haveHeavy = UnitDefHelpers::GetUnitDefCount(heavyName);
@@ -622,12 +989,21 @@ namespace RoleAir {
             }
 
             // 3) T2 bomber waves: fill the hold with the next wave's bombers and escorts.
-            if (Air_IsCombatProductionReady(metalIncome, energyIncome)) {
+            // Not gated on Air_IsCombatProductionReady: its only live condition at T2
+            // is "no energy stall", and skipping here during a stall did not save
+            // anything - the plant still built, from the heavy step or the native
+            // legaap/coraap weights, which favour legfort / corcrwh late. AirWaves
+            // keeps its own BomberWaveProductionMetalIncome gate.
+            {
                 IUnitTask@ waveTask = AirWaves::MakeProductionTask(u, side, pos);
                 if (waveTask !is null) {
                     return waveTask;
                 }
             }
+
+            // No bomber due: wait rather than take the native fallback, which is
+            // fighter-weighted at low income.
+            if (starved) return Air_StarvedFactoryWait(fname);
 
             // Dynamic selection runs after bounded strategic quotas so it cannot
             // make constructor or heavy-air policy unreachable.
@@ -700,7 +1076,11 @@ namespace RoleAir {
     }
     bool Air_AiIsSwitchAllowed(const CCircuitDef@ facDef, float armyCost, int factoryCount, float metalCurrent, bool &out assistRequired) {
         const bool isOK = (armyCost > 1.2f * facDef.costM * float(factoryCount)) || (metalCurrent > facDef.costM);
-        assistRequired = !isOK;
+        // Never ask for factory assist. The flag feeds only native
+        // CheckMobileAssistRequired, the first step of every default builder task:
+        // it guards the recruiting air plant with any constructor within 600, which
+        // is where every new air constructor spawns. AIR wants them on economy.
+        assistRequired = false;
         return isOK;
     }
     int Air_MakeSwitchInterval() {
@@ -721,6 +1101,9 @@ namespace RoleAir {
     {
         IUnitTask@ waveTask = AirWaves::MakeTask(u);
         if (waveTask !is null) return waveTask;
+        // A wave fighter waiting for its group gets no task - not the native default
+        // either - and stays idle until AirWaves::Update parks it (fighter groups).
+        if (AirWaves::IsParking(u)) return null;
         return aiMilitaryMgr.DefaultMakeTask(u);
     }
 
@@ -740,12 +1123,312 @@ namespace RoleAir {
 
     ******************************************************************************/ 
 
+    /******************************************************************************
+
+    ADVANCED AIRCRAFT PLANT CAP
+
+    The second advanced aircraft plant waits for SecondT2AircraftPlantMetalIncome
+    native average metal income, the third for ThirdT2AircraftPlantMetalIncome,
+    and there is never a fourth (MaxT2AircraftPlants). Enforced as the def cap on
+    armaap / coraap / legaap, so native UpdateFactoryTasks (which skips an
+    unavailable factory) obeys it as well as the primary constructor's own
+    ShouldBuildT2AircraftPlant check. One-way: a later dip does not lower the
+    cap under a plant that is already on the map or in construction.
+
+    ******************************************************************************/
+    int g_airT2PlantsAllowed = 1;
+    dictionary g_airT2PlantCapOrig;   // def name -> config cap (behaviour "limit")
+
+    int _Air_StagedT2Plants(float avgMetalIncome)
+    {
+        int n = 1;
+        if (avgMetalIncome >= Global::RoleSettings::Air::SecondT2AircraftPlantMetalIncome) ++n;
+        if (avgMetalIncome >= Global::RoleSettings::Air::ThirdT2AircraftPlantMetalIncome) ++n;
+        return AiMin(n, Global::RoleSettings::Air::MaxT2AircraftPlants);
+    }
+
+    void _Air_ApplyT2PlantCap()
+    {
+        array<string> plants = UnitHelpers::GetAllT2AircraftPlants();
+        for (uint i = 0; i < plants.length(); ++i) {
+            CCircuitDef@ d = ai.GetCircuitDef(plants[i]);
+            if (d is null) continue;
+            if (!g_airT2PlantCapOrig.exists(plants[i])) g_airT2PlantCapOrig.set(plants[i], d.maxThisUnit);
+            int orig = 0;
+            g_airT2PlantCapOrig.get(plants[i], orig);
+            d.maxThisUnit = AiMin(orig, g_airT2PlantsAllowed);
+        }
+    }
+
+    void Air_InitT2PlantCap()
+    {
+        g_airT2PlantCapOrig.deleteAll();
+        g_airT2PlantsAllowed = AiMax(1, _Air_StagedT2Plants(aiEconomyMgr.metal.income));
+        _Air_ApplyT2PlantCap();
+        GenericHelpers::LogUtil("[AIR][T2Plant] advanced aircraft plants capped at " + g_airT2PlantsAllowed
+            + " (2nd at " + int(Global::RoleSettings::Air::SecondT2AircraftPlantMetalIncome)
+            + ", 3rd at " + int(Global::RoleSettings::Air::ThirdT2AircraftPlantMetalIncome)
+            + " avg metal income, max " + Global::RoleSettings::Air::MaxT2AircraftPlants + ")", 2);
+    }
+
+    void Air_UpdateT2PlantCap()
+    {
+        const float mi = aiEconomyMgr.metal.income;
+        const int staged = _Air_StagedT2Plants(mi);
+        if (staged <= g_airT2PlantsAllowed) return;
+        g_airT2PlantsAllowed = staged;
+        _Air_ApplyT2PlantCap();
+        GenericHelpers::LogUtil("[AIR][T2Plant] avg metal income " + int(mi) + ": advanced aircraft plant cap raised to "
+            + g_airT2PlantsAllowed, 1);
+    }
+
+    /******************************************************************************
+
+    REACTOR TRACKING
+
+    Main::AiUnitFinished / AiUnitDestroyed forward here for every team unit, in
+    every role. Finished fusions, advanced fusions and advanced converters are
+    kept by ReactorLadder (fusionIds / afusIds / advConvIds) for whichever role
+    runs the ladder; the retirement classes below are kept here. Only ids are
+    kept (CCircuitUnit is asOBJ_NOCOUNT); dead ids are pruned on read.
+
+    ******************************************************************************/
+    bool _Air_NameIn(const string &in name, const array<string> &in names)
+    {
+        for (uint i = 0; i < names.length(); ++i) {
+            if (names[i] == name) return true;
+        }
+        return false;
+    }
+
+    void _Air_RemoveId(array<int>@ ids, int id)
+    {
+        for (uint i = 0; i < ids.length(); ++i) {
+            if (ids[i] == id) { ids.removeAt(i); return; }
+        }
+    }
+
+    void _Air_PruneIds(array<int>@ ids)
+    {
+        for (int i = int(ids.length()) - 1; i >= 0; --i) {
+            if (ai.GetTeamUnit(ids[i]) is null) ids.removeAt(uint(i));
+        }
+    }
+
+    void Air_OnUnitFinished(CCircuitUnit@ unit)
+    {
+        if (unit is null || unit.circuitDef is null) return;
+        if (ReactorLadder::OnUnitFinished(unit)) return;
+        const string name = unit.circuitDef.GetName();
+        if (_Air_NameIn(name, AIR_RETIRE_WIND_SOLAR) || _Air_NameIn(name, AIR_RETIRE_ADV_SOLAR)
+            || _Air_NameIn(name, AIR_RETIRE_T1_CONVERTERS)) {
+            _Air_RemoveId(@g_airEcoIds, unit.id);
+            g_airEcoIds.insertLast(unit.id);
+        }
+    }
+
+    void Air_OnUnitDestroyed(CCircuitUnit@ unit)
+    {
+        if (unit is null) return;
+        ReactorLadder::OnUnitDestroyed(unit);
+        _Air_RemoveId(@g_airEcoIds, unit.id);
+    }
+
+    /******************************************************************************
+
+    ECO RETIREMENT (Air_UpdateEcoRetire)
+
+    Lower-tier energy gives its ground - and its reclaim value - back once what
+    replaces it is up. Three steps, each latched, so the fusion reclaim on the
+    AFUS path (step 3 of the reactor ladder below) never undoes one:
+
+      1. RetireWindSolarAtFusions fusions finished        -> winds and solars
+      2. RetireAdvSolarAtFusions fusions finished         -> advanced solars
+      3. RetireT1ConvertersAtAdvConverters advanced
+         converters finished                              -> T1 energy converters
+
+    A finished AFUS counts as steps 1 and 2 reached (its fusions may already be
+    gone). The unit lists cover every faction: commanders build other sides'
+    converters (legcom* can build armmakr).
+
+    Retired defs are capped at 0 on every update, which is what keeps them from
+    coming back: the native energy and converter planners, Builder::EnqueueT1Solar /
+    EnqueueT1AdvancedSolar / EnqueueT1EnergyConverter, the eco crew
+    (Air_EnqueueEcoEnergy) and the commander wind all refuse an unavailable def.
+    Builds already queued are dropped rather than finished: Air_DefaultTask
+    aborts a default task for a retired def, the eco crew stops "keeping" one,
+    and the commander drops its wind.
+
+    Reclaim: up to EcoRetireConcurrentReclaims TaskB::Reclaim tasks at once, for
+    finished structures of a retired class. The eco crew (T1 air constructors
+    other than the primary and secondary) take them before any eco build; the
+    native default task hands them to anyone else (HIGH priority, no build def,
+    so a metal stall does not hold them back). One nobody takes expires after
+    EcoRetireReclaimTimeoutSeconds and is queued again.
+
+    Only finished structures are tracked (Main::AiUnitFinished), so after a
+    mid-game /aireload the ones built before it are not reclaimed.
+
+    ******************************************************************************/
+    // Not const: BatchApplyUnitCaps takes array<string>@.
+    array<string> AIR_RETIRE_WIND_SOLAR = { "armwin", "corwin", "legwin", "armsolar", "corsolar", "legsolar" };
+    array<string> AIR_RETIRE_ADV_SOLAR = { "armadvsol", "coradvsol", "legadvsol" };
+    array<string> AIR_RETIRE_T1_CONVERTERS = { "armmakr", "cormakr", "legeconv" };
+
+    array<int> g_airEcoIds;        // finished winds, solars, advanced solars, T1 converters
+    bool g_airRetiredWindSolar = false;
+    bool g_airRetiredAdvSolar = false;
+    bool g_airRetiredT1Converters = false;
+    array<IUnitTask@> g_airReclaimTasks;   // our eco reclaim tasks in flight
+    array<int> g_airReclaimTargets;        // parallel: the unit each one reclaims
+    uint g_airReclaimNext = 0;             // eco crew round-robin over g_airReclaimTasks
+
+    bool Air_IsRetiredDef(const CCircuitDef@ d)
+    {
+        if (d is null) return false;
+        const string n = d.GetName();
+        return (g_airRetiredWindSolar && _Air_NameIn(n, AIR_RETIRE_WIND_SOLAR))
+            || (g_airRetiredAdvSolar && _Air_NameIn(n, AIR_RETIRE_ADV_SOLAR))
+            || (g_airRetiredT1Converters && _Air_NameIn(n, AIR_RETIRE_T1_CONVERTERS));
+    }
+
+    // A build task for a retired def.
+    bool Air_IsRetiredBuild(IUnitTask@ t)
+    {
+        IBuilderTask@ bt = cast<IBuilderTask>(t);
+        return bt !is null && Air_IsRetiredDef(bt.buildDef);
+    }
+
+    // Builder::MakeDefaultTaskWithLog, minus builds of retired defs: native may
+    // still hold one queued from before the cap. It is aborted on the next update
+    // (Builder DEFERRED ABORT - this runs inside AiMakeTask, where aborting the
+    // task the engine may be re-evaluating crashes it); meanwhile, a short wait.
+    IUnitTask@ Air_DefaultTask(Id builderId, const string &in label)
+    {
+        IUnitTask@ t = Builder::MakeDefaultTaskWithLog(builderId, label);
+        if (!Air_IsRetiredBuild(t)) return t;
+        if (!Builder::IsAbortQueued(t)) {
+            IBuilderTask@ bt = cast<IBuilderTask>(t);
+            GenericHelpers::LogUtil("[AIR][Retire] dropping queued " + bt.buildDef.GetName() + " (retired)", 2);
+            Builder::AbortLater(t);
+        }
+        return aiBuilderMgr.Enqueue(TaskB::Wait(3 * SECOND));
+    }
+
+    void _Air_Retire(array<string>@ defs, const string &in what, const string &in why)
+    {
+        UnitHelpers::BatchApplyUnitCaps(defs, 0);
+        GenericHelpers::LogUtil("[AIR][Retire] " + what + " retired (" + why + "): capped at 0, reclaiming", 1);
+    }
+
+    int _Air_ReclaimIndexOf(IUnitTask@ t)
+    {
+        for (uint i = 0; i < g_airReclaimTasks.length(); ++i) {
+            if (g_airReclaimTasks[i] is t) return int(i);
+        }
+        return -1;
+    }
+
+    // Air_BuilderAiTaskRemoved: a reclaim task ended. Done or not, its slot frees;
+    // a target still standing is picked again by the next update.
+    void Air_OnReclaimTaskRemoved(IUnitTask@ task)
+    {
+        const int i = _Air_ReclaimIndexOf(task);
+        if (i < 0) return;
+        g_airReclaimTasks.removeAt(uint(i));
+        g_airReclaimTargets.removeAt(uint(i));
+    }
+
+    // Eco crew: an eco reclaim to join, or null.
+    IUnitTask@ Air_TakeEcoReclaim(CCircuitUnit@ u)
+    {
+        if (u !is null && u.task !is null && _Air_ReclaimIndexOf(u.task) >= 0) return u.task;   // keep it
+        if (g_airReclaimTasks.length() == 0) return null;
+        return g_airReclaimTasks[g_airReclaimNext++ % g_airReclaimTasks.length()];
+    }
+
+    void Air_UpdateEcoRetire()
+    {
+        if (!Global::RoleSettings::Air::EcoRetireEnabled) return;
+        _Air_PruneIds(@ReactorLadder::fusionIds);
+        _Air_PruneIds(@ReactorLadder::afusIds);
+        _Air_PruneIds(@ReactorLadder::advConvIds);
+        _Air_PruneIds(@g_airEcoIds);
+        const int fus = int(ReactorLadder::fusionIds.length());
+        const bool afus = ReactorLadder::afusIds.length() > 0;
+
+        if (!g_airRetiredWindSolar && (afus || fus >= Global::RoleSettings::Air::RetireWindSolarAtFusions)) {
+            g_airRetiredWindSolar = true;
+            _Air_Retire(AIR_RETIRE_WIND_SOLAR, "winds and solars", "" + fus + " fusion(s) finished" + (afus ? ", AFUS up" : ""));
+        }
+        if (!g_airRetiredAdvSolar && (afus || fus >= Global::RoleSettings::Air::RetireAdvSolarAtFusions)) {
+            g_airRetiredAdvSolar = true;
+            _Air_Retire(AIR_RETIRE_ADV_SOLAR, "advanced solars", "" + fus + " fusion(s) finished" + (afus ? ", AFUS up" : ""));
+        }
+        if (!g_airRetiredT1Converters
+            && int(ReactorLadder::advConvIds.length()) >= Global::RoleSettings::Air::RetireT1ConvertersAtAdvConverters) {
+            g_airRetiredT1Converters = true;
+            _Air_Retire(AIR_RETIRE_T1_CONVERTERS, "T1 energy converters", "" + ReactorLadder::advConvIds.length() + " advanced converter(s) finished");
+        }
+
+        // Hold the caps: a role switch restores the def baseline (Commands::DefState).
+        // BatchApplyUnitCaps writes only on change.
+        if (g_airRetiredWindSolar) UnitHelpers::BatchApplyUnitCaps(AIR_RETIRE_WIND_SOLAR, 0);
+        if (g_airRetiredAdvSolar) UnitHelpers::BatchApplyUnitCaps(AIR_RETIRE_ADV_SOLAR, 0);
+        if (g_airRetiredT1Converters) UnitHelpers::BatchApplyUnitCaps(AIR_RETIRE_T1_CONVERTERS, 0);
+
+        // Queue reclaims up to the concurrency limit.
+        const int limit = Global::RoleSettings::Air::EcoRetireConcurrentReclaims;
+        for (uint i = 0; i < g_airEcoIds.length() && int(g_airReclaimTasks.length()) < limit; ++i) {
+            const int id = g_airEcoIds[i];
+            if (g_airReclaimTargets.find(id) >= 0) continue;
+            CCircuitUnit@ s = ai.GetTeamUnit(id);
+            if (s is null || !Air_IsRetiredDef(s.circuitDef)) continue;
+            IUnitTask@ t = aiBuilderMgr.Enqueue(TaskB::Reclaim(Task::Priority::HIGH, s,
+                Global::RoleSettings::Air::EcoRetireReclaimTimeoutSeconds * SECOND));
+            if (t is null) break;
+            if (_Air_ReclaimIndexOf(t) >= 0) continue;   // native returned the task that already reclaims it
+            g_airReclaimTasks.insertLast(t);
+            g_airReclaimTargets.insertLast(id);
+            GenericHelpers::LogUtil("[AIR][Retire] reclaiming " + s.circuitDef.GetName() + " id=" + id
+                + " (" + g_airReclaimTasks.length() + "/" + limit + " in flight)", 2);
+        }
+    }
+
+    /******************************************************************************
+
+    POST-T2 REACTOR LADDER
+
+    Shared with FRONT: manager/reactor_ladder.as (ReactorLadder::TryT2Economy)
+    documents the steps. AIR's settings are Global::RoleSettings::Air; while
+    metal-starved the reactors go in at NOW priority - the only priority
+    CBuilderManager::MakeBuilderTask hands idle builders during a metal stall -
+    and no advanced converters are built (METAL-STARVED MODE).
+
+    ******************************************************************************/
+    ReactorLadder::Params@ Air_LadderParams()
+    {
+        ReactorLadder::Params@ p = ReactorLadder::Params();
+        p.tag = "AIR";
+        p.fusionsBeforeAFUS = Global::RoleSettings::Air::FusionsBeforeAFUS;
+        p.minMetalIncomeForFUS = Global::RoleSettings::Air::MinimumMetalIncomeForFUS;
+        p.reclaimFusionsAtAFUSCount = Global::RoleSettings::Air::ReclaimFusionsAtAFUSCount;
+        p.maxAFUS = Global::RoleSettings::Air::MaxAdvancedFusionReactors;
+        p.advConverterEnergyPercent = Global::RoleSettings::Air::AdvConverterEnergyPercent;
+        p.convPerFusion = Global::RoleSettings::Air::AdvConvertersPerFusion;
+        p.convPerAFUS = Global::RoleSettings::Air::AdvConvertersPerAFUS;
+        const bool starved = Air_IsMetalStarved();
+        p.holdConverters = starved;
+        p.reactorPrio = starved ? Task::Priority::NOW : Task::Priority::NORMAL;
+        return p;
+    }
+
     IUnitTask@ Air_BuilderAiMakeTask(CCircuitUnit@ builder) {
-        GenericHelpers::LogUtil("[Air_BuilderAiMakeTask] called for builder", 3);
+        GenericHelpers::LogUtil("[Air_BuilderAiMakeTask] called for builder", 4);
         if (builder is null) return null;
 
         const CCircuitDef@ udef = builder.circuitDef;
-        if (udef is null) return Builder::MakeDefaultTaskWithLog(builder.id, "AIR");
+        if (udef is null) return Air_DefaultTask(builder.id, "AIR");
 
         if (UnitHelpers::IsCommander(udef)) {
             return Air_Commander_AiMakeTask(builder);
@@ -767,14 +1450,36 @@ namespace RoleAir {
                 return Air_T1Constructor_AiMakeTask(builder);
             }
             if (builder is Builder::secondaryT1AirConstructor) {
-                return Builder::MakeDefaultTaskWithLog(builder.id, "AIR expansion");
+                return Air_DefaultTask(builder.id, "AIR expansion");
             }
+            // The rest are the eco crew: economy before assisting the primary's
+            // factory projects. The secondary stays on mex expansion.
+            // Reclaiming retired eco comes first (ECO RETIREMENT).
+            IUnitTask@ tRetire = Air_TakeEcoReclaim(builder);
+            if (tRetire !is null) return tRetire;
+            IUnitTask@ tEco = Air_TryEcoBuild(builder);
+            if (tEco !is null) return tEco;
             if (Air_IsBuildFocusActive()) {
                 return Air_AssignFocusedFollower(builder);
             }
         }
 
-        return Builder::MakeDefaultTaskWithLog(builder.id, "AIR");
+        // T2 constructors: mex upgrade first (best metal per metal, spots are finite),
+        // then the reactor ladder (fusions -> AFUS -> converters, fusion reclaim).
+        if (UnitHelpers::GetConstructorTier(udef) >= 2) {
+            if (ReactorLadder::IsOnLadderBuild(builder)) return builder.task;
+            // Metal-starved: reactors, not mex upgrades (METAL-STARVED MODE).
+            if (Global::RoleSettings::MexUpgradeFirst && !Air_IsMetalStarved()) {
+                IUnitTask@ tMexUp = EconomyHelpers::EnqueueMexUpgradeIfFirst(builder, Global::Map::StartPos,
+                        Global::RoleSettings::MexUpgradeRadius,
+                        Global::RoleSettings::MexUpgradeMaxConcurrent, "AIR");
+                if (tMexUp !is null) return tMexUp;
+            }
+            IUnitTask@ tT2Eco = ReactorLadder::TryT2Economy(builder, Air_LadderParams());
+            if (tT2Eco !is null) return tT2Eco;
+        }
+
+        return Air_DefaultTask(builder.id, "AIR");
     }
 
     /******************************************************************************
@@ -809,7 +1514,7 @@ namespace RoleAir {
         }
 
         if (primary !is null || ai.frame > AIR_FACTORY_ASSIST_DEADLINE_FRAMES) {
-            return Builder::MakeDefaultTaskWithLog(comm.id, "AIR commander");
+            return Air_DefaultTask(comm.id, "AIR commander");
         }
 
         CCircuitUnit@ target = null;
@@ -818,7 +1523,7 @@ namespace RoleAir {
         }
 
         if (target is null) {
-            return Builder::MakeDefaultTaskWithLog(comm.id, "AIR commander");
+            return Air_DefaultTask(comm.id, "AIR commander");
         }
 
         // Assign a high-priority guard task so the commander sticks near the air factory.
@@ -833,7 +1538,7 @@ namespace RoleAir {
         );
 
         if (guardTask !is null) return guardTask;
-        return Builder::MakeDefaultTaskWithLog(comm.id, "AIR commander");
+        return Air_DefaultTask(comm.id, "AIR commander");
     }
 
     void Air_BuilderAiUnitAdded(CCircuitUnit@ unit, Unit::UseAs usage)
@@ -870,6 +1575,8 @@ namespace RoleAir {
             @g_airStrategicFocusTask = null;
             g_airStrategicFocusLeaderId = -1;
         }
+        // The ladder's fusion reclaim is released in Builder::AiTaskRemoved.
+        Air_OnReclaimTaskRemoved(task);
     }
 
     void Air_BuilderAiUnitRemoved(CCircuitUnit@ unit, Unit::UseAs usage)
@@ -1034,16 +1741,18 @@ namespace RoleAir {
             //if (!Builder::IsT2AirPlantQueued) {
                 int t2AirPlantCount = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2AircraftPlants());
                 bool hasPrimaryT1AirPlant = (Factory::primaryT1AirPlant !is null);
+                // Native average income (as Barb4 reads it), not the 10 s minimum the
+                // ladder below uses: one dip in the window no longer holds T2 back.
                 if (EconomyHelpers::ShouldBuildT2AircraftPlant(
-                    /*mi*/ mi,
-                    /*ei*/ ei,
+                    /*mi*/ aiEconomyMgr.metal.income,
+                    /*ei*/ aiEconomyMgr.energy.income,
                     /*metalCurrent*/ aiEconomyMgr.metal.current,
                     /*requiredMetalIncome*/ Global::RoleSettings::Air::RequiredMetalIncomeForT2AircraftPlant,
                     /*requiredMetalCurrent*/ Global::RoleSettings::Air::RequiredMetalCurrentForT2AircraftPlant,
                     /*requiredEnergyIncome*/ Global::RoleSettings::Air::RequiredEnergyIncomeForT2AircraftPlant,
                     /*constructorDef*/ u.circuitDef,
                     /*t2AirPlantCount*/ t2AirPlantCount,
-                    /*maxAllowed*/ Global::RoleSettings::Air::MaxT2AircraftPlants
+                    /*maxAllowed*/ g_airT2PlantsAllowed   // 1, then 2 at 100 and 3 at 200 avg metal income
                 ) && hasPrimaryT1AirPlant) {
                     AIFloat3 anchor = Factory::GetT1AirPlantPos();
                     IUnitTask@ tT2Air = Builder::EnqueueT2AirPlant(unitSide, anchor, SQUARE_SIZE * 30, 600 * SECOND);
@@ -1057,16 +1766,6 @@ namespace RoleAir {
                     if (tForceT2 !is null) return Air_SetStrategicFocus(u, tForceT2);
                 }
            // }
-
-            // A mex upgrade outranks the whole energy ladder: best metal per metal,
-            // and the supply of spots is finite. See doc/known-issues.md KI-213.
-            if (Global::RoleSettings::MexUpgradeFirst)
-            {
-            	IUnitTask@ tMexUp = EconomyHelpers::EnqueueMexUpgradeIfFirst(u, Global::Map::StartPos,
-            			Global::RoleSettings::MexUpgradeRadius,
-            			Global::RoleSettings::MexUpgradeMaxConcurrent, "AIR");
-            	if (tMexUp !is null) return tMexUp;
-            }
 
             // Build Energy Converter?
             if (EconomyHelpers::ShouldBuildT1EnergyConverter(
@@ -1116,35 +1815,18 @@ namespace RoleAir {
             }
 
             // Build advanced T1 solar using Air predicate
-            // Compute current T2 air-related counts
-            array<string> t2AirCons; t2AirCons = { "armaca", "coraca", "legaca" };
-            int t2ConstructionAircraftCount = UnitDefHelpers::SumUnitDefCounts(t2AirCons);
-            array<string> t2AirPlants = UnitHelpers::GetAllT2AircraftPlants();
-            int t2AircraftPlantCount = UnitDefHelpers::SumUnitDefCounts(t2AirPlants);
-
-            const bool advancedSolarTimingReady =
-                ai.frame >= Global::RoleSettings::Air::AdvancedSolarEarliestSeconds * SECOND
-                && mi >= Global::RoleSettings::Air::AdvancedSolarMinimumMetalIncome
-                && aiEconomyMgr.metal.current >= Global::RoleSettings::Air::AdvancedSolarMinimumMetalCurrent
-                && !aiEconomyMgr.isEnergyFull
-                && !Air_HasCommanderWindOpportunity(unitSide);
-            if (advancedSolarTimingReady && EconomyHelpers::ShouldBuildT1AdvancedSolar(
-                /*energyIncome*/ ei,
-                /*metalIncome*/ mi,
-                /*energyIncomeMinimumThreshold*/ Global::RoleSettings::Air::AdvancedSolarEnergyIncomeMinimum,
-                /*energyIncomeMaximumThreshold*/ Global::RoleSettings::Air::AdvancedSolarEnergyIncomeMaximum,
-                /*t2ConstructorCount*/ t2ConstructionAircraftCount,
-                /*t2FactoryCount*/ t2AircraftPlantCount,
-                /*isT2FactoryQueued*/ Factory::IsT2AirPlantBuildQueued(),
-                /*enableT2ProgressGate*/ true,
-                /*metalIncomeFallbackMinimum*/ 6.0f
-            )) {
+            if (Air_IsAdvancedSolarReady(unitSide, mi, ei)) {
                 IUnitTask@ tAdvSolar = Builder::EnqueueT1AdvancedSolar(u.id, unitSide, conLocation, SQUARE_SIZE * 32, SECOND * 30);
                 if (tAdvSolar !is null) return Air_SetStrategicFocus(u, tAdvSolar);
-            } 
+            }
+
+            // Same ladder as the eco crew; adds wind, and places its own building
+            // when the shared solar cooldowns above held it off.
+            IUnitTask@ tEco = Air_TryEcoBuild(u);
+            if (tEco !is null) return Air_SetStrategicFocus(u, tEco);
         }
 
-        IUnitTask@ defaultTask = Builder::MakeDefaultTaskWithLog(u.id, "AIR strategic");
+        IUnitTask@ defaultTask = Air_DefaultTask(u.id, "AIR strategic");
         return Air_SetStrategicFocus(u, defaultTask);
     }
 
@@ -1252,6 +1934,8 @@ namespace RoleAir {
         @cfg.MilitaryAiTaskRemovedHandler = cast<AiTaskRemovedDelegate@>(@Air_MilitaryAiTaskRemoved);
 
         @cfg.PorcChainHandler = cast<PorcChainDelegate@>(@Air_PorcChain);
+        // Porc: preventive only while metal-starved, the shared policy otherwise.
+        @cfg.AiMakeDefenceHandler = cast<AiMakeDefence@>(@Air_AiMakeDefence);
 
         RoleConfigs::Register(cfg);
     }

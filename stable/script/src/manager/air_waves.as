@@ -52,7 +52,10 @@ BomberWaveEvaluateSeconds after launch: heavy losses mean the enemy anti-air is
 winning and the next wave needs mass; light losses grow gently. The result is
 raised to an enemy-anti-air floor (wave bomber metal >= a fraction of the enemy
 anti_air metal on the map, from the Military cost cache) and clamped to
-[BomberWaveFirstSize, BomberWaveMaxSize]. A wave also launches on a time-out
+[BomberWaveFirstSize, BomberWaveMaxSize]. BomberWaveMaxSize is also a hard cap on
+every launch: BomberStock's batch goes first, held survivors fill what is left,
+and anything past the cap stays in the hold for the next wave. A wave also
+launches on a time-out
 once BomberWaveFirstSize bombers have been held for BomberWaveMaxHoldSeconds,
 so slow production never stalls the air war.
 
@@ -75,6 +78,48 @@ aborts itself, the survivors are handed the plain native bomb task once
 CCircuitUnit handles are not ref-counted: only ids are stored and units are
 re-acquired with ai.GetTeamUnit(id). Task handles are ref-counted and are kept
 only for the release window; Military::AiTaskRemoved drops them early.
+
+Full chain, script gate to ABI (verified against S3KCentrifugal/CircuitAI,
+branch smrt @ 8d4725b - the private fork SMRTBARb's DLL actually builds from,
+not the public rlcevg/CircuitAI barb5 this file otherwise cites):
+  1. _TryLaunch (below) gates on bombers >= nextWaveSize: this file's own
+     script-side count, nothing native involved yet.
+  2. _Launch aborts the hold tasks; it does not create the bomb task. The
+     freed units re-enter Military::AiMakeTask on their own next tick and
+     call _MakeWaveBombTask.
+  3. _MakeWaveBombTask -> aiMilitaryMgr.Enqueue(TaskF::Common(BOMB)) is the
+     script/native (API) crossover.
+  4. MilitaryManager.cpp, case BOMB: task = new CBombTask(this, 2.0f/mod) -
+     confirmed byte-identical to public CircuitAI even in the private fork.
+  5. CBombTask::Update -> FindTarget() - Centrifugal's own rewrite (commit
+     37146fd0, "Refactor and enhance support for area-effect weapons and
+     cargo handling"): scores enemies by cost/health against the squad's
+     summed weapon alpha (killCap = groupAlpha * cfg.killMargin), prefers a
+     killable target over a merely damageable one, and picks mode AREA over
+     FOCUS when the cheapest killable target clusters with cfg.areaMinTargets
+     or more others inside cfg.areaRadius and the squad has more than one
+     bomber.
+  6. mode FOCUS -> Attack(frame, isGround), resolving to the stock (public
+     and private fork agree) ISquadTask::Attack in SquadTask.cpp.
+     mode AREA -> AttackArea(frame) - entirely Centrifugal's: a new function
+     that lines the squad up abreast perpendicular to PickApproachDir()
+     (also new: threat-aware bearing selection) and issues per-bomber
+     ground-attack plus fight-away orders directly, rather than through
+     ISquadTask::Attack.
+  7. Both paths converge on stock CCircuitUnit calls - CmdAttackGround,
+     CmdFightTo, Attack() - confirmed byte-identical to public CircuitAI.
+  8. The ABI crossover, stock and unmodified regardless of the fork: these
+     go through the Engine_handleCommand function pointer
+     (SSkirmishAICallback.h) with COMMAND_UNIT_ATTACK=45 / COMMAND_UNIT_
+     FIGHT=44 (AISCommands.h) and a plain C command struct
+     (SAttackUnitCommand / SFightUnitCommand) - the actual DLL/engine
+     boundary, unrelated to CircuitAI itself being a private fork.
+
+So: the count gate and the hold/release bookkeeping in this file are ours;
+the dispatch (Enqueue / new CBombTask) and the final unit commands are stock
+CircuitAI; the target-selection and area-formation logic in between is
+Centrifugal's own, and is the piece actually worth re-reading in
+BombTask.cpp if a wave's targeting looks wrong.
 
 ******************************************************************************/
 namespace AirWaves {
@@ -106,7 +151,23 @@ namespace AirWaves {
     int lastWaveSize = 0;
     int lastLaunchFrame = -1;
     int lastLaunchFighters = 0;
+    int armadaWaveBombersQueued = 0;   // drives the 1-in-LicheEveryNthBomber Liche mix
     bool lastWaveEvaluated = true;
+
+    // ---- fighter groups (Global::RoleSettings::Air::FighterGroupSize) ----
+    // A fighter hold (CDefendTask) engages enemy air inside our defence influence,
+    // and each new fighter got its own until holds met and merged, so fighters went
+    // in one at a time as they were built (Baryon Tar Lake 2026-09-26: roughly one
+    // Hawk lost per Hawk built, six waves launched with no escort). New fighters
+    // now park - out of AI control via ai.UnitControl, holding position, as
+    // BomberStock parks bombers - until FighterGroupSize are waiting, then go into
+    // one shared hold task together. A launching wave takes them as escorts.
+    const int FIGHTER_MOVE_HOLD_POS = 0;
+    const int FIGHTER_MOVE_MANEUVER = 1;
+    dictionary parkFighters;      // id string -> int id, new fighters waiting for their group
+    dictionary parkedFighters;    // id string -> int id, of those, under CPlayerTask
+    dictionary groupQueue;        // id string -> int id, released as a group, awaiting the group hold
+    IUnitTask@ groupHoldTask = null;
 
     void Init()
     {
@@ -137,7 +198,12 @@ namespace AirWaves {
         lastWaveSize = 0;
         lastLaunchFrame = -1;
         lastLaunchFighters = 0;
+        armadaWaveBombersQueued = 0;
         lastWaveEvaluated = true;
+        parkFighters.deleteAll();
+        parkedFighters.deleteAll();
+        groupQueue.deleteAll();
+        @groupHoldTask = null;
         GenericHelpers::LogUtil("[AIR][Waves] Init: enabled=" + (IsEnabled() ? "yes" : "no")
             + " first=" + Global::RoleSettings::Air::BomberWaveFirstSize
             + " max=" + Global::RoleSettings::Air::BomberWaveMaxSize
@@ -145,6 +211,15 @@ namespace AirWaves {
     }
 
     bool IsEnabled() { return Global::RoleSettings::Air::BomberWavesEnabled; }
+    // Init only runs under the AIR role, so an empty roster means no AirWaves here.
+    bool IsActive() { return IsEnabled() && waveBomberDefs.getSize() > 0; }
+
+    // BomberStock entry: launch these bombers (plus any held escorts) as a wave now.
+    void LaunchStock(const array<int>@ ids, const string &in reason)
+    {
+        if (!IsActive() || ids is null) return;
+        _Launch(ai.frame, reason, ids);
+    }
     bool IsWaveBomber(const CCircuitDef@ d) { return d !is null && waveBomberDefs.exists(d.GetName()); }
     bool IsWaveFighter(const CCircuitDef@ d) { return d !is null && waveFighterDefs.exists(d.GetName()); }
 
@@ -208,6 +283,19 @@ namespace AirWaves {
             // wave is over for this unit, it rejoins the pool.
             waveBombers.delete(key);
         }
+        if (isFighter && Global::RoleSettings::Air::FighterGroupSize > 1) {
+            // Released with its group: the group's shared hold.
+            if (groupQueue.exists(key)) {
+                groupQueue.delete(key);
+                IUnitTask@ g = _MakeGroupHoldTask(u);
+                if (g !is null) return g;
+            }
+            // Otherwise wait for a group: no task here (IsParking keeps the native
+            // default away), Update parks it.
+            if (!parkFighters.exists(key)) parkFighters.set(key, int(u.id));
+            heldFighters.delete(key);   // back from a hold that ended: counted once, as waiting
+            return null;
+        }
         return _MakeHoldTask(u, isBomber);
     }
 
@@ -227,7 +315,7 @@ namespace AirWaves {
     {
         const int floor = IncomeFloor();
         int req = (nextWaveSize > floor) ? nextWaveSize : floor;
-        const int hi = Global::RoleSettings::Air::BomberWaveMaxSize;
+        const int hi = BomberStock::WaveCap(Global::RoleSettings::Air::BomberWaveMaxSize);   // 40 late
         return (req > hi) ? hi : req;
     }
 
@@ -328,6 +416,72 @@ namespace AirWaves {
         return raw;
     }
 
+    // Air_MilitaryAiMakeTask: a fighter waiting for its group gets no task at all.
+    bool IsParking(CCircuitUnit@ u)
+    {
+        return u !is null && parkFighters.exists("" + u.id);
+    }
+
+    // One hold task per released group, so its fighters start and fly as one squad.
+    IUnitTask@ _MakeGroupHoldTask(CCircuitUnit@ u)
+    {
+        if (groupHoldTask is null) {
+            @groupHoldTask = aiMilitaryMgr.Enqueue(TaskF::Defend(Task::FightType::MELEE, Task::FightType::AA, HoldPower));
+            if (groupHoldTask is null) return null;
+        }
+        heldFighters.set("" + u.id, int(u.id));
+        return groupHoldTask;
+    }
+
+    // Fighters counted toward escorts and production: held, parked, and released.
+    int FighterPoolCount()
+    {
+        return int(heldFighters.getSize() + parkFighters.getSize() + groupQueue.getSize());
+    }
+
+    // Main update: park idle waiting fighters; release a full group.
+    void _UpdateFighterGroups()
+    {
+        const int groupSize = Global::RoleSettings::Air::FighterGroupSize;
+        if (groupSize <= 1) return;
+        array<string>@ keys = parkFighters.getKeys();
+        for (uint i = 0; i < keys.length(); ++i) {
+            int id = 0;
+            if (!parkFighters.get(keys[i], id)) continue;
+            CCircuitUnit@ u = ai.GetTeamUnit(id);
+            if (u is null) { parkFighters.delete(keys[i]); parkedFighters.delete(keys[i]); continue; }
+            if (parkedFighters.exists(keys[i])) continue;
+            IUnitTask@ t = u.task;
+            if (t is null || Task::Type(t.GetType()) != Task::Type::IDLE) continue;
+            u.SetMoveState(FIGHTER_MOVE_HOLD_POS);   // fire at will, but never chase
+            if (ai.UnitControl(u, false)) parkedFighters.set(keys[i], id);
+        }
+        if (int(parkFighters.getSize()) < groupSize) return;
+
+        const int n = int(parkFighters.getSize());
+        @groupHoldTask = null;   // this group gets a hold of its own
+        _UnparkAllInto(@groupQueue);
+        GenericHelpers::LogUtil("[AIR][Waves] fighter group of " + n + " released into the hold", 2);
+    }
+
+    // Hand every waiting fighter back to AI control and queue it in `into`.
+    void _UnparkAllInto(dictionary@ into)
+    {
+        array<string>@ keys = parkFighters.getKeys();
+        for (uint i = 0; i < keys.length(); ++i) {
+            int id = 0;
+            if (!parkFighters.get(keys[i], id)) continue;
+            CCircuitUnit@ u = ai.GetTeamUnit(id);
+            if (u is null) continue;
+            into.set(keys[i], id);
+            u.SetMoveState(FIGHTER_MOVE_MANEUVER);
+            IUnitTask@ t = u.task;
+            if (t !is null && Task::Type(t.GetType()) == Task::Type::PLAYER) ai.UnitControl(u, true);
+        }
+        parkFighters.deleteAll();
+        parkedFighters.deleteAll();
+    }
+
     IUnitTask@ _MakeHoldTask(CCircuitUnit@ u, bool isBomber)
     {
         // Distinct promote types keep bomber and fighter holds from merging into
@@ -386,6 +540,7 @@ namespace AirWaves {
     {
         if (!IsEnabled()) return;
         const int frame = ai.frame;
+        _UpdateFighterGroups();
         if (releaseUntilFrame >= 0 && frame > releaseUntilFrame) _EndRelease();
         if (!lastWaveEvaluated && lastLaunchFrame >= 0
             && frame >= lastLaunchFrame + Global::RoleSettings::Air::BomberWaveEvaluateSeconds * SECOND) {
@@ -397,7 +552,7 @@ namespace AirWaves {
     void _TryLaunch(int frame)
     {
         const int bombers = int(heldBombers.getSize());
-        const int fighters = int(heldFighters.getSize());
+        const int fighters = FighterPoolCount();
         if (bombers == 0) { holdSinceFrame = -1; return; }
         if (holdSinceFrame < 0) holdSinceFrame = frame;
 
@@ -415,7 +570,11 @@ namespace AirWaves {
                                      : ("hold time-out at " + bombers + "/" + required));
     }
 
-    void _Launch(int frame, const string &in reason)
+    // `stock` (BomberStock's parked batch) goes first; held bombers fill the
+    // rest up to BomberWaveMaxSize. Stock bombers sit under a CPlayerTask, not
+    // a hold, so they only need queueing: BomberStock hands them back to AI
+    // control right after this returns.
+    void _Launch(int frame, const string &in reason, const array<int>@ stock = null)
     {
         waveBombers.deleteAll();
         waveFighters.deleteAll();
@@ -425,9 +584,29 @@ namespace AirWaves {
         @waveTask = null;
         nextVipIdx = 0;
 
+        const int cap = BomberStock::WaveCap(Global::RoleSettings::Air::BomberWaveMaxSize);
+        if (stock !is null) {
+            for (uint i = 0; i < stock.length() && int(waveBombers.getSize()) < cap; ++i) {
+                if (ai.GetTeamUnit(stock[i]) is null) continue;
+                const string key = "" + stock[i];
+                launchQueue.set(key, stock[i]);
+                waveBombers.set(key, stock[i]);
+                heldBombers.delete(key);
+            }
+        }
         array<IUnitTask@> aborted;
-        _ReleaseHeld(@heldBombers, @waveBombers, @aborted);
-        _ReleaseHeld(@heldFighters, null, @aborted);
+        _ReleaseHeld(@heldBombers, @waveBombers, @aborted, cap - int(waveBombers.getSize()));
+        _ReleaseHeld(@heldFighters, null, @aborted, -1);
+        // Waiting fighters, and a group not yet in its hold, go with the wave as escorts.
+        _UnparkAllInto(@launchQueue);
+        {
+            array<string>@ gk = groupQueue.getKeys();
+            for (uint i = 0; i < gk.length(); ++i) {
+                int id = 0;
+                if (groupQueue.get(gk[i], id)) launchQueue.set(gk[i], id);
+            }
+            groupQueue.deleteAll();
+        }
         const int launchedBombers = int(waveBombers.getSize());
         const int launchedFighters = int(launchQueue.getSize()) - launchedBombers;
 
@@ -451,18 +630,24 @@ namespace AirWaves {
             + " provisionalNext=" + nextWaveSize, 1);
     }
 
-    // Move every held id into the launch queue (and `wave` when given) and abort
-    // each distinct hold task once. Only DEFEND fighter tasks are aborted: a unit
-    // that is retreating or idle keeps that task and takes its wave task when it
-    // next asks for one inside the release window.
-    void _ReleaseHeld(dictionary@ held, dictionary@ wave, array<IUnitTask@>@ aborted)
+    // Move up to `limit` held ids (all when negative) into the launch queue (and
+    // `wave` when given) and abort each distinct hold task once. Only DEFEND
+    // fighter tasks are aborted: a unit that is retreating or idle keeps that
+    // task and takes its wave task when it next asks for one inside the release
+    // window. Ids past the limit stay held; one that shared an aborted hold comes
+    // back idle, is not in the launch queue, and re-enters the hold.
+    void _ReleaseHeld(dictionary@ held, dictionary@ wave, array<IUnitTask@>@ aborted, int limit)
     {
         array<string>@ keys = held.getKeys();
+        int released = 0;
         for (uint i = 0; i < keys.length(); ++i) {
             int id = 0;
             if (!held.get(keys[i], id)) continue;
             CCircuitUnit@ u = ai.GetTeamUnit(id);
-            if (u is null) continue;
+            if (u is null) { held.delete(keys[i]); continue; }
+            if (limit >= 0 && released >= limit) continue;
+            ++released;
+            held.delete(keys[i]);
             launchQueue.set(keys[i], id);
             if (wave !is null) wave.set(keys[i], id);
 
@@ -474,7 +659,6 @@ namespace AirWaves {
             aborted.insertLast(t);
             t.Abort();
         }
-        held.deleteAll();
     }
 
     bool _ContainsTask(array<IUnitTask@>@ list, IUnitTask@ t)
@@ -540,7 +724,7 @@ namespace AirWaves {
     int _Clamp(int size)
     {
         const int lo = Global::RoleSettings::Air::BomberWaveFirstSize;
-        const int hi = Global::RoleSettings::Air::BomberWaveMaxSize;
+        const int hi = BomberStock::WaveCap(Global::RoleSettings::Air::BomberWaveMaxSize);   // 40 late
         if (size < lo) size = lo;
         if (size > hi) size = hi;
         return size;
@@ -563,26 +747,50 @@ namespace AirWaves {
         if (!IsEnabled() || factory is null) return null;
         if (Economy::GetMinMetalIncomeLast10s() < Global::RoleSettings::Air::BomberWaveProductionMetalIncome) return null;
 
-        const int bombers = int(heldBombers.getSize());
-        const int fighters = int(heldFighters.getSize());
-        const int required = Required();
+        // With BomberStock on, the bombers wait in its park, not in heldBombers,
+        // so count those against its wave size. Otherwise heldBombers stays 0,
+        // every call orders another bomber, and nothing past this step (the
+        // factory weights, which include Tyrannus) is ever built.
+        const bool stock = BomberStock::IsEnabled();
+        const int bombers = stock ? BomberStock::LiveCount() : int(heldBombers.getSize());
+        const int required = stock ? BomberStock::WaveSize() : Required();
+        const int fighters = FighterPoolCount();
         const int targetFighters = FightersFor(required);
 
+        // Metal-starved (RoleAir METAL-STARVED MODE): bombers only, no escorts.
+        const bool starved = RoleAir::Air_IsMetalStarved();
         string name = "";
-        if (fighters < FightersFor(bombers) && fighters < targetFighters) {
+        bool isWaveBomber = false;
+        if (!starved && fighters < FightersFor(bombers) && fighters < targetFighters) {
             name = UnitHelpers::GetT2FighterForSide(side);      // escort lags the bombers
         } else if (bombers < required) {
             name = UnitHelpers::GetT2WaveBomberForSide(side);
-        } else if (fighters < targetFighters) {
+            isWaveBomber = true;
+            // Armada: once average metal income reaches LicheMinMetalIncome, every
+            // LicheEveryNthBomber-th wave bomber is a Liche (7 Blizzards + 1 Liche).
+            // armliche is in GetAllT2WaveBombers, so BomberStock parks and counts it
+            // with the rest of the wave.
+            const int everyNth = Global::RoleSettings::Air::LicheEveryNthBomber;
+            if (side == "armada" && everyNth > 0
+                && aiEconomyMgr.metal.income >= Global::RoleSettings::Air::LicheMinMetalIncome
+                && (armadaWaveBombersQueued + 1) % everyNth == 0)
+            {
+                CCircuitDef@ liche = ai.GetCircuitDef("armliche");
+                if (liche !is null && liche.IsAvailable(ai.frame)) name = "armliche";
+            }
+        } else if (!starved && fighters < targetFighters) {
             name = UnitHelpers::GetT2FighterForSide(side);
         }
         if (name.length() == 0) return null;
 
         CCircuitDef@ d = ai.GetCircuitDef(name);
         if (d is null || !d.IsAvailable(ai.frame)) return null;
-        GenericHelpers::LogUtil("[AIR][Waves] Production: " + name + " (held bombers=" + bombers
-            + "/" + required + " fighters=" + fighters + "/" + targetFighters + ")", 3);
-        return aiFactoryMgr.Enqueue(TaskS::Recruit(Task::RecruitType::FIREPOWER, Task::Priority::NORMAL, d, pos, 64.f));
+        GenericHelpers::LogUtil("[AIR][Waves] Production: " + name + " (" + (stock ? "stocked" : "held")
+            + " bombers=" + bombers + "/" + required + " fighters=" + fighters + "/" + targetFighters + ")",
+            name == "armliche" ? 2 : 3);
+        IUnitTask@ t = aiFactoryMgr.Enqueue(TaskS::Recruit(Task::RecruitType::FIREPOWER, Task::Priority::NORMAL, d, pos, 64.f));
+        if (t !is null && isWaveBomber && side == "armada") ++armadaWaveBombersQueued;
+        return t;
     }
 
     /**************************************************************************
@@ -597,11 +805,15 @@ namespace AirWaves {
         launchQueue.delete(key);
         waveBombers.delete(key);
         waveFighters.delete(key);
+        parkFighters.delete(key);
+        parkedFighters.delete(key);
+        groupQueue.delete(key);
     }
 
     void OnTaskRemoved(IUnitTask@ task)
     {
         if (task is null) return;
+        if (groupHoldTask is task) @groupHoldTask = null;
         if (waveTask !is null && waveTask is task) {
             @waveTask = null;
             GenericHelpers::LogUtil("[AIR][Waves] Wave " + waveIndex + " run over; survivors mop up on the native bomb task", 1);

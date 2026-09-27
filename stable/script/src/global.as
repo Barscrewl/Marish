@@ -246,6 +246,31 @@ namespace Global {
     }
 
     // Role-specific overrideable variables in a dedicated namespace
+    namespace BomberStock {
+        // Every T2 bomber built (UnitHelpers::GetAllT2WaveBombers) is counted,
+        // and while the count builds its def's main role and attribute are
+        // replaced with "support". At the current wave size of live counted
+        // bombers the defs get their regular role and attribute back (bomber /
+        // siege) and the batch is launched as an attack wave. See
+        // manager/bomber_stock.as.
+        bool Enabled = true;
+
+        // Wave N launches at FirstWaveSize + WaveSizeGrowth * (N - 1) live
+        // bombers - 5, 8, 11, 14, 17, 20 - then 20 every wave until the game
+        // ends (40 once the late-game lift opens, Air::LateBomberWaveMaxSize).
+        // A launch never takes more than MaxWaveSize; extras stay parked
+        // for the next wave. This is a per-wave size, not a limit on how many
+        // bombers the AI owns: the plant refills the stock after every launch.
+        int FirstWaveSize = 5;
+        int WaveSizeGrowth = 3;
+        int MaxWaveSize = 20;
+
+        // Upper bound on how long the defs stay on their regular role after a
+        // launch while the released bombers re-task. The window closes early
+        // once every released bomber has taken its new task.
+        int ReleaseWindowSeconds = 12;
+    }
+
     namespace RoleSettings {        
         /******************** MEX UPGRADE PRIORITY ********************/
         // A mex upgrade is the best metal-per-metal available and spots are
@@ -831,6 +856,9 @@ namespace Global {
 
             // NukeLimit: maximum number of nukes allowed for AIR role
             int NukeLimit = 0;
+            // legbastion stays capped at 0 until the native average metal income
+            // (aiEconomyMgr.metal.income) reaches this. See Air_UpdateBastionGate.
+            float BastionMinAvgMetalIncome = 115.0f;
             /******************** AIR BASE SETTINGS ********************/
             // All settings applied to air role at game start, logic can change throughout game
             float AllyRange = 1600.0f;
@@ -869,24 +897,25 @@ namespace Global {
             // Mostly delegate economy to AI for air, but give it an early start
 
             //Continue building normal solars if ever below this energy income level
-            float SolarEnergyIncomeMinimum = 160.0f; 
+            float SolarEnergyIncomeMinimum = 300.0f;
 
             // T1 Energy converter policy (Air-specific thresholds)
             // Build converters while metal income is below this threshold
-            float BuildT1ConvertersUntilMetalIncome = 20.0f;
+            float BuildT1ConvertersUntilMetalIncome = 35.0f;
             // Require at least this much energy income
-            float BuildT1ConvertersMinimumEnergyIncome = 250.0f;
+            float BuildT1ConvertersMinimumEnergyIncome = 150.0f;
             // Require current energy to be at least this fraction of storage (e.g., 0.90 = 90%)
-            float BuildT1ConvertersMinimumEnergyCurrentPercent = 0.90f;
+            float BuildT1ConvertersMinimumEnergyCurrentPercent = 0.75f;
 
             //Continue building advanced solars if ever below this energy income level
             float AdvancedSolarEnergyIncomeMinimum = 1100.0f; 
 
             //Stop building advanced solar if above this energy income level
             float AdvancedSolarEnergyIncomeMaximum = 1200.0f; 
-            int AdvancedSolarEarliestSeconds = 5 * 60;
-            float AdvancedSolarMinimumMetalIncome = 15.0f;
-            float AdvancedSolarMinimumMetalCurrent = 250.0f;
+            // Barb4 has no timing gate here at all; keep only a small metal floor.
+            int AdvancedSolarEarliestSeconds = 0;
+            float AdvancedSolarMinimumMetalIncome = 6.0f;
+            float AdvancedSolarMinimumMetalCurrent = 100.0f;
 
             // Prefer cheap wind generators before advanced solar when CircuitAI's
             // effective average wind output exceeds BAR's good-wind threshold.
@@ -895,13 +924,87 @@ namespace Global {
             float CommanderWindEnergyIncomeTarget = 300.0f;
             float CommanderWindMinimumMetalCurrent = 80.0f;
 
+            // Eco crew: every T1 air constructor except the primary builds economy
+            // (converter, advanced solar, wind or solar) before it assists a factory
+            // project. See Air_TryEcoBuild.
+            bool EcoCrewEnabled = true;
+            // Seconds between two crew enqueues of the same building type, so several
+            // constructors spread over types instead of stacking one kind.
+            int EcoCrewCooldownSeconds = 6;
+            // Metal the crew leaves in store for the factory projects.
+            float EcoCrewMinMetalCurrent = 40.0f;
+
+            /******************** METAL-STARVED MODE (Air_UpdateEcoPriority) ********************/
+            // Starved from the moment the metal bank drops below EnterPercent of
+            // storage until it is back above ExitPercent. While starved, metal goes
+            // to wave bombers, fusions and AFUS only:
+            //   T2 plant  wave bombers and the T2 air constructor minimum; no T2
+            //             fighters or escorts, heavy air, T2 scouts, dynamic or
+            //             native fallback production (the plant waits instead)
+            //   T2 cons   straight to the reactor ladder (fusions to FusionsBeforeAFUS,
+            //             then AFUS) at NOW priority - the only priority native hands
+            //             to idle builders during a metal stall - no mex upgrade and
+            //             no advanced converters
+            //   porc      PREVENT: one structure per cluster, no budget bonus
+            // The T1 plant and the T1 constructors are unchanged.
+            /******************** ECO RETIREMENT (Air_UpdateEcoRetire) ********************/
+            // Lower-tier energy is reclaimed to free build room once what replaces
+            // it is up, and never built again: winds and solars once
+            // RetireWindSolarAtFusions fusions have finished, advanced solars at
+            // RetireAdvSolarAtFusions, T1 energy converters once
+            // RetireT1ConvertersAtAdvConverters advanced converters have finished.
+            // Each step latches. Up to EcoRetireConcurrentReclaims reclaim tasks run
+            // at once; one nobody takes expires after EcoRetireReclaimTimeoutSeconds
+            // and is queued again.
+            bool EcoRetireEnabled = true;
+            int RetireWindSolarAtFusions = 1;
+            int RetireAdvSolarAtFusions = 2;
+            int RetireT1ConvertersAtAdvConverters = 2;
+            int EcoRetireConcurrentReclaims = 3;
+            int EcoRetireReclaimTimeoutSeconds = 60;
+
+            bool EcoPriorityEnabled = true;
+            float EcoPriorityEnterPercent = 0.10f;
+            float EcoPriorityExitPercent = 0.20f;
+            int EcoPriorityFactoryWaitSeconds = 5;
+            // Crew wind on good-wind maps: up to this many, below this energy income.
+            int EcoCrewWindMaxCount = 24;
+            float EcoCrewWindEnergyIncomeTarget = 600.0f;
+
+            // Post-T2 reactor ladder (ReactorLadder::TryT2Economy, shared with FRONT). Fusion is uncapped for AIR
+            // and advanced fusion is capped at MaxAdvancedFusionReactors; the ladder
+            // only orders them:
+            //   1. FusionsBeforeAFUS fusions (from MinimumMetalIncomeForFUS average income)
+            //   2. the first AFUS, once those fusions are finished - AFUS stays capped
+            //      at 0 until then so native energy tasks cannot jump the queue
+            //   3. more AFUS whenever energy is below AdvConverterEnergyPercent of
+            //      storage, advanced converters whenever it is above; the second AFUS
+            //      is queued as soon as the first is finished
+            //   4. once ReclaimFusionsAtAFUSCount AFUS exist (the second counts from
+            //      the moment its nanoframe is down), the tracked fusions are
+            //      reclaimed one at a time to fund it
+            float MinimumMetalIncomeForFUS = 18.0f;
+            int FusionsBeforeAFUS = 2;
+            int ReclaimFusionsAtAFUSCount = 2;
+            int MaxAdvancedFusionReactors = 20;
+            float AdvConverterEnergyPercent = 0.80f;
+            // Advanced converter ceiling per finished reactor (fusion ~1000 E,
+            // AFUS ~3000 E, a converter draws ~600 E).
+            int AdvConvertersPerFusion = 1;
+            int AdvConvertersPerAFUS = 4;
+
             /******************** T2 AIRCRAFT PLANT THRESHOLDS (AIR role) ********************/
             // Economy thresholds and caps for building a T2 Aircraft Plant when in AIR role
             // Defaults mirror TECH thresholds but are scoped to AIR so air.as does not reference TECH settings.
             float RequiredMetalIncomeForT2AircraftPlant = 30.0f;
             float RequiredMetalCurrentForT2AircraftPlant = 50.0f;
             float RequiredEnergyIncomeForT2AircraftPlant = 1200.0f;
-            int MaxT2AircraftPlants = 1;
+            // Extra advanced aircraft plants by native average metal income: the second
+            // at 100, the third at 200, never more than MaxT2AircraftPlants. Enforced
+            // as the def cap (Air_UpdateT2PlantCap), so native factory tasks obey it too.
+            int MaxT2AircraftPlants = 3;
+            float SecondT2AircraftPlantMetalIncome = 100.0f;
+            float ThirdT2AircraftPlantMetalIncome = 200.0f;
 
             /******************** PORC: AIR DENIAL ********************/
             // AIR porcs earlier, harder, and for the whole team. Global::Porc
@@ -957,13 +1060,13 @@ namespace Global {
             // Reserves-based nano condition threshold
             float NanoBuildWhenOverMetal = 1000.0f;
 
-            // Maximum staged T1 air-constructor target. When enabled, the first
-            // is unconditional; later constructors require the thresholds below.
+            // T1 air constructors, Barb4-style: the first is unconditional, then
+            // MinT1AirConstructorCount outright and one per T1AirConstructorPerMetalIncome
+            // of (10 s minimum) metal income, up to MaxT1AirConstructorCount, held back
+            // only by an energy stall. Primary and secondary aside, the rest form the eco crew.
             int MinT1AirConstructorCount = 3;
-            float SecondT1AirConstructorMetalIncome = 8.0f;
-            float SecondT1AirConstructorEnergyIncome = 160.0f;
-            float ThirdT1AirConstructorMetalIncome = 18.0f;
-            float ThirdT1AirConstructorEnergyIncome = 300.0f;
+            float T1AirConstructorPerMetalIncome = 5.0f;
+            int MaxT1AirConstructorCount = 8;
 
             // Maximum staged T2 air-constructor target. When enabled, the first
             // is unconditional.
@@ -973,6 +1076,11 @@ namespace Global {
 
             // Minimum number of air scouts to maintain globally for early map vision
             int MinAirScoutCount = 1;
+            // After the opener, one air scout every this many seconds for the whole
+            // game (0 = off), skipped while MaxAliveAirScouts are still alive.
+            // See Air_TryAirScout.
+            int ScoutIntervalSeconds = 4 * 60;
+            int MaxAliveAirScouts = 4;
 
             // Small economy-gated interception reserve. Dynamic/native production
             // handles additional air-defense demand.
@@ -994,6 +1102,10 @@ namespace Global {
             int T1StrikeOpenerSize = 3;
             float T1StrikeOpenerMinimumMetalIncome = 12.0f;
             float T1StrikeOpenerMinimumEnergyIncome = 250.0f;
+            // Until the first T2 aircraft plant is finished, each T1 bomber / gunship
+            // def (armthund, armkam, corshad, corbw, legmos, legcib, legkam) is capped
+            // at this many alive; then the caps go back. See Air_UpdateT1StrikeCap.
+            int T1StrikeCapBeforeT2 = 3;
 
             /******************** T2 BOMBER WAVES ********************/
             // T1 bombers keep the native trickle (each bomber attacks as it is built).
@@ -1001,14 +1113,31 @@ namespace Global {
             // together in waves that grow from FirstSize towards MaxSize. The sizing
             // algorithm and the native primitives are documented in manager/air_waves.as.
             bool BomberWavesEnabled = true;
-            int BomberWaveFirstSize = 20;          // bombers in the first wave, and the floor
-            int BomberWaveMaxSize = 300;           // hard cap on bombers per wave
+            int BomberWaveFirstSize = 10;          // bombers in the first wave, and the floor
+            int BomberWaveMaxSize = 20;            // hard cap on bombers per launch (stock or held)
+            // Late-game lift: 20-bomber waves die to mature AA before they reach
+            // anything. From LateBomberWaveMinutes on, once the average metal income
+            // (aiEconomyMgr.metal.income) reaches LateBomberWaveMetalIncome, both wave
+            // caps - BomberWaveMaxSize and Global::BomberStock::MaxWaveSize - rise to
+            // LateBomberWaveMaxSize. Latches: a later dip does not shrink the waves.
+            // See BomberStock::WaveCap.
+            int LateBomberWaveMinutes = 45;
+            float LateBomberWaveMetalIncome = 400.0f;
+            int LateBomberWaveMaxSize = 40;
             float BomberWaveFighterRatio = 1.0f;   // fighters held per bomber before a launch
             // Escorts do not soak AA (bombers are AA's first priority), so they
             // are only worth delaying a wave for when the enemy flies. Below the
             // first figure no escort is held; at the second the full ratio is.
             float EscortMinEnemyAirCost = 300.0f;
             float EscortFullEnemyAirCost = 3000.0f;
+            // New wave fighters park (out of AI control, holding position) until
+            // FighterGroupSize of them are waiting, then go into the fighter hold
+            // together as one squad. A hold engages enemy air inside our defence
+            // influence, and a lone fighter's hold did so on its own: on Baryon Tar
+            // Lake (2026-09-26) AIR lost roughly one Hawk per Hawk built and launched
+            // six waves with no escort. Parked fighters still go with a launching
+            // wave as escorts. 1 = no parking.
+            int FighterGroupSize = 4;
             // Growth applied to the previous wave size from its survival ratio, measured
             // EvaluateSeconds after launch: heavy losses mean the enemy anti-air is winning
             // and the next wave needs mass; light losses grow gently.
@@ -1058,11 +1187,24 @@ namespace Global {
             // STRIKE / DEEP target filter: statics at or above this cost, plus T3 ("heavy") mobiles.
             float WaveStrikeMinStaticCost = 2500.0f;
 
+            // Armada Liche in the waves: from this native average metal income, every
+            // LicheEveryNthBomber-th wave bomber is armliche (8 = 7 Blizzards + 1 Liche).
+            // 110 is where armaap's own factory.json weights (income_tier [50, 110])
+            // raise the Liche from 10% to 30%.
+            float LicheMinMetalIncome = 110.0f;
+            int LicheEveryNthBomber = 8;
+
             /******************** HEAVY AIR STRIKE POLICY (Legion/Cortex) ********************/
             // Maintain a bounded late-game heavy-air force for Legion/Cortex.
-            float T2HeavyAirIncomeThreshold = 250.0f;
+            // 100, not 250: the AIR role spent a whole Hotlips match at 50-150
+            // metal income (peak 261), so 250 never let a Tyrannus/Dragon through.
+            float T2HeavyAirIncomeThreshold = 100.0f;
             int T2HeavyAirTargetCount = 6;
-            int T2HeavyAirBatchPerFactory = 2;
+            // One heavy per heavy turn, and a heavy turn is one T2 production
+            // decision in this many; the rest go to the bomber waves (legphoenix /
+            // corhurc) and escorts. 1 = every turn, the old behaviour.
+            int T2HeavyAirBatchPerFactory = 1;
+            int T2HeavyAirEveryNthTurn = 4;
 
             /******************** COMMANDER FACTORY ASSIST ********************/
             // Maximum time spent assisting the opening aircraft plant. Assistance

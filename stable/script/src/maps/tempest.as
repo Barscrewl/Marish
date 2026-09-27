@@ -38,7 +38,7 @@ namespace Tempest {
 		hoverSeaLimits.set("armvp", 0);
 		hoverSeaLimits.set("corvp", 0);
 		hoverSeaLimits.set("legvp", 0);
-		roleUnitLimits.set("HOVER_SEA", @hoverSeaLimits);
+		roleUnitLimits.set("TACTICAL", @hoverSeaLimits);
 		return roleUnitLimits;
 	}
 
@@ -85,7 +85,7 @@ namespace Tempest {
 		dictionary hoverSeaLeg; hoverSeaLeg.set("legfhp",4);  hoverSeaLeg.set("leghp",4);  hoverSeaLeg.set("legsy",4);
 
 		dictionary hoverSeaRole; hoverSeaRole.set("armada", @hoverSeaArm); hoverSeaRole.set("cortex", @hoverSeaCor); hoverSeaRole.set("legion", @hoverSeaLeg);
-		root.set("HOVER_SEA", @hoverSeaRole);
+		root.set("TACTICAL", @hoverSeaRole);
 
 		// TECH role
 		dictionary techArm; techArm.set("armlab",4);

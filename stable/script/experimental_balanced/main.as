@@ -99,7 +99,9 @@ namespace Main {
 			Global::profileController.MainUpdate();
 		}
 		Team::Roster::Update();  // announce ourselves to allied BARb instances until the roster is complete
+		Builder::FlushAborts();  // tasks refused inside AiMakeTask: aborted here, outside any task callback
 		Spam::Update();          // economy-gated spam: activation, focus rotation
+		BomberStock::Update();   // T2 bombers: parked until the wave size, then launched together
 		Team::Ferry::Update();   // transport ferry: hand-over on arrival, run polling
 		Team::SeaAssist::Update();  // SEA seeds a TACTICAL ally with a construction ship
 		Team::Donation::Update();   // a teammate without T2 asks TECH for a constructor
@@ -116,6 +118,16 @@ namespace Main {
 		if (!Commands::Handle(data)) {
 			GenericHelpers::LogUtil("[AI][LuaMessage] ignored: " + data, 3);
 		}
+	}
+
+	void AiUnitFinished(CCircuitUnit@ unit)  // every team unit, structures included, once finished
+	{
+		RoleAir::Air_OnUnitFinished(unit);   // finished fusion / AFUS / converter ids for AIR (reactor ladder, eco retirement)
+	}
+
+	void AiUnitDestroyed(CCircuitUnit@ unit)
+	{
+		RoleAir::Air_OnUnitDestroyed(unit);
 	}
 
 	//Use this to modify global.as and apply difficulty/profile settings

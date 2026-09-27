@@ -1755,7 +1755,12 @@ namespace Builder {
 		return t;
 	}
 
-	IUnitTask@ EnqueueAFUS(const string &in unitSide, const AIFloat3 &in anchor, float squareSize, int timeoutFrames)
+	// prio / expireWhenAbandoned: AIR's reactor ladder (manager/reactor_ladder.as). With
+	// the default timeout of 0 an AFUS task nobody picks up never expires, and while it
+	// stands IsAdvancedFusionBuildQueued() refuses every later one; the ladder asks for
+	// it to expire after timeoutFrames unassigned. Every other caller is unchanged.
+	IUnitTask@ EnqueueAFUS(const string &in unitSide, const AIFloat3 &in anchor, float squareSize, int timeoutFrames,
+			Task::Priority prio = Task::Priority::NORMAL, bool expireWhenAbandoned = false)
 	{
 		// Never start if any Advanced Fusion is already queued
 		if (IsAdvancedFusionBuildQueued()) {
@@ -1772,7 +1777,8 @@ namespace Builder {
 		GenericHelpers::LogUtil("[BUILDER] Enqueue AFUS at (" + anchor.x + "," + anchor.z + ") repr=" + (afus is null ? "<null>" : afus.GetName()), 2);
 
 		IUnitTask@ t = aiBuilderMgr.Enqueue(
-			TaskB::Common(Task::BuildType::ENERGY, Task::Priority::NORMAL, afus, anchor, /*shake*/ SQUARE_SIZE * 32, /*active*/ true, /*timeout*/ 0)
+			TaskB::Common(Task::BuildType::ENERGY, prio, afus, anchor, /*shake*/ SQUARE_SIZE * 32, /*active*/ true,
+				/*timeout*/ expireWhenAbandoned ? AiMax(timeoutFrames, 0) : 0)
 			//TaskB::Factory(Task::Priority::NOW, afus, anchor, afus, squareSize, false, true, timeoutFrames)
 		);
 		GenericHelpers::LogUtil("[BUILDER] Enqueue AFUS result=" + (t is null ? "null" : "ok"), 2);
@@ -1839,7 +1845,9 @@ namespace Builder {
 		return t;
 	}
 
-	IUnitTask@ EnqueueFUS(const string &in unitSide, const AIFloat3 &in anchor, float squareSize, int timeoutFrames, Task::Priority prio = Task::Priority::NORMAL)
+	// expireWhenAbandoned: see EnqueueAFUS.
+	IUnitTask@ EnqueueFUS(const string &in unitSide, const AIFloat3 &in anchor, float squareSize, int timeoutFrames,
+			Task::Priority prio = Task::Priority::NORMAL, bool expireWhenAbandoned = false)
 	{
 		// Never start if any Fusion is already queued
 		if (IsFusionBuildQueued()) {
@@ -1856,7 +1864,8 @@ namespace Builder {
 		GenericHelpers::LogUtil("[BUILDER] Enqueue FUS at (" + anchor.x + "," + anchor.z + ") repr=" + (fus is null ? "<null>" : fus.GetName()), 2);
 
 		IUnitTask@ t = aiBuilderMgr.Enqueue(
-			TaskB::Common(Task::BuildType::ENERGY, prio, fus, anchor, /*shake*/ SQUARE_SIZE * 32, /*active*/ true, /*timeout*/ 0)
+			TaskB::Common(Task::BuildType::ENERGY, prio, fus, anchor, /*shake*/ SQUARE_SIZE * 32, /*active*/ true,
+				/*timeout*/ expireWhenAbandoned ? AiMax(timeoutFrames, 0) : 0)
 			//TaskB::Factory(Task::Priority::NOW, fus, anchor, fus, squareSize, false, true, timeoutFrames)
 		);
 		GenericHelpers::LogUtil("[BUILDER] Enqueue FUS result=" + (t is null ? "null" : "ok"), 2);
@@ -2339,6 +2348,8 @@ namespace Builder {
 
 	void AiTaskRemoved(IUnitTask@ task, bool done)
 	{
+		_TakeHandle(@abortQueue, task);       // ended on its own, or by FlushAborts: nothing left to abort
+		ReactorLadder::OnTaskRemoved(task);   // AIR's fusion reclaim, one at a time (manager/reactor_ladder.as)
 		{
 			IBuilderTask@ mexTask = cast<IBuilderTask>(task);
 			if (mexTask !is null) {
@@ -3278,7 +3289,64 @@ namespace Builder {
 
 	void AiSave(OStream& ostream)
 	{
-	
+
+	}
+
+	/******************************************************************************
+
+	DEFERRED ABORT
+
+	Never Abort() a task from inside AiMakeTask or anything it calls. The engine
+	calls AiMakeTask while it assigns or re-evaluates that builder
+	(IBuilderTask::Reevaluate hides the builder, asks, then touches its current
+	task again), and the default task it offers can be that very task. Aborting
+	it there frees the task the engine is still using: an access violation in
+	SkirmishAI.dll, same address and stack in three sessions on 2026-09-26, each
+	right after a script abort inside AiMakeTask (gantry re-placement, and TECH's
+	placement guard on Salt Reef, f=71804).
+
+	AbortLater queues the task instead, and FlushAborts (Main::AiUpdate, every
+	30 frames, outside any task callback) aborts it. Until then it may be handed
+	out again; callers check IsAbortQueued and give a short wait. A queued task
+	that ends on its own is dropped in AiTaskRemoved, so no handle outlives its
+	task. Used by AIR (retired-structure filter, commander wind task).
+
+	******************************************************************************/
+	array<IUnitTask@> abortQueue;
+
+	// Remove `t` from `list` if present; true when it was there.
+	bool _TakeHandle(array<IUnitTask@>@ list, IUnitTask@ t)
+	{
+		if (t is null) return false;
+		for (uint i = 0; i < list.length(); ++i) {
+			if (list[i] is t) { list.removeAt(i); return true; }
+		}
+		return false;
+	}
+
+	bool IsAbortQueued(IUnitTask@ t)
+	{
+		if (t is null) return false;
+		for (uint i = 0; i < abortQueue.length(); ++i) {
+			if (abortQueue[i] is t) return true;
+		}
+		return false;
+	}
+
+	void AbortLater(IUnitTask@ t)
+	{
+		if (t is null || IsAbortQueued(t)) return;
+		abortQueue.insertLast(t);
+	}
+
+	// Main::AiUpdate.
+	void FlushAborts()
+	{
+		while (abortQueue.length() > 0) {
+			IUnitTask@ t = abortQueue[abortQueue.length() - 1];
+			abortQueue.removeLast();
+			if (t !is null) t.Abort();
+		}
 	}
 
 }  // namespace Builder
