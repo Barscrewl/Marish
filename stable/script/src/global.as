@@ -269,6 +269,10 @@ namespace Global {
         // launch while the released bombers re-task. The window closes early
         // once every released bomber has taken its new task.
         int ReleaseWindowSeconds = 12;
+
+        // A stock that has not grown for this long launches what it holds, as long
+        // as that is at least the last wave's size (FirstWaveSize before the first).
+        int StallLaunchSeconds = 60;
     }
 
     namespace RoleSettings {        

@@ -68,6 +68,18 @@ namespace BomberStock {
     int releaseUntilFrame = -1;
     int waveIndex = 0;           // waves launched so far
 
+    // Stall launch: the stock launches what it holds once it has not grown for
+    // Global::BomberStock::StallLaunchSeconds and holds at least the last wave's
+    // size. Supreme Isthmus 2026-09-27: at 45 min the wave rose to 40, the stock
+    // stopped at 35 (the plants built only fighters, which kept dying) and no
+    // wave launched for the rest of the game.
+    int stallBest = 0;           // highest live count since the last growth
+    int stallSinceFrame = -1;    // frame of that growth
+    int lastLaunched = 0;        // bombers in the last wave
+    int stockLost = 0;           // stocked bombers removed (killed) while waiting; AirWaves status reads it
+
+    int TakeStockLost() { const int n = stockLost; stockLost = 0; return n; }
+
     // A wave cap: `normalCap` (20), or Air::LateBomberWaveMaxSize (40) once the
     // late-game lift is open - LateBomberWaveMinutes in and the average metal
     // income at LateBomberWaveMetalIncome. Latched. Shared with AirWaves.
@@ -271,7 +283,15 @@ namespace BomberStock {
 
         _ParkIdle();
         const int live = _LiveCount();
-        if (live >= WaveSize()) _Release(live);
+        if (live >= WaveSize()) { _Release(live, "REACHED"); return; }
+
+        // Stall launch (see stallBest).
+        if (live > stallBest || stallSinceFrame < 0) { stallBest = live; stallSinceFrame = ai.frame; }
+        const int minStall = (lastLaunched > 0) ? lastLaunched : Global::BomberStock::FirstWaveSize;
+        if (live >= minStall && live > 0
+            && ai.frame - stallSinceFrame >= Global::BomberStock::StallLaunchSeconds * SECOND) {
+            _Release(live, "STALLED (no growth for " + Global::BomberStock::StallLaunchSeconds + " s) at");
+        }
     }
 
     void _PruneReleasing()
@@ -283,11 +303,14 @@ namespace BomberStock {
         }
     }
 
-    void _Release(int live)
+    void _Release(int live, const string &in why)
     {
         const int size = WaveSize();   // this wave's size, before waveIndex moves on
         ++waveIndex;
-        GenericHelpers::LogUtil("[AIR][Stock] ===== REACHED " + live + "/" + size
+        lastLaunched = (live < size) ? live : size;
+        stallBest = 0;
+        stallSinceFrame = -1;
+        GenericHelpers::LogUtil("[AIR][Stock] ===== " + why + " " + live + "/" + size
             + " live stocked bombers at frame " + ai.frame + " (wave " + waveIndex + "; next wave "
             + WaveSize() + ") =====", 1);
 
@@ -333,6 +356,7 @@ namespace BomberStock {
     {
         if (u is null) return;
         const string key = "" + u.id;
+        if (stocked.exists(key)) ++stockLost;
         stocked.delete(key);
         parked.delete(key);
         releasing.delete(key);

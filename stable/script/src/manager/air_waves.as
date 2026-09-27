@@ -536,10 +536,35 @@ namespace AirWaves {
     /**************************************************************************
      Main update (Air_MainUpdate, every 30 frames).
      **************************************************************************/
+    // ---- status line (level 1, once a minute) ----
+    // Production and fighter losses are not otherwise visible at LOG_LEVEL 1; this
+    // is what answers "why did the stock not grow" from a game log.
+    int statusPoolFightersLost = 0;   // fighters removed while waiting / in the hold
+    int statusEscortsLost = 0;        // fighters removed while escorting a wave
+    int statusLastFrame = -1;
+
+    void _LogStatus(int frame)
+    {
+        if (statusLastFrame >= 0 && frame - statusLastFrame < 60 * SECOND) return;
+        statusLastFrame = frame;
+        const bool stock = BomberStock::IsEnabled();
+        const int bombers = stock ? BomberStock::LiveCount() : int(heldBombers.getSize());
+        const int required = stock ? BomberStock::WaveSize() : Required();
+        GenericHelpers::LogUtil("[AIR][Waves] status: " + (stock ? "stock " : "held ") + bombers + "/" + required
+            + ", fighter pool " + FighterPoolCount() + " (hold " + heldFighters.getSize() + ", waiting "
+            + parkFighters.getSize() + ", group " + groupQueue.getSize() + ") needs " + FightersFor(bombers)
+            + ", escorts out " + waveFighters.getSize() + ", starved " + (RoleAir::Air_IsMetalStarved() ? "yes" : "no")
+            + "; lost in the last minute: pool fighters " + statusPoolFightersLost + ", escorts " + statusEscortsLost
+            + ", stocked bombers " + (stock ? BomberStock::TakeStockLost() : 0), 1);
+        statusPoolFightersLost = 0;
+        statusEscortsLost = 0;
+    }
+
     void Update()
     {
         if (!IsEnabled()) return;
         const int frame = ai.frame;
+        _LogStatus(frame);
         _UpdateFighterGroups();
         if (releaseUntilFrame >= 0 && frame > releaseUntilFrame) _EndRelease();
         if (!lastWaveEvaluated && lastLaunchFrame >= 0
@@ -804,6 +829,8 @@ namespace AirWaves {
     {
         if (u is null) return;
         const string key = "" + u.id;
+        if (heldFighters.exists(key) || parkFighters.exists(key) || groupQueue.exists(key)) ++statusPoolFightersLost;
+        if (waveFighters.exists(key)) ++statusEscortsLost;
         heldBombers.delete(key);
         heldFighters.delete(key);
         launchQueue.delete(key);
