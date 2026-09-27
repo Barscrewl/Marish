@@ -1,0 +1,63 @@
+// Mono-space font required
+{
+
+//########################################################################################################################
+//####|| Extra Units ||###################################################################################################
+//########################################################################################################################
+
+		"behaviour": {
+
+				//ARMADA
+
+			"armmeatball": {
+				"role": ["artillery"],
+				"attribute": ["melee"],
+				"retreat": 0.0,
+				"power": 5.0
+			},
+			"armassimilator": {
+				"role": ["skirmish"],
+				"attribute": ["melee"],
+				"retreat": 0.0,
+				"power": 5.0
+			},
+			"armgatet3": {
+				"role": ["static"],
+				"threat": {"air": 0.0, "surf": 0.0, "water": 0.0, "default": 0.0},
+				"power": 1.0
+			},
+			"armnanotct2": {
+				"role": ["support"],
+				"since": 900
+			},
+
+				//CORTEX
+
+			"corgatet3": {
+				"role": ["static"],
+				"threat": {"air": 0.0, "surf": 0.0, "water": 0.0, "default": 0.0},
+				"power": 1.0
+			},
+			"cornanotct2": {
+				"role": ["support"],
+				"since": 900
+			},
+
+				//LEGION
+
+			"leggatet3": {
+				"role": ["static"]
+			},
+			"legrwall": {
+				"role": ["static"],
+				"threat": {"air": 0.0, "surf": 0.0, "water": 0.0, "default": 0.0},
+				"power": 1.0
+			},
+			"legnanotct2": {
+				"role": ["support"],
+				"since": 900
+			}
+		}
+}
+	
+	

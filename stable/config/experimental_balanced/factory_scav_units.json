@@ -1,0 +1,43 @@
+// Mono-space font required
+{
+	"factory": {
+		"armapt3": {
+			"importance": [0.0, 1.0],
+			"require_energy": true,
+			"income_tier": [200],
+			"unit": ["armaca", "armthundt4", "armfepocht4", "armlichet4"],
+			"land": {
+				"tier0": [0.05, 0.35, 0.35, 0.25],
+				"tier1": [0.05, 0.30, 0.35, 0.30]
+			},
+			"air": {
+				"tier0": [0.05, 0.20, 0.60, 0.15],
+				"tier1": [0.05, 0.15, 0.65, 0.15]
+			},
+			"water": {
+				"tier0": [0.05, 0.35, 0.35, 0.25],
+				"tier1": [0.05, 0.30, 0.35, 0.30]
+			},
+			"caretaker": 12
+		},
+		"corapt3": {
+			"importance": [0.0, 1.0],
+			"require_energy": true,
+			"income_tier": [200],
+			"unit": ["coraca", "corcrwt4", "corfblackhyt4", "cordronecarryair"],
+			"land": {
+				"tier0": [0.05, 0.30, 0.45, 0.20],
+				"tier1": [0.05, 0.25, 0.50, 0.20]
+			},
+			"air": {
+				"tier0": [0.05, 0.50, 0.30, 0.15],
+				"tier1": [0.05, 0.55, 0.25, 0.15]
+			},
+			"water": {
+				"tier0": [0.05, 0.30, 0.45, 0.20],
+				"tier1": [0.05, 0.25, 0.50, 0.20]
+			},
+			"caretaker": 12
+		}
+	}
+}
