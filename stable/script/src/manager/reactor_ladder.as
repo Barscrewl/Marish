@@ -178,10 +178,15 @@ namespace ReactorLadder {
         GenericHelpers::LogUtil("[" + p.tag + "][Reactor] " + fusionIds.length() + " fusions finished: AFUS unlocked", 1);
     }
 
-    // Current task builds a fusion, AFUS or advanced converter (see header).
+    // Current task builds a fusion, AFUS or advanced converter, or reclaims the
+    // fusion (see header). The reclaim has a target and no buildDef, so without
+    // the first check re-evaluation handed its builder a mex upgrade, the reclaim
+    // expired unassigned and was queued again: All That Glitters 2026-09-27,
+    // "reclaiming fusion id=24414" five times over 15 000 frames, never done.
     bool IsOnLadderBuild(CCircuitUnit@ u)
     {
         if (u is null) return false;
+        if (fusionReclaimTask !is null && u.task is fusionReclaimTask) return true;
         IBuilderTask@ current = cast<IBuilderTask>(u.task);
         if (current is null || current.buildDef is null) return false;
         const string n = current.buildDef.GetName();
@@ -192,7 +197,8 @@ namespace ReactorLadder {
 
     IUnitTask@ TryReclaimFusion(const Params@ p)
     {
-        if (fusionReclaimTask !is null) return null;   // one at a time
+        // One at a time; a builder asking while it is queued helps with it.
+        if (fusionReclaimTask !is null) return fusionReclaimTask;
         for (uint i = 0; i < fusionIds.length(); ++i) {
             CCircuitUnit@ fus = ai.GetTeamUnit(fusionIds[i]);
             if (fus is null) continue;

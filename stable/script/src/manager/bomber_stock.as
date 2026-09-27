@@ -84,10 +84,16 @@ namespace BomberStock {
         return AiMax(normalCap, Global::RoleSettings::Air::LateBomberWaveMaxSize);
     }
 
-    // Size of the next wave: 5, 8, 11, ... (Global::BomberStock), capped.
+    // Size of the next wave: 5, 8, 11, ... (Global::BomberStock), raised to Cent's
+    // income floor (AirWaves::IncomeFloor, D-045: 50 bombers per 100 metal income),
+    // capped. His held waves already obeyed the floor; stocked waves did not, and
+    // launched 5 and 8 into 2821 and 11670 metal of AA with no survivors (All That
+    // Glitters 2026-09-27, income 121-300).
     int WaveSize()
     {
         int size = Global::BomberStock::FirstWaveSize + Global::BomberStock::WaveSizeGrowth * waveIndex;
+        const int floor = AirWaves::IncomeFloor();
+        if (size < floor) size = floor;
         const int cap = WaveCap(Global::BomberStock::MaxWaveSize);
         if (size > cap) size = cap;
         if (size < 1) size = 1;
