@@ -1039,7 +1039,9 @@ namespace Global {
             float LateExpansionShake = 384.0f;   // SQUARE_SIZE * 48
             int LateRingSlots = 6;
             // Build power first: nanos per T2 air plant beyond the income target.
-            int LateNanosPerT2Plant = 4;
+            // 8 (was 4): with the bank floating past 10 000, four per plant left
+            // the plants unable to spend it (All That Glitters 2026-09-27).
+            int LateNanosPerT2Plant = 8;
             // Then production: total T2 air plants allowed while floating.
             int LateMaxT2AircraftPlants = 3;
             // Then energy: one fusion per this much energy income shortfall, and

@@ -448,6 +448,8 @@ namespace RoleAir {
         g_airEcoCrewLastFrame.deleteAll();
         g_airLastScoutFrame = -1;
         g_airT2ProductionTurn = 0;
+        g_airLateNanoTasks.resize(0);
+        g_airLateNanoMisses = 0;
 
         // Apply AIR role settings
         aiTerrainMgr.SetAllyZoneRange(Global::RoleSettings::Air::AllyRange);
@@ -1577,6 +1579,7 @@ namespace RoleAir {
         }
         // The ladder's fusion reclaim is released in Builder::AiTaskRemoved.
         Air_OnReclaimTaskRemoved(task);
+        Air_OnLateNanoTaskRemoved(task, done);
     }
 
     void Air_BuilderAiUnitRemoved(CCircuitUnit@ unit, Unit::UseAs usage)
@@ -1647,6 +1650,46 @@ namespace RoleAir {
         return Air_ClampToMap(AIFloat3(c.x + dx * r, c.y, c.z + dz * r), Global::RoleSettings::Air::LateExpansionShake);
     }
 
+    // Late nanos. The anchor used to be ring slot `nanos`: when that site could not
+    // be built (unsafe, cliff, water - the nano task only searches within the
+    // nano's own build distance and falls back to a patrol), no nano was ever
+    // finished, `nanos` stayed 0 and the same slot was asked for again every
+    // couple of seconds for the rest of the game (All That Glitters 2026-09-27:
+    // "nano 1/12" from f=39225 on while AIR's bank rose from 4 700 to 13 000).
+    // Now each late nano that ends unbuilt moves the next one to the next anchor:
+    // the primary T2 air plant first - AIR floats metal because its plants cannot
+    // spend it, so a nano there assists production at once - then the ring slots.
+    array<IUnitTask@> g_airLateNanoTasks;
+    int g_airLateNanoMisses = 0;
+
+    AIFloat3 Air_LateNanoAnchor()
+    {
+        const int slots = (Global::RoleSettings::Air::LateRingSlots < 1) ? 1 : Global::RoleSettings::Air::LateRingSlots;
+        const int k = g_airLateNanoMisses % (slots + 1);
+        if (k == 0) {
+            const AIFloat3 plant = Factory::GetT2AirPlantPos();
+            if (plant.x >= 0.0f) return plant;
+        }
+        return Air_RingAnchor(k == 0 ? 0 : k - 1);
+    }
+
+    // Air_BuilderAiTaskRemoved.
+    void Air_OnLateNanoTaskRemoved(IUnitTask@ task, bool done)
+    {
+        if (task is null) return;
+        for (uint i = 0; i < g_airLateNanoTasks.length(); ++i) {
+            if (g_airLateNanoTasks[i] !is task) continue;
+            g_airLateNanoTasks.removeAt(i);
+            if (!done) {
+                ++g_airLateNanoMisses;
+                GenericHelpers::LogUtil("[AIR][Late] nano site unusable; next nano moves to anchor "
+                    + g_airLateNanoMisses % ((Global::RoleSettings::Air::LateRingSlots < 1 ? 1 : Global::RoleSettings::Air::LateRingSlots) + 1)
+                    + " (0 = T2 air plant, then ring slots)", 1);
+            }
+            return;
+        }
+    }
+
     IUnitTask@ Air_LateExpansion_AiMakeTask(CCircuitUnit@ u)
     {
         if (u is null || u.circuitDef is null) return null;
@@ -1666,8 +1709,9 @@ namespace RoleAir {
         //    ring so they stand where the new plants will be, not in the core.
         const int nanoTarget = (t2Plants < 1 ? 1 : t2Plants) * Global::RoleSettings::Air::LateNanosPerT2Plant;
         if (nanos < nanoTarget && nanos < Global::RoleSettings::Air::NanoMaxCount) {
-            IUnitTask@ t = Builder::EnqueueT1Nano(side, Air_RingAnchor(nanos), shake, 120 * SECOND, Task::Priority::NORMAL);
+            IUnitTask@ t = Builder::EnqueueT1Nano(side, Air_LateNanoAnchor(), shake, 120 * SECOND, Task::Priority::NORMAL);
             if (t !is null) {
+                g_airLateNanoTasks.insertLast(t);
                 GenericHelpers::LogUtil("[AIR][Late] nano " + (nanos + 1) + "/" + nanoTarget
                     + " (metal " + int(aiEconomyMgr.metal.current) + ", income " + int(mi) + ")", 1);
                 return Air_SetStrategicFocus(u, t);
