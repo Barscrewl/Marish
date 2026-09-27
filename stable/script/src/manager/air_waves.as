@@ -763,7 +763,11 @@ namespace AirWaves {
         bool isWaveBomber = false;
         if (!starved && fighters < FightersFor(bombers) && fighters < targetFighters) {
             name = UnitHelpers::GetT2FighterForSide(side);      // escort lags the bombers
-        } else if (bombers < required) {
+        } else if (bombers < required || stock) {
+            // With BomberStock the plant never stops at the wave size: extras stay
+            // parked for the next wave. Stopping sent the plant to the native
+            // DefaultMakeTask for the up-to-30 frames before the stock launched,
+            // and that is usually a 3 s TaskS::Wait - idle plants with a full bank.
             name = UnitHelpers::GetT2WaveBomberForSide(side);
             isWaveBomber = true;
             // Armada: once average metal income reaches LicheMinMetalIncome, every
