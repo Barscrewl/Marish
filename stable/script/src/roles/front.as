@@ -779,6 +779,9 @@ namespace RoleFront {
         if (energyIncome > Global::RoleSettings::Front::NanoEnergyIncomeThresholdForMax) {
             nanoCap = Global::RoleSettings::Front::NanoMaxCount;
         }
+        // Turrets queued on capped metal (manager/build_power.as) stay buildable.
+        const int buildPowerFloor = BuildPower::CapFloor();
+        if (nanoCap < buildPowerFloor) nanoCap = buildPowerFloor;
         array<string> nanos = UnitHelpers::GetT1NanoUnitNames();
         UnitHelpers::BatchApplyUnitCaps(nanos, nanoCap);
     }
@@ -1003,11 +1006,11 @@ namespace RoleFront {
     The default land order spends a defence point's budget (amountFactor 32-48 x
     income, ~960-2400 metal at +30 to +50) on a Sentry, an AA, two or three
     Beamers and then a 440-480 metal HLT; the Dragon's Claw / Maw are not in the
-    order at all, and Legion's Dragon's Jaw sits at an index the order never uses,
+    order at all, and Legion's Dragon's Jaw is only its 14th, 24th and 25th entry,
     so Legion opened on Hives (7500 energy each).
 
     FRONT's land chain now opens on the mid-tier pieces that income can buy: the
-    first six default entries (LLT, AA, 3 x HLLT, HLT) become eight, cumulative
+    first six default entries (LLT, AA, HLLT, HLLT, HLT, HLLT) become eight, cumulative
     metal in brackets:
       Armada  Sentry, Beamer, Dragon's Claw, AA, Beamer, Beamer, Dragon's Claw, HLT  (1855)
       Cortex  Guard, Twin Guard, Dragon's Maw, AA, Twin Guard, Twin Guard, Dragon's Maw, HLT  (1815)
@@ -1047,6 +1050,44 @@ namespace RoleFront {
             + chain.length() + " total)", 1);
     }
 
+    /******************************************************************************
+
+    BASE PORC (AiMakeDefenceHandler)
+
+    The opening above is only walked where native DefaultMakeDefence walks the
+    whole order. In mode AUTO it does that only at clusters its own heuristic
+    calls front line - rich clusters MORE than 1000 from the base, clusters with
+    two threatened neighbours, clusters outside our influence - and every other
+    cluster takes `porcupine.prevent` (1) entry: the Sentry / Guard / Pharos.
+    The shared policy stays in AUTO until pressure (10 min) or the late game
+    (25 min, or +120 metal and +1500 energy), so through the rush window FRONT's
+    own base clusters got one LLT each and no Beamer, Twin Guard or Dragon's Jaw.
+
+    From BasePorcFromMinutes, a cluster within BasePorcRadius of the start asks
+    the shared policy for FULL, so the base walks the opening as far as the
+    budget (amountFactor x income) reaches. Other clusters, and any cluster
+    while energy is stalling, keep the shared policy unchanged.
+
+    ******************************************************************************/
+    void Front_AiMakeDefence(int cluster, const AIFloat3& in pos)
+    {
+        // Same opening gate as the handler-less path in Military::AiMakeDefence.
+        if (!((ai.frame > 10 * MINUTE) || (aiEconomyMgr.metal.income > 10.f) || (aiEnemyMgr.mobileThreat > 0.f))) return;
+        const AIFloat3 start = Global::Map::StartPos;
+        const float dx = pos.x - start.x, dz = pos.z - start.z;
+        const float r = Global::RoleSettings::Front::BasePorcRadius;
+        const bool baseCluster = Global::Map::HasStart && (dx * dx + dz * dz <= r * r);
+        const bool forceFull = baseCluster && !aiEconomyMgr.isEnergyStalling
+            && ai.frame >= Global::RoleSettings::Front::BasePorcFromMinutes * MINUTE;
+        if (forceFull && !g_frontBasePorcLogged) {
+            g_frontBasePorcLogged = true;
+            GenericHelpers::LogUtil("[Porc] FRONT: base cluster " + cluster + " walks the whole order (FULL) from here on, within "
+                + int(r) + " of the start", 1);
+        }
+        Military::Porc::MakeDefence(cluster, pos, forceFull);
+    }
+    bool g_frontBasePorcLogged = false;
+
     void Register() {
         if (RoleConfigs::Get(AiRole::FRONT) !is null) return; // already
         RoleConfig@ cfg = RoleConfig(AiRole::FRONT, cast<MainUpdateDelegate@>(@Front_MainUpdate));
@@ -1076,6 +1117,7 @@ namespace RoleFront {
 
         @cfg.RoleMatchHandler = cast<RoleMatchDelegate@>(@Front_RoleMatch);
         @cfg.PorcChainHandler = cast<PorcChainDelegate@>(@Front_PorcChain);
+        @cfg.AiMakeDefenceHandler = cast<AiMakeDefence@>(@Front_AiMakeDefence);
 
         RoleConfigs::Register(cfg);
     }

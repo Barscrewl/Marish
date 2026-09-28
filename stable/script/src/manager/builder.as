@@ -17,6 +17,7 @@
 #include "ferry.as"
 #include "layout.as"
 #include "sea_assist.as"
+#include "build_power.as"
 
 namespace Builder {
 	// CCircuitUnit is registered as asOBJ_NOCOUNT (see InitScript.cpp).
@@ -2350,6 +2351,7 @@ namespace Builder {
 	{
 		_TakeHandle(@abortQueue, task);       // ended on its own, or by FlushAborts: nothing left to abort
 		ReactorLadder::OnTaskRemoved(task);   // AIR's fusion reclaim, one at a time (manager/reactor_ladder.as)
+		BuildPower::OnTaskRemoved(task, done);   // turrets queued on capped metal (manager/build_power.as)
 		{
 			IBuilderTask@ mexTask = cast<IBuilderTask>(task);
 			if (mexTask !is null) {

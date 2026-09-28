@@ -95,6 +95,31 @@ namespace Global {
         float ExcessMetalBudgetMod = 2.0f;
     }
 
+    // Build power on capped metal, see manager/build_power.as. While the metal
+    // bank sits full - from income or from metal traded in by teammates -
+    // construction turrets are added at the factories until it drains.
+    namespace BuildPower {
+        bool Enabled = true;
+        bool SkipTech = true;            // TECH's eco planner owns its build power; D-106 shares its surplus
+        int MinMinutes = 3;
+        int IntervalSeconds = 6;         // one step at most this often
+        float CapFill = 0.85f;           // bank / storage at which metal counts as capping
+        float ReleaseFill = 0.60f;       // below this the capped stretch ends
+        int SustainSeconds = 20;         // capped this long before the first turret
+        float TargetFill = 0.50f;        // the bank above this is drained over DrainSeconds
+        int DrainSeconds = 120;
+        float MetalPerNano = 8.0f;       // metal/s one 200 build power turret spends
+        int MaxPerStep = 2;
+        int MaxInFlight = 3;             // our turret tasks queued at once
+        int MaxNanos = 60;               // all T1 turrets, ours and the roles'
+        float MinEnergyFill = 0.25f;     // no turrets below this energy fill, or while stalling
+        int NanosPerT1Factory = 6;       // ours per factory, on top of the roles' own
+        int NanosPerT2Factory = 12;
+        int NanosPerGantry = 16;
+        int TaskTimeoutSeconds = 120;
+        int MissRestSeconds = 90;        // a factory whose turret ended unbuilt is skipped this long
+    }
+
     // Spam: economy-gated mass production on parallel routes, see manager/spam.as
     // and doc/spam-routes.md. Units need "attribute": ["spam"] in behaviour.json.
     // Air transport ferry (Team::Ferry, manager/ferry.as). AIR builds one
@@ -271,8 +296,12 @@ namespace Global {
         int ReleaseWindowSeconds = 12;
 
         // A stock that has not grown for this long launches what it holds, as long
-        // as that is at least the last wave's size (FirstWaveSize before the first).
+        // as that is at least the last wave's size (FirstWaveSize before the first)
+        // and StallLaunchMinPercent of the current wave size. Without the second
+        // floor a stall sent 5, 6, 8 and 9 bombers at a wave size of 20 (Supreme
+        // Isthmus 2026-09-27, 23 500 - 77 500 metal of AA, no survivors in any).
         int StallLaunchSeconds = 60;
+        int StallLaunchMinPercent = 75;
     }
 
     namespace RoleSettings {        
@@ -1268,6 +1297,12 @@ namespace Global {
             float NanoEnergyIncomeThresholdForMax = 2000.0f;
             // Reserves-based nano condition threshold
             float NanoBuildWhenOverMetal = 1000.0f;
+
+            // Base porc (Front_AiMakeDefence): clusters this close to the start walk
+            // the whole porc order (the Beamer / Twin Guard / Dragon's Jaw opening)
+            // from this minute on, instead of the native heuristic's single LLT.
+            float BasePorcRadius = 1600.0f;
+            int BasePorcFromMinutes = 3;
 
             // Minimum constructor maintenance targets for factory recruitment
             int MinT1BotConstructorCount = 1;

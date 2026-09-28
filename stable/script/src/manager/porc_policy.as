@@ -152,18 +152,24 @@ namespace Porc {
     }
 
     // Set the native knobs for this visit, run the native placement, then the caretaker.
-    void MakeDefence(int cluster, const AIFloat3 &in pos)
+    // forceFull: a role's handler asks for the whole order at this cluster whatever
+    // the phase (FRONT's base clusters, roles/front.as); the budget rules still apply.
+    void MakeDefence(int cluster, const AIFloat3 &in pos, bool forceFull = false)
     {
         float budgetMod = 1.0f;
         string reason;
         const float metalIncome = Economy::GetMinMetalIncomeLast10s();
         const float energyIncome = Economy::GetMinEnergyIncomeLast10s();
         const bool energyStalling = aiEconomyMgr.isEnergyStalling;
-        const int mode = DecideMode(ai.frame, metalIncome, energyIncome, energyStalling,
-                                    aiMilitaryMgr.armyCost, EnemySurfaceArmyCostPerPlayer(),
-                                    aiEconomyMgr.metal.current, aiEconomyMgr.metal.storage,
-                                    aiEconomyMgr.energy.current, aiEconomyMgr.energy.storage,
-                                    budgetMod, reason);
+        int mode = DecideMode(ai.frame, metalIncome, energyIncome, energyStalling,
+                              aiMilitaryMgr.armyCost, EnemySurfaceArmyCostPerPlayer(),
+                              aiEconomyMgr.metal.current, aiEconomyMgr.metal.storage,
+                              aiEconomyMgr.energy.current, aiEconomyMgr.energy.storage,
+                              budgetMod, reason);
+        if (forceFull && mode != MODE_FULL) {
+            mode = MODE_FULL;
+            reason += ", FULL asked by the role";
+        }
         aiMilitaryMgr.porcMode = mode;
         aiMilitaryMgr.porcBudgetMod = budgetMod;
         GenericHelpers::LogUtil("[Porc] cluster=" + cluster + " mode=" + ModeName(mode) + " budgetMod=" + budgetMod

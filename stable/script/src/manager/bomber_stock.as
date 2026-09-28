@@ -70,9 +70,11 @@ namespace BomberStock {
 
     // Stall launch: the stock launches what it holds once it has not grown for
     // Global::BomberStock::StallLaunchSeconds and holds at least the last wave's
-    // size. Supreme Isthmus 2026-09-27: at 45 min the wave rose to 40, the stock
-    // stopped at 35 (the plants built only fighters, which kept dying) and no
-    // wave launched for the rest of the game.
+    // size and StallLaunchMinPercent of the wave size. Supreme Isthmus 2026-09-27:
+    // at 45 min the wave rose to 40, the stock stopped at 35 (the plants built
+    // only fighters, which kept dying) and no wave launched for the rest of the
+    // game. The next game (same map, same day) showed the other side: stalls at
+    // 5, 6, 8 and 9 of 20 each launched and none came back.
     int stallBest = 0;           // highest live count since the last growth
     int stallSinceFrame = -1;    // frame of that growth
     int lastLaunched = 0;        // bombers in the last wave
@@ -287,7 +289,9 @@ namespace BomberStock {
 
         // Stall launch (see stallBest).
         if (live > stallBest || stallSinceFrame < 0) { stallBest = live; stallSinceFrame = ai.frame; }
-        const int minStall = (lastLaunched > 0) ? lastLaunched : Global::BomberStock::FirstWaveSize;
+        int minStall = (lastLaunched > 0) ? lastLaunched : Global::BomberStock::FirstWaveSize;
+        const int ofWave = (WaveSize() * Global::BomberStock::StallLaunchMinPercent + 99) / 100;   // rounded up
+        if (minStall < ofWave) minStall = ofWave;
         if (live >= minStall && live > 0
             && ai.frame - stallSinceFrame >= Global::BomberStock::StallLaunchSeconds * SECOND) {
             _Release(live, "STALLED (no growth for " + Global::BomberStock::StallLaunchSeconds + " s) at");

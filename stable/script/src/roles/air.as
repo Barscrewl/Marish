@@ -1707,12 +1707,15 @@ namespace RoleAir {
 
         // 1. Build power. Nanos beyond the income-based target, anchored on the
         //    ring so they stand where the new plants will be, not in the core.
+        //    Queued late-nano tasks count too: counting only standing nanos queued
+        //    "nano 8/16" four times in 20 s (Supreme Isthmus 2026-09-27).
         const int nanoTarget = (t2Plants < 1 ? 1 : t2Plants) * Global::RoleSettings::Air::LateNanosPerT2Plant;
-        if (nanos < nanoTarget && nanos < Global::RoleSettings::Air::NanoMaxCount) {
+        const int nanosQueued = int(g_airLateNanoTasks.length());
+        if (nanos + nanosQueued < nanoTarget && nanos + nanosQueued < Global::RoleSettings::Air::NanoMaxCount) {
             IUnitTask@ t = Builder::EnqueueT1Nano(side, Air_LateNanoAnchor(), shake, 120 * SECOND, Task::Priority::NORMAL);
             if (t !is null) {
                 g_airLateNanoTasks.insertLast(t);
-                GenericHelpers::LogUtil("[AIR][Late] nano " + (nanos + 1) + "/" + nanoTarget
+                GenericHelpers::LogUtil("[AIR][Late] nano " + (nanos + nanosQueued + 1) + "/" + nanoTarget
                     + " (metal " + int(aiEconomyMgr.metal.current) + ", income " + int(mi) + ")", 1);
                 return Air_SetStrategicFocus(u, t);
             }
