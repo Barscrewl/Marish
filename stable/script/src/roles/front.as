@@ -995,6 +995,58 @@ namespace RoleFront {
         return match;
     }
 
+    /******************************************************************************
+
+    PORC CHAIN (PorcChainHandler)
+
+    FRONT was being rushed by human players early and its defences collapsed.
+    The default land order spends a defence point's budget (amountFactor 32-48 x
+    income, ~960-2400 metal at +30 to +50) on a Sentry, an AA, two or three
+    Beamers and then a 440-480 metal HLT; the Dragon's Claw / Maw are not in the
+    order at all, and Legion's Dragon's Jaw sits at an index the order never uses,
+    so Legion opened on Hives (7500 energy each).
+
+    FRONT's land chain now opens on the mid-tier pieces that income can buy: the
+    first six default entries (LLT, AA, 3 x HLLT, HLT) become eight, cumulative
+    metal in brackets:
+      Armada  Sentry, Beamer, Dragon's Claw, AA, Beamer, Beamer, Dragon's Claw, HLT  (1855)
+      Cortex  Guard, Twin Guard, Dragon's Maw, AA, Twin Guard, Twin Guard, Dragon's Maw, HLT  (1815)
+      Legion  LLT, Dragon's Jaw, AA, LLT, Dragon's Jaw, Dragon's Jaw, Hive, Cacophony  (1810)
+    then the default order carries on (AA, Juno, ...). Water chain unchanged.
+
+    ******************************************************************************/
+    dictionary FrontPorcOpening = {
+        {"armada", array<string> = {"armllt", "armbeamer", "armclaw", "armrl", "armbeamer", "armbeamer", "armclaw", "armhlt"}},
+        {"cortex", array<string> = {"corllt", "corhllt", "cormaw", "corrl", "corhllt", "corhllt", "cormaw", "corhlt"}},
+        {"legion", array<string> = {"leglht", "legdtr", "legrl", "leglht", "legdtr", "legdtr", "leghive", "legmg"}}
+    };
+    const uint FRONT_PORC_DEFAULT_OPENING = 6;   // default land entries the opening replaces
+
+    void Front_PorcChain(const string &in side)
+    {
+        array<string>@ opening = null;
+        array<string>@ land = PorcHelpers::DefaultChain(side, false);
+        if (!FrontPorcOpening.get(side, @opening) || opening is null || land.length() <= FRONT_PORC_DEFAULT_OPENING) {
+            PorcHelpers::ApplyDefaultChains(side);
+            GenericHelpers::LogUtil("[Porc] FRONT: no opening for side " + side + "; keeping the default", 2);
+            return;
+        }
+        // A role switch re-applies the chain from the current one: drop our own
+        // opening if it is already there, else the default one it replaces.
+        bool ours = land.length() >= opening.length();
+        for (uint i = 0; ours && i < opening.length(); ++i) {
+            if (land[i] != opening[i]) ours = false;
+        }
+        const uint skip = ours ? opening.length() : FRONT_PORC_DEFAULT_OPENING;
+        array<string> chain;
+        for (uint i = 0; i < opening.length(); ++i) chain.insertLast(opening[i]);
+        for (uint i = skip; i < land.length(); ++i) chain.insertLast(land[i]);
+        aiMilitaryMgr.SetPorcChain(side, false, @chain);
+        aiMilitaryMgr.SetPorcChain(side, true, PorcHelpers::DefaultChain(side, true));
+        GenericHelpers::LogUtil("[Porc] FRONT: " + side + " opening set (" + opening.length() + " mid-tier entries, "
+            + chain.length() + " total)", 1);
+    }
+
     void Register() {
         if (RoleConfigs::Get(AiRole::FRONT) !is null) return; // already
         RoleConfig@ cfg = RoleConfig(AiRole::FRONT, cast<MainUpdateDelegate@>(@Front_MainUpdate));
@@ -1023,6 +1075,7 @@ namespace RoleFront {
         @cfg.MilitaryAiUnitAdded = cast<AiUnitAddedDelegate@>(@Front_MilitaryAiUnitAdded);
 
         @cfg.RoleMatchHandler = cast<RoleMatchDelegate@>(@Front_RoleMatch);
+        @cfg.PorcChainHandler = cast<PorcChainDelegate@>(@Front_PorcChain);
 
         RoleConfigs::Register(cfg);
     }
