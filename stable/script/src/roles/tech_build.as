@@ -728,9 +728,31 @@ namespace TechBuild {
     // income is the bottleneck. The commander never expands after the opening.
     int lastNoSpotLog = -100000;
 
+    // A spot that swallows the expansion (played, Starwatcher 2026-09-29: from
+    // 10:43 to 22:00 all 13 of AIR's T1 constructors were sent 2,173 times to
+    // one spot, about 215 orders a minute, and the chain's moho step sat at 2/5
+    // for twelve minutes): a mex under a T2 upgrade leaves its spot looking open,
+    // the income dip the upgrade causes turns this row on for every builder, and
+    // the T1 mex ordered on the spot and the upgrade block each other. Two
+    // guards, TECH's and AIR's alike: a spot under upgrade (MexTracker) is never
+    // expanded to - the order is withdrawn and expansion rests
+    // ExpandUpgradePauseSeconds; and the same spot ordered ExpandLoopOrders times
+    // inside a minute without a mex rests it ExpandLoopPauseSeconds, whatever
+    // the cause (an ally's spot, an unreachable one).
+    int expandPauseUntil = -1;
+    dictionary expandSpotFirst;   // spot key -> frame of its first order in the current minute
+    dictionary expandSpotCount;   // spot key -> orders since then
+    void PauseExpansion(IUnitTask@ t, int seconds, const string &in why)
+    {
+        Builder::AbortLater(t);   // never abort inside AiMakeTask
+        expandPauseUntil = ai.frame + seconds * SECOND;
+        GenericHelpers::LogUtil("[TECH][Build] mex expansion rests " + seconds + " s: " + why, 1);
+    }
+
     IUnitTask@ ExpandMex(CCircuitUnit@ u, float metalIncome)
     {
         if (metalIncome >= Global::RoleSettings::Tech::EcoMexExpandUntilIncome) return null;
+        if (ai.frame < expandPauseUntil) return null;
         // Cap 0: every spot inside the radius is considered, nearest the
         // builder first, until an open one is found. Played with cap 1 the
         // call looked at the single nearest spot, found it taken, and the base
@@ -741,6 +763,25 @@ namespace TechBuild {
             IBuilderTask@ order = cast<IBuilderTask>(t);
             AIFloat3 at = u.GetPos(ai.frame);
             if (order !is null) at = order.GetBuildPos();
+            if (Economy::MexTracker::AnyUpgradeInProgressNear(at, 64.0f)) {
+                PauseExpansion(t, int(Global::RoleSettings::Tech::ExpandUpgradePauseSeconds),
+                    "the nearest open spot (" + int(at.x) + ", " + int(at.z) + ") is our mex under a T2 upgrade");
+                return null;
+            }
+            const string key = int(at.x / 32.0f) + "," + int(at.z / 32.0f);
+            int first = -1, n = 0;
+            if (expandSpotFirst.exists(key)) expandSpotFirst.get(key, first);
+            if (expandSpotCount.exists(key)) expandSpotCount.get(key, n);
+            if (first < 0 || ai.frame - first > 60 * SECOND) { first = ai.frame; n = 0; }
+            ++n;
+            expandSpotFirst.set(key, first);
+            expandSpotCount.set(key, n);
+            if (n >= Global::RoleSettings::Tech::ExpandLoopOrders) {
+                expandSpotFirst.delete(key); expandSpotCount.delete(key);
+                PauseExpansion(t, int(Global::RoleSettings::Tech::ExpandLoopPauseSeconds),
+                    "spot (" + int(at.x) + ", " + int(at.z) + ") ordered " + n + " times in a minute and no mex stands");
+                return null;
+            }
             GenericHelpers::LogUtil("[TECH][Build] " + u.circuitDef.GetName() + " " + u.id + " expands to a mex at ("
                 + int(at.x) + ", " + int(at.z) + ") at +" + int(metalIncome) + " metal", 1);
         } else if (ai.frame - lastNoSpotLog > 60 * SECOND) {

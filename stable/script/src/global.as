@@ -538,6 +538,9 @@ namespace Global {
             float ExpCombatMetalIncome = 200.0f;            // D-068: under this 10 s metal income TECH's labs make no combat unit (rush bots stay capped, no scout/fast-bot batches); 0 = never
             float EcoMexExpandRadius = 2500.0f;             // constructors expand to the nearest open spot within this ...
             float EcoMexExpandUntilIncome = 60.0f;          // ... while metal income is under this
+            float ExpandUpgradePauseSeconds = 30.0f;        // TechBuild::ExpandMex: the nearest open spot is our mex under a T2 upgrade: no expansion this long
+            int ExpandLoopOrders = 6;                       // ... the same spot ordered this many times in a minute without a mex ...
+            float ExpandLoopPauseSeconds = 120.0f;          // ... rests expansion this long
             bool LayoutEnabled = true;                      // the planned base (needs ExperimentalBuild)
             // The opening (D-063): the OpeningMexCap reachable mexes nearest
             // the start within this radius, taken nearest the commander first,
