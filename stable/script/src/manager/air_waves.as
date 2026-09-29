@@ -60,7 +60,10 @@ once BomberWaveFirstSize bombers have been held for BomberWaveMaxHoldSeconds,
 so slow production never stalls the air war.
 
 Production: the T2 aircraft plant asks MakeProductionTask for the next wave
-unit; bombers and fighters are grown together so the escort never lags.
+unit; bombers and fighters are grown together so the escort never lags,
+but never two fighters in a row: after every fighter the next pick is a
+wave bomber (lastPickFighter), so a fighter pool that dies as fast as it
+is built cannot starve the wave.
 
 Income floor (D-045): whatever the survival growth says, a wave must hold
 BomberWaveSizePerIncomeStep bombers for every BomberWaveIncomeStep of
@@ -152,6 +155,7 @@ namespace AirWaves {
     int lastLaunchFrame = -1;
     int lastLaunchFighters = 0;
     int armadaWaveBombersQueued = 0;   // drives the 1-in-LicheEveryNthBomber Liche mix
+    bool lastPickFighter = false;      // a fighter was queued last: the next pick is a wave bomber
     bool lastWaveEvaluated = true;
 
     // ---- fighter groups (Global::RoleSettings::Air::FighterGroupSize) ----
@@ -199,6 +203,7 @@ namespace AirWaves {
         lastLaunchFrame = -1;
         lastLaunchFighters = 0;
         armadaWaveBombersQueued = 0;
+        lastPickFighter = false;
         lastWaveEvaluated = true;
         parkFighters.deleteAll();
         parkedFighters.deleteAll();
@@ -773,7 +778,11 @@ namespace AirWaves {
     /**************************************************************************
      Production: called by the AIR factory handler for a T2 aircraft plant. One
      recruit per call; the factory asks again when idle. Bombers and fighters are
-     grown together so the escort is ready when the bombers are.
+     grown together so the escort is ready when the bombers are, at no more than
+     one fighter per bomber: after a fighter the next pick is a wave bomber.
+     Without that, a pool losing fighters as fast as the plant built them (late
+     game, 15-25 a minute) kept "fighters < bombers" true on every call and the
+     wave never filled (stock 23/40 for six minutes, 2026-09-28).
      **************************************************************************/
     IUnitTask@ MakeProductionTask(CCircuitUnit@ factory, const string &in side, const AIFloat3 &in pos)
     {
@@ -794,7 +803,9 @@ namespace AirWaves {
         const bool starved = RoleAir::Air_IsMetalStarved();
         string name = "";
         bool isWaveBomber = false;
-        if (!starved && fighters < FightersFor(bombers) && fighters < targetFighters) {
+        // A fighter was queued last and a bomber can be: this pick is the bomber.
+        const bool bomberDue = lastPickFighter && (bombers < required || stock);
+        if (!starved && !bomberDue && fighters < FightersFor(bombers) && fighters < targetFighters) {
             name = UnitHelpers::GetT2FighterForSide(side);      // escort lags the bombers
         } else if (bombers < required || stock) {
             // With BomberStock the plant never stops at the wave size: extras stay
@@ -815,7 +826,7 @@ namespace AirWaves {
                 CCircuitDef@ liche = ai.GetCircuitDef("armliche");
                 if (liche !is null && liche.IsAvailable(ai.frame)) name = "armliche";
             }
-        } else if (!starved && fighters < targetFighters) {
+        } else if (!starved && !bomberDue && fighters < targetFighters) {
             name = UnitHelpers::GetT2FighterForSide(side);
         }
         if (name.length() == 0) return null;
@@ -827,6 +838,7 @@ namespace AirWaves {
             name == "armliche" ? 2 : 3);
         IUnitTask@ t = aiFactoryMgr.Enqueue(TaskS::Recruit(Task::RecruitType::FIREPOWER, Task::Priority::NORMAL, d, pos, 64.f));
         if (t !is null && isWaveBomber && side == "armada") ++armadaWaveBombersQueued;
+        if (t !is null) lastPickFighter = !isWaveBomber;
         return t;
     }
 
