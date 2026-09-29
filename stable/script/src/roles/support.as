@@ -488,7 +488,7 @@ namespace RoleSupport {
     // Why the swap is the whole fix. CMilitaryManager::DefaultMakeDefence walks
     // the chain accumulating cost and stops once the running total passes
     // maxCost = amountFactor (32-48) x metal income. The launchers sit at chain
-    // positions 16 and 25, behind a cumulative ~24k and ~48k of metal - an
+    // positions 19 and 28, behind a cumulative ~27k and ~50k of metal - an
     // income in the hundreds - so no cluster ever reaches them and the class is
     // never built. The Juno at position 7 sits behind ~2.5k, which a real
     // cluster does reach. Putting the launcher there is not a preference over
@@ -504,9 +504,10 @@ namespace RoleSupport {
     // Both are T2, and DefaultMakeDefence skips an unavailable def before it
     // adds its cost, so the swap is inert until an advanced constructor exists
     // and the early chain is untouched. After that the point costs the
-    // difference - +960 Armada, +540 Cortex, +590 Legion - which pushes the
-    // entries behind it slightly further out of budget. That is the accepted
-    // cost of the trade.
+    // difference - +960 Armada, +540 Cortex - which pushes the entries behind
+    // it slightly further out of budget. That is the accepted cost of the
+    // trade. Legion has no launcher here (its Perdition has no working fire
+    // DLL), so Legion SUPPORT keeps the default chain and its Juno.
     void Support_PorcChain(const string &in side)
     {
         array<string>@ land = PorcHelpers::DefaultChain(side, false);

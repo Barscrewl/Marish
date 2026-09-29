@@ -1925,8 +1925,8 @@ namespace RoleAir {
         {"legion", array<string> = {
             "leglht", "legrl", "legflak", "leghive", "leglupara", "legflak", "legjuno", "leglraa",
             "legabm", "legbastion", "legflak", "leglraa", "legdeflector", "legcluster", "leglrpc", "legflak",
-            "legperdition", "leglraa", "legnanotc", "legnanotc", "leglrpc", "legdeflector", "leglrpc",
-            "leglraa", "legdeflector", "legperdition", "legbastion", "legstarfall", "legbastion", "legbastion"}}
+            "leglraa", "legnanotc", "legnanotc", "leglrpc", "legdeflector", "leglrpc",   // no Perdition: no working fire DLL
+            "leglraa", "legdeflector", "legbastion", "legstarfall", "legbastion", "legbastion"}}
     };
 
     void Air_PorcChain(const string &in side)

@@ -4,7 +4,7 @@
 		"unit": {
 		//             0          1           		2          		3          		4         5          6                7		   		8          	 	9          10
 			"legion": ["leglht",  "legtl",    	"legrl",   		"leghive", 		"legmg",  "legjuno", "legrhapsis",    "leglupara", 	"legbombard", 	"leganavaltorpturret",
-					   "legflak", "legacluster", "legbastion", 	"legcluster",  	"legabm", "legtarg", "legdeflector", "legdtr", "leglraa", "legnanotc", "leglrpc", "legstarfall", "legperdition"]
+					   "legflak", "legacluster", "legbastion", 	"legcluster",  	"legabm", "legtarg", "legdeflector", "legdtr", "leglraa", "legnanotc", "leglrpc", "legstarfall", "legflak", "legajam", "legflak"]  // 22: flak (no Perdition: no working fire DLL), 23: T2 jammer, 24: T2 flak
 		},
 	
 		"superweapon": {
