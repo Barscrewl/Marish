@@ -368,7 +368,7 @@ namespace Global {
             // ordered - up to NukeLimit (TechRules nuke.next). The gates are the goldberg
             // branch's late-game sustain (23900e8): not before NukeSustainAfterSeconds
             // (0 = no time gate), not under NukeSustainMinMetalIncome.
-            int NukeSustainAfterSeconds = 22 * 60;
+            int NukeSustainAfterSeconds = 20 * 60;   // 20 (was 22): TECH's income clears the floor by 15 min; Salt Reef 2026-09-28 ended at 20:53 with one silo
             float NukeSustainMinMetalIncome = 225.0f;
 
             /******************** FLOATING METAL ********************/

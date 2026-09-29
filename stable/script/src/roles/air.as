@@ -662,7 +662,8 @@ namespace RoleAir {
             if (Air_IsEconomyHealthy()) {
                 const float perCtor = AiMax(Global::RoleSettings::Air::T1AirConstructorPerMetalIncome, 1.0f);
                 desiredT1Builders = AiMax(maxT1Builders, int(metalIncome / perCtor));
-                desiredT1Builders = AiMin(desiredT1Builders, Global::RoleSettings::Air::MaxT1AirConstructorCount);
+                // no ceiling on TECH's economy: its turret block scales with the build power near the base
+                if (!EcoRole::Enabled()) desiredT1Builders = AiMin(desiredT1Builders, Global::RoleSettings::Air::MaxT1AirConstructorCount);
             }
             if (t1BuildersTotal < desiredT1Builders
                 && t1BuilderDef !is null && t1BuilderDef.IsAvailable(ai.frame)) {
