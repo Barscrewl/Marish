@@ -322,12 +322,20 @@ namespace AirWaves {
     /**************************************************************************
      Attack methods (doc/air-wave-attacks.md).
      **************************************************************************/
-    int _ChooseMethod()
+    // A wave of WaveCarpetStrikeDeepOnlyFrom bombers or more flies CARPET, STRIKE
+    // or DEEP only: 50 logged waves (2026-09-20 - 09-28) lost every bomber
+    // whatever the method, and FLANK / PINCER / FEINT only add time in the air
+    // before the same run through the front. Smaller waves keep all six.
+    int _ChooseMethod(int bombers)
     {
+        const bool restricted = bombers >= Global::RoleSettings::Air::WaveCarpetStrikeDeepOnlyFrom;
         array<float> w = {
-            Global::RoleSettings::Air::WaveWeightCarpet, Global::RoleSettings::Air::WaveWeightFlank,
-            Global::RoleSettings::Air::WaveWeightPincer, Global::RoleSettings::Air::WaveWeightStrike,
-            Global::RoleSettings::Air::WaveWeightDeep, Global::RoleSettings::Air::WaveWeightFeint };
+            Global::RoleSettings::Air::WaveWeightCarpet,
+            restricted ? 0.0f : Global::RoleSettings::Air::WaveWeightFlank,
+            restricted ? 0.0f : Global::RoleSettings::Air::WaveWeightPincer,
+            Global::RoleSettings::Air::WaveWeightStrike,
+            Global::RoleSettings::Air::WaveWeightDeep,
+            restricted ? 0.0f : Global::RoleSettings::Air::WaveWeightFeint };
         float sum = 0.0f;
         for (uint i = 0; i < w.length(); ++i) { if (w[i] > 0.0f) sum += w[i]; }
         if (sum <= 0.0f) return Task::WaveMode::CARPET;
@@ -379,7 +387,7 @@ namespace AirWaves {
         const float ov = Global::RoleSettings::Air::WaveOverrun;
         const int ft0 = Global::RoleSettings::Air::WaveFormTimeoutSeconds * SECOND;
         const float minCost = Global::RoleSettings::Air::WaveStrikeMinStaticCost;
-        int method = _ChooseMethod();
+        int method = _ChooseMethod(bombers);
         AIFloat3 aim = _FrontAim();
         string detail = "";
         if (method == Task::WaveMode::STRIKE || method == Task::WaveMode::DEEP) {

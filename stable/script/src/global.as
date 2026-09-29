@@ -1242,6 +1242,10 @@ namespace Global {
             float WaveWeightStrike = 2.0f;
             float WaveWeightDeep = 1.0f;
             float WaveWeightFeint = 1.0f;
+            // Waves of at least this many bombers (the lower wave limit, BomberStock's
+            // FirstWaveSize) draw only CARPET / STRIKE / DEEP - FLANK, PINCER and
+            // FEINT are weighted 0 for them. Smaller waves keep all six.
+            int WaveCarpetStrikeDeepOnlyFrom = 5;
             // Geometry, elmos: the line forms FormDistance short of the aim,
             // lanes Spacing apart, and runs Overrun past it.
             float WaveFormDistance = 1400.0f;
