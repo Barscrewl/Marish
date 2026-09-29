@@ -10,6 +10,7 @@
 #include "builder.as"
 #include "layout.as"
 #include "economy.as"
+#include "eco_role.as"
 
 /******************************************************************************
 
@@ -193,11 +194,12 @@ namespace EcoPlanner {
         s.mCur = aiEconomyMgr.metal.current;
         s.mStor = aiEconomyMgr.metal.storage;
         s.metalMap = ai.GetMetalSpotCount() >= Global::RoleSettings::Tech::EcoMetalMapSpots;
-        s.t1Cons = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT1BotConstructors());
-        s.t2Cons = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2BotConstructors());
-        s.t2Lab = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2BotLabs()) > 0;
+        // AIR: air constructors and aircraft plants (manager/eco_role.as)
+        s.t1Cons = UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT1Cons());
+        s.t2Cons = UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT2Cons());
+        s.t2Lab = UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT2Labs()) > 0;
         {
-            CCircuitDef@ t2lab = ai.GetCircuitDef(UnitHelpers::GetT2BotLabForSide(Global::AISettings::Side));
+            CCircuitDef@ t2lab = ai.GetCircuitDef(EcoRole::T2LabName(Global::AISettings::Side));
             s.t2LabQueued = (t2lab is null) ? 0 : aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::FACTORY), t2lab);
         }
         const string side = Global::AISettings::Side;
@@ -409,7 +411,7 @@ namespace EcoPlanner {
     string PickT2Lab(const State@ s, string &out why)
     {
         if (s.t2Lab || s.t2LabQueued > 0 || s.builderDef is null) return "";
-        CCircuitDef@ lab = ai.GetCircuitDef(UnitHelpers::GetT2BotLabForSide(Global::AISettings::Side));
+        CCircuitDef@ lab = ai.GetCircuitDef(EcoRole::T2LabName(Global::AISettings::Side));
         if (lab is null || !lab.IsAvailable(ai.frame) || !s.builderDef.CanBuild(lab)) return "";
         if (s.mIncome < Global::RoleSettings::Tech::MinimumMetalIncomeForT2Lab
             || s.eIncome < Global::RoleSettings::Tech::MinimumEnergyIncomeForT2Lab) {
@@ -642,7 +644,7 @@ namespace EcoPlanner {
         // With the experimental system on, the rule table (roles/tech_rules.as)
         // calls the Pick* pieces itself and this entry answers nothing, so the
         // legacy rungs it still reuses cannot run the planner a second time.
-        if (Global::RoleSettings::Tech::ExperimentalBuild || !Global::RoleSettings::Tech::EcoPlannerEnabled || u is null) return "";
+        if (EcoRole::Enabled() || !Global::RoleSettings::Tech::EcoPlannerEnabled || u is null) return "";
         State@ s = Read(u, metalIncome, energyIncome);
         string why;
         const string key = Decide(s, why);

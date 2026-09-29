@@ -2,6 +2,7 @@
 #include "../helpers/unit_helpers.as"
 #include "../helpers/economy_helpers.as"
 #include "tech_chain.as"
+#include "../manager/eco_role.as"
 
 // D-080: what the TECH role does once its rush objective stands. The owner's
 // list: (A) nuke - a silo the fastest way; (B) t2rush - +200 metal, then T2
@@ -20,6 +21,9 @@ namespace TechPlan {
 
     string Choose()
     {
+        // AIR (manager/eco_role.as): its plants are the endgame; the plan is the
+        // metal ladder alone (silos, gantries and land labs are capped for AIR)
+        if (EcoRole::IsAir()) return "air";
         const string want = Global::RoleSettings::Tech::EndgamePlan;
         if (want == "nuke" || want == "t2rush" || want == "t3rush" || want == "lrpc") return want;
         // auto: deterministic from the team id, so an 8v8 with several TECH
@@ -88,6 +92,9 @@ namespace TechPlan {
                 s.insertLast(TechChain::Step("income", "", gate500));
                 s.insertLast(TechChain::Step("gantry", TechChain::DefFor("gantry"), 1));
             }
+        } else if (plan == "air") {
+            if (phase == 1) s.insertLast(TechChain::Step("income", "", gate200));
+            else if (phase == 2) s.insertLast(TechChain::Step("income", "", gate500));
         } else if (plan == "lrpc") {
             if (phase == 1) {
                 s.insertLast(TechChain::Step("ap", TechChain::DefFor("ap"), 1));   // D-103: only an air constructor builds the advanced aircraft plant

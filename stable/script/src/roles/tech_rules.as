@@ -12,6 +12,7 @@
 #include "../manager/layout.as"
 #include "../manager/eco_planner.as"
 #include "../manager/spam.as"
+#include "../manager/eco_role.as"
 #include "tech_forward.as"
 #include "tech_factories.as"
 
@@ -102,10 +103,10 @@ namespace TechRules {
         @c.eco = EcoPlanner::Read(u, c.mi, c.ei);
         c.openingDone = RoleTech::Opening::complete;
         c.intoT2 = TechBuild::IntoT2();
-        c.t1Labs = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT1BotLabs());
-        c.t2Labs = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2BotLabs());
-        c.constructors = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT1BotConstructors())
-            + UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2BotConstructors());
+        c.t1Labs = UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT1Labs());   // AIR: aircraft plants
+        c.t2Labs = UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT2Labs());
+        c.constructors = UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT1Cons())
+            + UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT2Cons());
         c.spamGate = Global::Spam::Enabled && c.mi >= Global::Spam::MinMetalIncome && c.ei >= Global::Spam::MinEnergyIncome;
         const EcoPlanner::State@ s = c.eco;
         c.energyTarget = EcoPlanner::TargetEnergy(s.mIncome);
@@ -140,7 +141,11 @@ namespace TechRules {
     bool OpeningPending(Ctx@ c)   { return !RoleTech::Opening::complete; }
     bool IntoT2(Ctx@ c)           { return c.intoT2; }
     bool NotIntoT2(Ctx@ c)        { return !c.intoT2; }
-    bool NoT1Lab(Ctx@ c)          { return c.t1Labs == 0 && aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::FACTORY), ai.GetCircuitDef(UnitHelpers::GetT1BotLabForSide(Global::AISettings::Side))) == 0; }
+    bool NoT1Lab(Ctx@ c)          { return c.t1Labs == 0 && aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::FACTORY), ai.GetCircuitDef(EcoRole::T1LabName(Global::AISettings::Side))) == 0; }
+    // manager/eco_role.as: rows about bot labs being eaten, land constructors and
+    // land front/spam factories are TECH's; AIR has its own plant row
+    bool TechRole(Ctx@ c)         { return !EcoRole::IsAir(); }
+    bool AirRole(Ctx@ c)          { return EcoRole::IsAir(); }
     bool NoLabAtAll(Ctx@ c)       { return c.t1Labs == 0 && c.t2Labs == 0 && !c.intoT2; }
     bool NoConstructors(Ctx@ c)   { return c.constructors == 0; }
     bool T2LabStands(Ctx@ c)      { return c.t2Labs > 0; }
@@ -381,8 +386,12 @@ namespace TechRules {
             if (EcoPlanner::Affordable(opts[i], c.eco)) return ByKey(c, opts[i].key);
         return null;
     }
+    // AIR: more T2 aircraft plants as income allows, and the nanos that serve
+    // them (roles/air.as); nothing of TECH's strategic ladder
+    IUnitTask@ DoAirPlants(Ctx@ c)      { return RoleAir::Air_PlantsAndNanos(c.u, c.mi); }
     IUnitTask@ DoLegacy(Ctx@ c)
     {
+        if (EcoRole::IsAir()) return null;
         if (c.who == COMMANDER) return RoleTech::Tech_Commander_AiMakeTask(c.u, null, c.mi);
         return TechBuild::Strategic(c.u, c.mi, c.ei);
     }
@@ -421,29 +430,30 @@ namespace TechRules {
     void Init()
     {
         if (table.length() > 0) return;
-        table.insertLast(Rule("turret.spam",       TURRET,       W0(), @DoTurretSpam,   "D-109: the two turrets directly behind a spam lab always work for that lab"));
+        table.insertLast(Rule("turret.spam",       TURRET,       W1(@TechRole), @DoTurretSpam,   "D-109: the two turrets directly behind a spam lab always work for that lab"));
         table.insertLast(Rule("turret.assist",     TURRET,       W0(), @DoTurretAssist, "reclaim in reach, then the economy under construction by the D-065 order"));
         table.insertLast(Rule("turret.any",        TURRET,       W0(), @DoTurretAny,    "any structure of ours under construction within reach"));
         table.insertLast(Rule("turret.factory",    TURRET,       W1(@MetalFloodedLong), @DoTurretFactory, "D-105: the metal bank full and nothing to build in reach: assist a producing factory in reach (production is the sink)"));
         table.insertLast(Rule("turret.wait",       TURRET,       W0(), @DoWaitShort,    "5 s"));
         table.insertLast(Rule("ferry.cargo",       MOBILE,       W0(), @DoFerryCargo,   "D-110/D-112: a gift (in flight or queued) keeps the ferry's hold or its park behind the base until the drop-off; nothing else"));
-        table.insertLast(Rule("land.recall",       CONSTRUCTORS, W0(), @DoLandRecall,   "D-109: a tier whose air constructors went down: its land constructors drop a forward job for the eco rows"));
+        table.insertLast(Rule("land.recall",       CONSTRUCTORS, W1(@TechRole), @DoLandRecall,   "D-109: a tier whose air constructors went down: its land constructors drop a forward job for the eco rows"));
         table.insertLast(Rule("keep.current",      MOBILE,       W0(), @DoKeepCurrent,  "the construction the builder is on, when native re-asks"));
         table.insertLast(Rule("air.dedicated",     CON_T2,       W0(), @DoAirDedicated, "D-107: the first two T2 air constructors: one only advanced energy converters, the other only advanced fusions, always"));
         table.insertLast(Rule("air.flex",          CON_T2,       W0(), @DoAirFlexible,  "D-107: the other T2 air constructors: advanced converters while energy overflows, the advanced fusion going up when the converters cannot stay on"));
-        table.insertLast(Rule("fwd.t2.defend",     CON_T2,       W2(@LandCon, @T2LandReleased), @DoDefendMexes, "D-109: the T2 air constructors are up: T2 land constructors defend the mex clusters, long-range AA then flak"));
-        table.insertLast(Rule("fwd.t1",            CON_T1,       W2(@LandCon, @T1LandReleased), @DoForwardT1,   "D-109: more than 5 T1 air constructors: T1 land constructors build the spam cluster forward (labs, their turrets, AA, pads)"));
+        table.insertLast(Rule("fwd.t2.defend",     CON_T2,       W3(@TechRole, @LandCon, @T2LandReleased), @DoDefendMexes, "D-109: the T2 air constructors are up: T2 land constructors defend the mex clusters, long-range AA then flak"));
+        table.insertLast(Rule("fwd.t1",            CON_T1,       W3(@TechRole, @LandCon, @T1LandReleased), @DoForwardT1,   "D-109: more than 5 T1 air constructors: T1 land constructors build the spam cluster forward (labs, their turrets, AA, pads)"));
         table.insertLast(Rule("opening.mex",       COMMANDER,    W1(@OpeningPending), @DoOpening,      "the nearest OpeningMexCap mexes within OpeningMexRadius"));
-        table.insertLast(Rule("lab.t1.reclaim",    MOBILE,       W1(@IntoT2), @DoReclaimT1Lab, "the advanced lab is under way: every builder in range reclaims the T1 lab"));
-        table.insertLast(Rule("lab.t2.reclaim",     MOBILE,       W1(@T2LabRetiring), @DoReclaimT2Lab, "D-078: the advanced lab is retiring (an advanced fusion is under construction, the bank has room): every builder reclaims it, turrets in range join"));
-        table.insertLast(Rule("lab.base.reclaim",   MOBILE,       W1(@BaseFactoryToGo), @DoBaseFactoryReclaim, "D-114: with 3 land factories on the map the base's land factories are retired and reclaimed; their ground goes back to the economy"));
-        table.insertLast(Rule("lab.front",          CONSTRUCTORS, W1(@FrontClusterOpen), @DoFrontCluster, "D-114: a front cluster's lost turret; an open T2 or T3 front factory cluster: its turrets, help on one going up, then its factory"));
+        table.insertLast(Rule("lab.t1.reclaim",    MOBILE,       W2(@TechRole, @IntoT2), @DoReclaimT1Lab, "the advanced lab is under way: every builder in range reclaims the T1 lab"));
+        table.insertLast(Rule("lab.t2.reclaim",     MOBILE,       W2(@TechRole, @T2LabRetiring), @DoReclaimT2Lab, "D-078: the advanced lab is retiring (an advanced fusion is under construction, the bank has room): every builder reclaims it, turrets in range join"));
+        table.insertLast(Rule("lab.base.reclaim",   MOBILE,       W2(@TechRole, @BaseFactoryToGo), @DoBaseFactoryReclaim, "D-114: with 3 land factories on the map the base's land factories are retired and reclaimed; their ground goes back to the economy"));
+        table.insertLast(Rule("lab.front",          CONSTRUCTORS, W2(@TechRole, @FrontClusterOpen), @DoFrontCluster, "D-114: a front cluster's lost turret; an open T2 or T3 front factory cluster: its turrets, help on one going up, then its factory"));
         table.insertLast(Rule("energy.reclaim",     MOBILE,       W2(@EnergyReclaimable, @NotStalling), @DoEnergyReclaim, "D-077: a fusion stands and energy income without the T1 sources covers the pull by ReclaimT1EnergyMargin: reclaim winds and solars nearest the base centre; advanced solars at ReclaimAdvSolarMargin; an advanced fusion reclaims all"));
         // D-105 (owner's rule): T1 constructors add build power before assisting a
         // T2 construction; the reclaim rows above stay first
         table.insertLast(Rule("power.t1",          CON_T1,       W2(@DearFrameUp, @TurretRoom), @DoT1Turret,     "D-105: a dear frame is up and the turret calculation has room: a T1 constructor adds a construction turret rather than assist"));
         table.insertLast(Rule("energy.convert.float", MOBILE,     W4(@EnergyFloatsBank, @NotStalling, @NoDearOrderPending, @NotMetalFull), @DoConverter,    "D-079: before the chain - energy floats (TechChain::EnergyFloats): a converter, whatever the chain is doing"));
         table.insertLast(Rule("power.turret",      MOBILE,       W4(@MetalAhead, @StructureBuilding, @NotStalling, @NoDearOrderPending), @DoPowerTurret, "D-075: metal income above spending while a structure is under construction: a turret, Layout::TurretsAllowed at a time (D-097), else assist the turret going up"));
+        table.insertLast(Rule("air.plants",        CONSTRUCTORS, W1(@AirRole), @DoAirPlants,  "AIR: another T2 aircraft plant as income stages allow (100, 200), placed by the layout; nanos at the plants while metal floats"));
         table.insertLast(Rule("chain.next",        MOBILE,       W1(@ChainActive), @DoChain,      "the rush chain (D-070): the first unmet target - assist its frame, wait for its order, or order it"));
         table.insertLast(Rule("lab.t1.opening",    MOBILE,       W3(@OpeningDone, @NotIntoT2, @NoT1Lab), @DoStartFactory, "the throwaway first lab at the commander; a constructor uses the pair's slot"));
         table.insertLast(Rule("lab.t1.recover",    COMMANDER,    W3(@OpeningDone, @NoConstructors, @NoLabAtAll), @DoStartFactory, "every constructor and every lab lost: the commander rebuilds a T1 lab"));

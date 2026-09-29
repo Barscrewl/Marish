@@ -13,6 +13,7 @@
 #include "../manager/factory.as"
 #include "../manager/layout.as"
 #include "../manager/eco_planner.as"
+#include "../manager/eco_role.as"
 
 /******************************************************************************
 
@@ -170,7 +171,7 @@ namespace TechBuild {
 
     bool IntoT2()
     {
-        CCircuitDef@ t2 = ai.GetCircuitDef(UnitHelpers::GetT2BotLabForSide(Global::AISettings::Side));
+        CCircuitDef@ t2 = ai.GetCircuitDef(EcoRole::T2LabName(Global::AISettings::Side));   // AIR: the T2 aircraft plant
         if (t2 is null) return false;
         return t2.count > 0 || aiBuilderMgr.GetUnfinishedCount(t2) > 0
             || aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::FACTORY), t2) > 0;
@@ -182,7 +183,7 @@ namespace TechBuild {
     // an advanced lab that never had a frame, and TECH was left with no lab)
     bool T2Begun()
     {
-        CCircuitDef@ t2 = ai.GetCircuitDef(UnitHelpers::GetT2BotLabForSide(Global::AISettings::Side));
+        CCircuitDef@ t2 = ai.GetCircuitDef(EcoRole::T2LabName(Global::AISettings::Side));
         if (t2 is null) return false;
         return t2.count > 0 || aiBuilderMgr.GetUnfinishedCount(t2) > 0;
     }
@@ -192,7 +193,7 @@ namespace TechBuild {
         if (!RoleTech::Opening::complete || IntoT2()) return null;
         if (!T1LabAllowed()) return null;   // D-102 (played: the chain's lab step reordered the T1 lab once the advanced lab was reclaimed)
         const string side = Global::AISettings::Side;
-        CCircuitDef@ lab = ai.GetCircuitDef(UnitHelpers::GetT1BotLabForSide(side));
+        CCircuitDef@ lab = ai.GetCircuitDef(EcoRole::T1LabName(side));   // AIR: the T1 aircraft plant
         if (lab is null || !u.circuitDef.CanBuild(lab)) return null;
         if (lab.count > 0 || aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::FACTORY), lab) > 0) return null;
         // D-101 (owner's rule): only with no construction turret standing may the
@@ -207,7 +208,9 @@ namespace TechBuild {
                 return t;
             }
         }
-        if (UnitHelpers::IsCommander(u.circuitDef) && Layout::HasComplex()) {
+        // AIR keeps its T1 plant for the game: it goes on the pair's planned
+        // slot (its nano block behind it), not wherever the commander stands
+        if (EcoRole::ReclaimsLabs() && UnitHelpers::IsCommander(u.circuitDef) && Layout::HasComplex()) {
             const AIFloat3 at = u.GetPos(ai.frame);
             const int facing = Layout::facing;
             const float step = SQUARE_SIZE * 2;
@@ -241,7 +244,7 @@ namespace TechBuild {
             GenericHelpers::LogUtil("[TECH][Build] no footprint for the first lab within " + int(Global::RoleSettings::Tech::ExpFirstLabRadius)
                 + " of the commander; the pair's slot is used", 1);
         }
-        IUnitTask@ t = Builder::EnqueueT1BotLab(side, Global::Map::StartPos, 0.0f, 300 * SECOND, Task::Priority::NOW);
+        IUnitTask@ t = EcoRole::EnqueueT1Lab(side, Global::Map::StartPos, 0.0f, 300 * SECOND, Task::Priority::NOW);
         if (t !is null) GenericHelpers::LogUtil("[TECH][Build] start factory ordered on the reserved slot", 1);
         return t;
     }
@@ -300,7 +303,7 @@ namespace TechBuild {
     }
     int T1Cons()
     {
-        return UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT1BotConstructors());
+        return UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT1Cons());
     }
     // D-102: the T2 phase has begun at least once (the advanced lab reclaimed later
     // does not reopen the opening)
@@ -313,9 +316,9 @@ namespace TechBuild {
     bool T1LabAllowed()
     {
         if (!WasIntoT2()) return true;
-        const int cons = T1Cons() + UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2BotConstructors());
+        const int cons = T1Cons() + UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT2Cons());
         if (cons == 0) return true;
-        if (UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2BotLabs()) == 0) return false;
+        if (UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT2Labs()) == 0) return false;
         return T1Cons() < Global::RoleSettings::Tech::LabRebuildMinT1Cons || EcoOnline();
     }
     // D-102 (owner's rule): the lab native asks for when our last factory is gone
@@ -518,7 +521,7 @@ namespace TechBuild {
         // opening's metal, not overflow (played: 420 metal given away at 15 s;
         // the opening's own flag was already set)
         if (!firstLabStood) {
-            CCircuitDef@ l1 = ai.GetCircuitDef(UnitHelpers::GetT1BotLabForSide(Global::AISettings::Side));
+            CCircuitDef@ l1 = ai.GetCircuitDef(EcoRole::T1LabName(Global::AISettings::Side));
             if (l1 !is null && l1.count > aiBuilderMgr.GetUnfinishedCount(l1)) firstLabStood = true;
         }
         if (!firstLabStood && !WasIntoT2()) return;
@@ -564,6 +567,9 @@ namespace TechBuild {
     {
         TrackMetal();   // D-075
         ShareOverflow();   // D-106
+        // AIR keeps its plants and has no land constructors to send forward:
+        // no lab retirement, no forward or spam work (manager/eco_role.as)
+        if (!EcoRole::ReclaimsLabs()) return;
         TechForward::Tick();   // D-109
         // D-076: the T1 lab retires the moment the advanced lab is under way.
         // One state, read by every actor: production stops (Lifecycle::Retire
@@ -863,7 +869,7 @@ namespace TechBuild {
 
     IUnitTask@ GuardFactory(CCircuitUnit@ u)
     {
-        CCircuitUnit@ fac = Factory::primaryT1BotLab;
+        CCircuitUnit@ fac = EcoRole::PrimaryT1Lab();
         if (fac is null || fac is u || Lifecycle::IsRetiring(fac)) return null;   // D-076: nobody guards a retiring lab
         if (TechFactories::IsSpamLab(fac)) return null;   // D-119: a spam lab is never assisted (its two turrets only)
         return GuardHelpers::AssignWorkerGuard(u, fac, Task::Priority::LOW, true, 20 * SECOND);

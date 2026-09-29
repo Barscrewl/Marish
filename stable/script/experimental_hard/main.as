@@ -120,16 +120,6 @@ namespace Main {
 		}
 	}
 
-	void AiUnitFinished(CCircuitUnit@ unit)  // every team unit, structures included, once finished
-	{
-		RoleAir::Air_OnUnitFinished(unit);   // finished fusion / AFUS / converter ids for AIR (reactor ladder, eco retirement)
-	}
-
-	void AiUnitDestroyed(CCircuitUnit@ unit)
-	{
-		RoleAir::Air_OnUnitDestroyed(unit);
-	}
-
 	//Use this to modify global.as and apply difficulty/profile settings
 	void ApplyProfileSettings()
 	{

@@ -1756,10 +1756,10 @@ namespace Builder {
 		return t;
 	}
 
-	// prio / expireWhenAbandoned: AIR's reactor ladder (manager/reactor_ladder.as). With
-	// the default timeout of 0 an AFUS task nobody picks up never expires, and while it
-	// stands IsAdvancedFusionBuildQueued() refuses every later one; the ladder asks for
-	// it to expire after timeoutFrames unassigned. Every other caller is unchanged.
+	// prio / expireWhenAbandoned: optional. With the default timeout of 0 an AFUS task
+	// nobody picks up never expires, and while it stands IsAdvancedFusionBuildQueued()
+	// refuses every later one; a caller can ask for it to expire after timeoutFrames
+	// unassigned. Every caller today uses the defaults.
 	IUnitTask@ EnqueueAFUS(const string &in unitSide, const AIFloat3 &in anchor, float squareSize, int timeoutFrames,
 			Task::Priority prio = Task::Priority::NORMAL, bool expireWhenAbandoned = false)
 	{
@@ -2350,7 +2350,6 @@ namespace Builder {
 	void AiTaskRemoved(IUnitTask@ task, bool done)
 	{
 		_TakeHandle(@abortQueue, task);       // ended on its own, or by FlushAborts: nothing left to abort
-		ReactorLadder::OnTaskRemoved(task);   // AIR's fusion reclaim, one at a time (manager/reactor_ladder.as)
 		BuildPower::OnTaskRemoved(task, done);   // turrets queued on capped metal (manager/build_power.as)
 		{
 			IBuilderTask@ mexTask = cast<IBuilderTask>(task);

@@ -74,31 +74,43 @@ test in game before pushing.
   `maps.as` includes and registrations. Cent's maps kept; their TACTICAL
   factory weights and unit limits were stored under "HOVER_SEA", which
   `MapConfig::RoleKey()` never looks up, and now use "TACTICAL".
-- AIR, `roles/air.as` three-way merged: eco crew, eco retirement
-  (winds / solars / advanced solars / T1 converters reclaimed and never
-  rebuilt), metal-starved mode, reactor ladder on the T2 constructors, T1
-  strike cap, Bastion gate, T2 plant cap by income, air scouts, T1 air
-  constructors by income, heavy air every Nth T2 turn, no factory assist.
-  Cent's late expansion runs first for T2 air constructors; his porc chain
-  (`PorcChainHandler`) and our starved-mode porc (`AiMakeDefenceHandler`) are
-  both registered - one picks what is built, the other how much.
+- AIR, `roles/air.as` three-way merged: metal-starved mode, T1 strike cap,
+  Bastion gate, T2 plant cap by income, air scouts, T1 air constructors by
+  income, heavy air every Nth T2 turn, no factory assist. Cent's porc chain
+  (`PorcChainHandler`) and our starved-mode porc (`AiMakeDefenceHandler`)
+  are both registered - one picks what is built, the other how much. AIR's
+  economy has since been replaced by TECH's (see below).
 - AIR bomber waves, `manager/air_waves.as` three-way merged onto Cent's
   income floor and wave attack methods (`CAirWaveTask`): fighter groups,
   Liche mix, escort production counts, starved production, and the late
   wave cap (`BomberStock::WaveCap`, 20 -> 40) on `Required()`, `_Launch` and
   `_Clamp`.
-- New files: `manager/bomber_stock.as` (bombers parked out of AI control
-  with `ai.UnitControl` until a wave is full), `manager/reactor_ladder.as`.
+- New file: `manager/bomber_stock.as` (bombers parked out of AI control
+  with `ai.UnitControl` until a wave is full).
 - Shared files, AIR hooks only: `military.as` (BomberStock claim / count /
   forget), the three `experimental_*/main.as` (`Builder::FlushAborts`,
-  `BomberStock::Update`, `AiUnitFinished` / `AiUnitDestroyed` for AIR's
-  reactor and retirement tracking), `global.as` (`Air` settings merged,
+  `BomberStock::Update`), `global.as` (`Air` settings merged,
   `BomberStock` added), `builder.as` (DEFERRED ABORT; `EnqueueFUS` /
   `EnqueueAFUS` take `expireWhenAbandoned`, off for every existing caller).
 
 Not ported: our gantry placement and re-placement (Cent's
 `Builder::EnqueueLandGantry` at `Factory::GetPreferredFactoryPos()` and his
 native factory layout are used), and our TECH, FRONT, SEA and other role work.
+
+## AIR runs TECH's economy
+
+With `Global::RoleSettings::Air::ExperimentalEco` (on), AIR's builders take
+their work from TECH's experimental system (`TechBuild::MakeTask`, the rule
+table, rush chain, income plan, eco planner and layout), not from code of
+its own. `manager/eco_role.as` (`EcoRole`) is the only place the two roles
+differ: which labs and constructors count (aircraft plants and air
+constructors for AIR), how a T1 or T2 lab is enqueued, and
+`ReclaimsLabs()` - AIR never reclaims its T1 or T2 plant, and TECH's land
+rows (forward constructors, front factories, spam labs) and the invariant
+tick are TECH only. AIR adds one row, `air.plants` (`Air_PlantsAndNanos`): more
+T2 aircraft plants by income, nanos at them while metal floats.
+Metal-starved mode still holds AIR's porc and T2 production. TECH code
+that asks "which lab" should go through `EcoRole`, not name bot labs.
 
 ## Never abort a task inside AiMakeTask
 

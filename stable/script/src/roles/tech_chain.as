@@ -113,8 +113,8 @@ namespace TechChain
         if (key == "solar") return UnitHelpers::GetSolarNameForSide(side);
         if (key == "wind") return UnitHelpers::GetWindNameForSide(side);
         if (key == "advsolar") return UnitHelpers::GetAdvSolarNameForSide(side);
-        if (key == "lab") return UnitHelpers::GetT1BotLabForSide(side);
-        if (key == "alab") return UnitHelpers::GetT2BotLabForSide(side);
+        if (key == "lab") return EcoRole::T1LabName(side);    // AIR: the aircraft plants (manager/eco_role.as)
+        if (key == "alab") return EcoRole::T2LabName(side);
         if (key == "nano") return UnitHelpers::GetT1NanoNameForSide(side);
         if (key == "nanot2") { if (side == "cortex") return "cornanotct2"; if (side == "legion") return "legnanotct2"; return "armnanotct2"; }
         if (key == "fusion") return UnitHelpers::GetFusionNameForSide(side);
@@ -245,7 +245,7 @@ namespace TechChain
         stallStep = -1; stallHave = -1; stallFrame = 0; pendingStep = -1;
         objective = Global::RoleSettings::Tech::RushObjective;
         if (objective == "auto") objective = Choose();
-        if (!Global::RoleSettings::Tech::ExperimentalBuild || objective == "eco" || objective.length() == 0) {
+        if (!EcoRole::Enabled() || objective == "eco" || objective.length() == 0) {
             GenericHelpers::LogUtil("[TECH][Chain] no rush objective: the economy rules run from the start", 1);
             return;
         }
@@ -447,10 +447,10 @@ namespace TechChain
     IUnitTask@ CommanderOnFirstConstructor(CCircuitUnit@ u)
     {
         if (!UnitHelpers::IsCommander(u.circuitDef)) return null;
-        CCircuitUnit@ lab = Factory::primaryT1BotLab;
+        CCircuitUnit@ lab = EcoRole::PrimaryT1Lab();
         if (lab is null || lab is u || Lifecycle::IsRetiring(lab)) return null;   // D-076
         if (TechFactories::IsSpamLab(lab)) return null;   // D-119
-        if (UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT1BotConstructors()) > 0) return null;
+        if (UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT1Cons()) > 0) return null;
         IUnitTask@ g = GuardHelpers::AssignWorkerGuard(u, lab, Task::Priority::HIGH, true, 20 * SECOND);
         if (g !is null && ai.frame - firstConLog > 30 * SECOND) {
             firstConLog = ai.frame;
@@ -520,7 +520,8 @@ namespace TechChain
             // constructor (only air constructors build it): not a stall
             // D-104: nor while the air constructor lives and the plant is not yet
             // framed (played: skipped while the constructor walked to the site)
-            const bool waitsForAirCon = (s.key == "aap") && (AirConstructors() == 0 || unfinished == 0);
+            // AIR's advanced lab is the advanced aircraft plant: the same wait
+            const bool waitsForAirCon = (s.key == "aap" || (s.key == "alab" && EcoRole::IsAir())) && (AirConstructors() == 0 || unfinished == 0);
             if (stallStep != int(i) || stallHave != have || unfinished > 0 || waitsForAirCon) { stallStep = int(i); stallHave = have; stallFrame = ai.frame; }
             else if (i + 1 < steps.length() && ai.frame - stallFrame > int(Global::RoleSettings::Tech::ChainStepStallSeconds) * SECOND) {
                 // never the objective itself (played: an advanced fusion whose site

@@ -8,6 +8,7 @@
 #include "../helpers/map_helpers.as"
 #include "../helpers/layout_helpers.as"
 #include "widget_link.as"
+#include "eco_role.as"
 
 /******************************************************************************
 
@@ -216,8 +217,8 @@ namespace Layout {
 
     bool PlanFactories(const string& in side)
     {
-        CCircuitDef@ t1 = ai.GetCircuitDef(UnitHelpers::GetT1BotLabForSide(side));
-        CCircuitDef@ t2 = ai.GetCircuitDef(UnitHelpers::GetT2BotLabForSide(side));
+        CCircuitDef@ t1 = ai.GetCircuitDef(EcoRole::T1LabName(side));
+        CCircuitDef@ t2 = ai.GetCircuitDef(EcoRole::T2LabName(side));
         if (t1 is null || t2 is null || nano is null) return false;
         const AIFloat3 base = Global::Map::StartPos;
         const AIFloat3 lane = aiSetupMgr.GetLanePos();
@@ -262,8 +263,8 @@ namespace Layout {
     // block is two nano rows deep, the T1 block one.
     bool PairRear(const string& in side, AIFloat3 &out rearCentre)
     {
-        CCircuitDef@ t1 = ai.GetCircuitDef(UnitHelpers::GetT1BotLabForSide(side));
-        CCircuitDef@ t2 = ai.GetCircuitDef(UnitHelpers::GetT2BotLabForSide(side));
+        CCircuitDef@ t1 = ai.GetCircuitDef(EcoRole::T1LabName(side));
+        CCircuitDef@ t2 = ai.GetCircuitDef(EcoRole::T2LabName(side));
         const int t1Slot = aiTerrainMgr.GetLayoutInt(FACTORY_ROOT + ".t1_slot", -1);
         const int t2Slot = aiTerrainMgr.GetLayoutInt(FACTORY_ROOT + ".t2_slot", -1);
         if (t1 is null || t2 is null || nano is null || t1Slot < 0 || t2Slot < 0) return false;
@@ -383,7 +384,7 @@ namespace Layout {
         }
         if (!AiPinReservation(t, slot)) GenericHelpers::LogUtil("[Layout] could not pin the advanced lab to slot " + slot, 1);
         aiTerrainMgr.SetLayoutInt(BOX + ".lab_facing", aiTerrainMgr.GetReservationFacing(slot));   // D-098
-        Builder::MarkT2BotFactoryEnqueued();
+        EcoRole::MarkT2LabEnqueued();
         GenericHelpers::LogUtil("[Layout] advanced lab " + how + " (" + int(p.x) + ", " + int(p.z) + "): "
             + aiTerrainMgr.CountGroupSlotsWithin(nanoGroup, p, Global::RoleSettings::Tech::ExpLabBuildPowerReach) + " turret slots within "
             + int(Global::RoleSettings::Tech::ExpLabBuildPowerReach), 1);
@@ -509,7 +510,7 @@ namespace Layout {
                 // ordered the opening's turbines had taken that ground and no site
                 // with a clear exit was left near the seed)
                 {
-                    CCircuitDef@ t2 = ai.GetCircuitDef(UnitHelpers::GetT2BotLabForSide(side));
+                    CCircuitDef@ t2 = ai.GetCircuitDef(EcoRole::T2LabName(side));
                     if (t2 !is null) {
                         // D-096 (owner's rule, replaces D-088's any facing): the lab faces the
                         // front (LabFacing), else one of the two facings beside it, never away;
@@ -692,7 +693,7 @@ namespace Layout {
 
     void Plan(const string& in side)
     {
-        if (!Global::RoleSettings::Tech::ExperimentalBuild || !Global::RoleSettings::Tech::LayoutEnabled || !Enable(true)) return;
+        if (!EcoRole::Enabled() || !Global::RoleSettings::Tech::LayoutEnabled || !Enable(true)) return;
         if (Adopt(side)) return;
         if (!ResolveDefs(side) || !PlanFactories(side)) {
             fallback = true;
@@ -1115,8 +1116,8 @@ namespace Layout {
             // D-090: the advanced lab itself, however it was placed (played: no
             // footprint at plan time, the lab placed by the fallback, the turrets
             // filling from the home centre 680 elmos away)
-            CCircuitDef@ t2def = ai.GetCircuitDef(UnitHelpers::GetT2BotLabForSide(Global::AISettings::Side));
-            if (Factory::primaryT2BotLab !is null) return Factory::primaryT2BotLab.GetPos(ai.frame);
+            CCircuitDef@ t2def = ai.GetCircuitDef(EcoRole::T2LabName(Global::AISettings::Side));
+            if (EcoRole::PrimaryT2Lab() !is null) return EcoRole::PrimaryT2Lab().GetPos(ai.frame);
             if (t2def !is null && aiBuilderMgr.GetUnfinishedCount(t2def) > 0) {
                 CCircuitUnit@ fr = aiBuilderMgr.FindUnfinishedNear(HomeCentre(), 4000.0f, t2def);
                 if (fr !is null) return fr.GetPos(ai.frame);
@@ -1298,7 +1299,7 @@ namespace Layout {
     IUnitTask@ T2LabTask(int timeout)
     {
         const string side = Global::AISettings::Side;
-        CCircuitDef@ t2 = ai.GetCircuitDef(UnitHelpers::GetT2BotLabForSide(side));
+        CCircuitDef@ t2 = ai.GetCircuitDef(EcoRole::T2LabName(side));
         if (t2 is null) return null;
         {
             bool routed;   // D-114: from +200 metal the advanced lab goes to a front factory cluster
@@ -1306,7 +1307,7 @@ namespace Layout {
             if (routed) return ft;
         }
         if (!t2.IsAvailable(ai.frame)) return null;
-        if (!Builder::IsT2BotFactoryOffCooldown()) return null;
+        if (!EcoRole::T2LabOffCooldown()) return null;
         // D-116: the planned footprint the engine refused (a dead slot, never
         // served again) is given up and the lab placed elsewhere (played on All
         // That Glitters, build99: every advanced lab order was pinned to the dead
@@ -1323,7 +1324,7 @@ namespace Layout {
         // front (played: the rebuilt lab 7 cells out through the ranked search)
         if (TechBuild::WasIntoT2() && (labSlot < 0 || aiTerrainMgr.GetReservationPos(labSlot).x < 0.0f)) {
             IUnitTask@ ft = OrderFactory(t2, timeout);
-            if (ft !is null) { Builder::MarkT2BotFactoryEnqueued(); return ft; }
+            if (ft !is null) { EcoRole::MarkT2LabEnqueued(); return ft; }
         }
         // D-073: the site is scored by the turret slots (standing or planned) that
         // reach it, front first among equals: the pair's planned slot against the
@@ -1385,7 +1386,7 @@ namespace Layout {
                     return OrderLabOn(t2, nid, timeout, true, "nearest a turret slot, facing " + ff + ", at");
                 }
             }
-            IUnitTask@ t = Builder::EnqueueT2BotLabIfNeeded(side, Global::Map::StartPos, 0.0f, timeout);
+            IUnitTask@ t = EcoRole::EnqueueT2LabFallback(side, Global::Map::StartPos, 0.0f, timeout);
             if (t !is null) GenericHelpers::LogUtil("[Layout] advanced lab on the pair's slot (" + int(pairPos.x) + ", " + int(pairPos.z)
                 + "): " + pairScore + " turret slots within " + int(reach) + "; no footprint in the turret layout is reached by more", 1);
             return t;
@@ -1393,7 +1394,7 @@ namespace Layout {
         const int id = aiTerrainMgr.PackNearGroupMost(bestZone, t2, nanoGroup, LabFacing(), reach, Global::RoleSettings::Tech::LayoutLabFlushElmos, 0, TurretSeed());   // D-096   // D-085: nearest the seed among the most-reached sites
         if (id < 0) {
             GenericHelpers::LogUtil("[Layout] advanced lab: the turret-layout footprint could not be reserved; the pair's slot is used", 1);
-            return Builder::EnqueueT2BotLabIfNeeded(side, Global::Map::StartPos, 0.0f, timeout);
+            return EcoRole::EnqueueT2LabFallback(side, Global::Map::StartPos, 0.0f, timeout);
         }
         return OrderLabOn(t2, id, timeout, true, "in the turret layout (most slots reach it, nearest the seed) at");
     }

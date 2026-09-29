@@ -959,112 +959,34 @@ namespace Global {
             // Mirrors Front role behavior but scoped to AIR so roles can diverge if needed.
             int DynamicQuotaDelaySeconds = 5 * 60;
 
-            /******************** AIR ECONOMY SETTINGS ********************/
-            // Mostly delegate economy to AI for air, but give it an early start
-
-            //Continue building normal solars if ever below this energy income level
-            float SolarEnergyIncomeMinimum = 300.0f;
-
-            // T1 Energy converter policy (Air-specific thresholds)
-            // Build converters while metal income is below this threshold
-            float BuildT1ConvertersUntilMetalIncome = 35.0f;
-            // Require at least this much energy income
-            float BuildT1ConvertersMinimumEnergyIncome = 150.0f;
-            // Require current energy to be at least this fraction of storage (e.g., 0.90 = 90%)
-            float BuildT1ConvertersMinimumEnergyCurrentPercent = 0.75f;
-
-            //Continue building advanced solars if ever below this energy income level
-            float AdvancedSolarEnergyIncomeMinimum = 1100.0f; 
-
-            //Stop building advanced solar if above this energy income level
-            float AdvancedSolarEnergyIncomeMaximum = 1200.0f; 
-            // Barb4 has no timing gate here at all; keep only a small metal floor.
-            int AdvancedSolarEarliestSeconds = 0;
-            float AdvancedSolarMinimumMetalIncome = 6.0f;
-            float AdvancedSolarMinimumMetalCurrent = 100.0f;
-
-            // Prefer cheap wind generators before advanced solar when CircuitAI's
-            // effective average wind output exceeds BAR's good-wind threshold.
-            float GoodWindMinimumEnergy = 7.0f;
-            int CommanderWindTargetCount = 6;
-            float CommanderWindEnergyIncomeTarget = 300.0f;
-            float CommanderWindMinimumMetalCurrent = 80.0f;
-
-            // Eco crew: every T1 air constructor except the primary builds economy
-            // (converter, advanced solar, wind or solar) before it assists a factory
-            // project. See Air_TryEcoBuild.
-            bool EcoCrewEnabled = true;
-            // Seconds between two crew enqueues of the same building type, so several
-            // constructors spread over types instead of stacking one kind.
-            int EcoCrewCooldownSeconds = 6;
-            // Metal the crew leaves in store for the factory projects.
-            float EcoCrewMinMetalCurrent = 40.0f;
+            /******************** AIR ECONOMY ********************/
+            // AIR's economy is TECH's experimental system (roles/tech_build.as,
+            // tech_rules.as, tech_chain.as, tech_plan.as, manager/eco_planner.as,
+            // manager/layout.as) run on the aircraft plants through manager/eco_role.as:
+            // the T1 aircraft plant is kept (never reclaimed to fund the economy), the
+            // chain's advanced lab is a T2 aircraft plant, and the air.plants row
+            // (Air_PlantsAndNanos) adds the further T2 plants and their nanos.
+            // false leaves AIR's economy to native CircuitAI.
+            bool ExperimentalEco = true;
 
             /******************** METAL-STARVED MODE (Air_UpdateEcoPriority) ********************/
             // Starved from the moment the metal bank drops below EnterPercent of
-            // storage until it is back above ExitPercent. While starved, metal goes
-            // to wave bombers, fusions and AFUS only:
+            // storage until it is back above ExitPercent. While starved:
             //   T2 plant  wave bombers and the T2 air constructor minimum; no T2
             //             fighters or escorts, heavy air, T2 scouts, dynamic or
             //             native fallback production (the plant waits instead)
-            //   T2 cons   straight to the reactor ladder (fusions to FusionsBeforeAFUS,
-            //             then AFUS) at NOW priority - the only priority native hands
-            //             to idle builders during a metal stall - no mex upgrade and
-            //             no advanced converters
+            //   plants    no further T2 aircraft plant (Air_PlantsAndNanos)
             //   porc      PREVENT: one structure per cluster, no budget bonus
-            // The T1 plant and the T1 constructors are unchanged.
-            /******************** ECO RETIREMENT (Air_UpdateEcoRetire) ********************/
-            // Lower-tier energy is reclaimed to free build room once what replaces
-            // it is up, and never built again: winds and solars once
-            // RetireWindSolarAtFusions fusions have finished, advanced solars at
-            // RetireAdvSolarAtFusions, T1 energy converters once
-            // RetireT1ConvertersAtAdvConverters advanced converters have finished.
-            // Each step latches. Up to EcoRetireConcurrentReclaims reclaim tasks run
-            // at once; one nobody takes expires after EcoRetireReclaimTimeoutSeconds
-            // and is queued again.
-            bool EcoRetireEnabled = true;
-            int RetireWindSolarAtFusions = 1;
-            int RetireAdvSolarAtFusions = 2;
-            int RetireT1ConvertersAtAdvConverters = 2;
-            int EcoRetireConcurrentReclaims = 3;
-            int EcoRetireReclaimTimeoutSeconds = 60;
-
+            // The economy (TECH's rule table) is not held back.
             bool EcoPriorityEnabled = true;
             float EcoPriorityEnterPercent = 0.10f;
             float EcoPriorityExitPercent = 0.20f;
             int EcoPriorityFactoryWaitSeconds = 5;
-            // Crew wind on good-wind maps: up to this many, below this energy income.
-            int EcoCrewWindMaxCount = 24;
-            float EcoCrewWindEnergyIncomeTarget = 600.0f;
-
-            // Post-T2 reactor ladder (ReactorLadder::TryT2Economy, shared with FRONT). Fusion is uncapped for AIR
-            // and advanced fusion is capped at MaxAdvancedFusionReactors; the ladder
-            // only orders them:
-            //   1. FusionsBeforeAFUS fusions (from MinimumMetalIncomeForFUS average income)
-            //   2. the first AFUS, once those fusions are finished - AFUS stays capped
-            //      at 0 until then so native energy tasks cannot jump the queue
-            //   3. more AFUS whenever energy is below AdvConverterEnergyPercent of
-            //      storage, advanced converters whenever it is above; the second AFUS
-            //      is queued as soon as the first is finished
-            //   4. once ReclaimFusionsAtAFUSCount AFUS exist (the second counts from
-            //      the moment its nanoframe is down), the tracked fusions are
-            //      reclaimed one at a time to fund it
-            float MinimumMetalIncomeForFUS = 18.0f;
-            int FusionsBeforeAFUS = 2;
-            int ReclaimFusionsAtAFUSCount = 2;
-            int MaxAdvancedFusionReactors = 20;
-            float AdvConverterEnergyPercent = 0.80f;
-            // Advanced converter ceiling per finished reactor (fusion ~1000 E,
-            // AFUS ~3000 E, a converter draws ~600 E).
-            int AdvConvertersPerFusion = 1;
-            int AdvConvertersPerAFUS = 4;
 
             /******************** T2 AIRCRAFT PLANT THRESHOLDS (AIR role) ********************/
-            // Economy thresholds and caps for building a T2 Aircraft Plant when in AIR role
-            // Defaults mirror TECH thresholds but are scoped to AIR so air.as does not reference TECH settings.
-            float RequiredMetalIncomeForT2AircraftPlant = 30.0f;
+            // Metal in the bank before the air.plants row (Air_PlantsAndNanos) orders
+            // another T2 aircraft plant.
             float RequiredMetalCurrentForT2AircraftPlant = 50.0f;
-            float RequiredEnergyIncomeForT2AircraftPlant = 1200.0f;
             // Extra advanced aircraft plants by native average metal income: the second
             // at 100, the third at 200, never more than MaxT2AircraftPlants. Enforced
             // as the def cap (Air_UpdateT2PlantCap), so native factory tasks obey it too.
@@ -1086,52 +1008,31 @@ namespace Global {
             // stays the ally's own business.
             bool PorcAlliedClustersAA = true;
 
-            /******************** LATE-GAME EXPANSION ********************/
-            // AIR sat at max metal late: one T2 air plant, nanos capped by
-            // income, and nothing else to spend on. This ladder runs while
-            // metal is floating and turns the surplus into build power, more
-            // air production placed on a ring well outside the core, the energy
-            // to carry it, and finally a gantry - the only route to T3 air,
-            // since the experimental air plant is built solely by the T3 air
-            // constructor the gantry produces.
+            /******************** PLANTS AND THEIR NANOS (Air_PlantsAndNanos) ********************/
             // "Floating": aiEconomyMgr.isMetalFull (> 80% of storage), or
             // current above LateMetalCurrent - and income above LateMetalIncome
             // either way, so a full bank on a dead economy does not trigger it.
+            // While floating the air.plants row adds nanos at the T2 plants.
             float LateMetalCurrent = 2500.0f;
             float LateMetalIncome = 35.0f;
-            // Ring the late structures are placed on, around the start position,
-            // and the site-search radius each gets. This is what grows the base.
+            // Ring round the start position a T2 plant falls back to when the layout
+            // has no flush site, and the site-search radius each gets.
             float LateExpansionRadius = 1400.0f;
             float LateExpansionShake = 384.0f;   // SQUARE_SIZE * 48
             int LateRingSlots = 6;
-            // Build power first: nanos per T2 air plant beyond the income target.
+            // Nanos per T2 air plant while floating.
             // 8 (was 4): with the bank floating past 10 000, four per plant left
             // the plants unable to spend it (All That Glitters 2026-09-27).
             int LateNanosPerT2Plant = 8;
-            // Then production: total T2 air plants allowed while floating.
-            int LateMaxT2AircraftPlants = 3;
-            // Then energy: one fusion per this much energy income shortfall, and
-            // an advanced fusion once income and bank both clear these.
-            float LateEnergyPerT2Plant = 900.0f;
-            float LateAFUSMetalIncome = 60.0f;
-            float LateAFUSMetalCurrent = 6000.0f;
-            // Then T3: a gantry once this rich. Gantry production is
-            // FactoryProduction's business (EnqueueGantrySignatureBatch).
-            float LateGantryMetalIncome = 60.0f;
-            float LateGantryMetalCurrent = 6000.0f;
 
             /******************** AIR NANO POLICY ********************/
-            // How much income per additional T1 nano caretaker; and cap
-            float NanoEnergyPerUnit = 200.0f; // energy per nano
-            float NanoMetalPerUnit = 10.0f;   // metal per nano
-            int NanoMaxCount = 200;            // cap
-            // Reserves-based nano condition threshold
-            float NanoBuildWhenOverMetal = 1000.0f;
+            // Cap on T1 nano caretakers the air.plants row builds.
+            int NanoMaxCount = 200;
 
             // T1 air constructors, Barb4-style: the first is unconditional, then
             // MinT1AirConstructorCount outright and one per T1AirConstructorPerMetalIncome
             // of (10 s minimum) metal income, up to MaxT1AirConstructorCount, held back
-            // only by an energy stall. Primary and secondary aside, the rest form the eco crew.
+            // only by an energy stall. They take their work from TECH's rule table.
             int MinT1AirConstructorCount = 3;
             float T1AirConstructorPerMetalIncome = 5.0f;
             int MaxT1AirConstructorCount = 8;
@@ -1155,16 +1056,6 @@ namespace Global {
             int MinT1FighterCount = 2;
             float T1CombatProductionMetalIncome = 12.0f;
             float T1CombatProductionEnergyIncome = 250.0f;
-
-            /******************** EARLY BUILD-POWER FOCUS ********************/
-            // Keep one strategic lane and one expansion lane until the economy is
-            // established or the deadline expires. Additional constructors assist
-            // those active lanes.
-            int BuildFocusDeadlineSeconds = 6 * 60;
-            float BuildFocusMetalIncome = 20.0f;
-            float BuildFocusEnergyIncome = 300.0f;
-            int BuildFocusAssistTimeoutSeconds = 15;
-            int BuildFocusIdleWaitSeconds = 5;
 
             // One-time T1 strike package. Keep this small so it does not delay economy growth.
             int T1StrikeOpenerSize = 3;
@@ -1277,16 +1168,6 @@ namespace Global {
             // corhurc) and escorts. 1 = every turn, the old behaviour.
             int T2HeavyAirBatchPerFactory = 1;
             int T2HeavyAirEveryNthTurn = 4;
-
-            /******************** COMMANDER FACTORY ASSIST ********************/
-            // Maximum time spent assisting the opening aircraft plant. Assistance
-            // ends sooner as soon as the first construction aircraft is complete.
-            int CommanderFactoryAssistDeadlineSeconds = 90;
-
-            // Duration (in seconds) for each guard assignment when assisting the
-            // primary T1 aircraft plant. Tasks may be renewed while within the
-            // assist deadline window.
-            int CommanderFactoryAssistGuardTimeoutSeconds = 10; // default: 10-second guard tasks
 
         }
 

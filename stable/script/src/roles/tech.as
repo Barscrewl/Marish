@@ -86,7 +86,7 @@ namespace RoleTech
 
 		void Init()
 		{
-			const int labs = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT1BotLabs());
+			const int labs = UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT1Labs());   // AIR: aircraft plants (manager/eco_role.as)
 			complete = labs > 0;
 			startFrame = ai.frame;
 			claimed = 0;
@@ -130,7 +130,7 @@ namespace RoleTech
 		// the hold whatever the mex count.
 		void Tick()
 		{
-			if (complete || !Global::RoleSettings::Tech::ExperimentalBuild) return;
+			if (complete || !EcoRole::Enabled()) return;
 			if (ai.frame - startFrame > Global::RoleSettings::Tech::OpeningMaxSeconds * SECOND)
 			{
 				Finish("deadline");
