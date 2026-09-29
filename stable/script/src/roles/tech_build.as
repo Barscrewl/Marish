@@ -843,8 +843,16 @@ namespace TechBuild {
         const float t1Make = s.winds * wind + s.solars * 20.0f;
         const float advMake = s.advSolars * 75.0f;
         const float pull = s.ePull;
-        const bool t1Ok = afusUp || (s.eIncome - t1Make >= pull * Global::RoleSettings::Tech::ReclaimT1EnergyMargin);
-        const bool advOk = afusUp || (s.eIncome - t1Make - advMake >= pull * Global::RoleSettings::Tech::ReclaimAdvSolarMargin);
+        // AIR (manager/eco_role.as): its pull is mostly aircraft production, which
+        // takes whatever energy there is (played, Salt Reef 2026-09-28: a pull of
+        // 1,684 at +1,768, where TECH's was 115 to 771), so with its fusion
+        // standing the winds stayed until the advanced fusion - three minutes with
+        // the energy bank above EcoConvertEnergyPercent the whole time. For AIR the
+        // bank is read, not the pull (as D-079 does for the chain): a bank that
+        // floats is energy the T1 sources are not needed for. TECH is unchanged.
+        const bool airFloat = EcoRole::IsAir() && s.eStor > 0.0f && s.eCur >= Global::RoleSettings::Tech::EcoConvertEnergyPercent * s.eStor;
+        const bool t1Ok = afusUp || airFloat || (s.eIncome - t1Make >= pull * Global::RoleSettings::Tech::ReclaimT1EnergyMargin);
+        const bool advOk = afusUp || airFloat || (s.eIncome - t1Make - advMake >= pull * Global::RoleSettings::Tech::ReclaimAdvSolarMargin);
         if (ReclaimsInFlight() >= Global::RoleSettings::Tech::ReclaimEnergyConcurrent) return null;
         const string side = Global::AISettings::Side;
         array<string> names;
@@ -867,7 +875,8 @@ namespace TechBuild {
             if (!reclaimInFlight.exists(key)) {
                 reclaimInFlight.set(key, int64(ai.frame));
                 GenericHelpers::LogUtil("[TECH][Reclaim] " + names[i] + " " + target.id + ": energy +" + int(s.eIncome) + " without " + int(t1Make)
-                    + " T1 and " + int(advMake) + " adv-solar covers a pull of " + int(pull) + (afusUp ? " (advanced fusion stands)" : " (fusion stands)") + "; by " + u.circuitDef.GetName() + " " + u.id, 1);
+                    + " T1 and " + int(advMake) + " adv-solar covers a pull of " + int(pull) + (afusUp ? " (advanced fusion stands)" : " (fusion stands)")
+                    + ((airFloat && !afusUp) ? ", AIR: energy bank " + int(s.eCur) + " of " + int(s.eStor) + " floats" : "") + "; by " + u.circuitDef.GetName() + " " + u.id, 1);
             }
             return t;
         }
