@@ -1234,7 +1234,10 @@ namespace Global {
             int MinT2VehicleConstructorCount = 1;
 
             // Time triggers for T2 lab construction
-            int TimeTriggerForFirstT2LabSeconds = 22 * 60; // 22 minutes
+            // 13 (was 22): TECH shares its overflow metal with FRONT, and at 22
+            // minutes team 15 (All That Glitters 2026-09-28) had never met the
+            // income or bank trigger; its income collapsed that same minute
+            int TimeTriggerForFirstT2LabSeconds = 13 * 60; // 13 minutes
             int TimeTriggerForT2EcoGatingSeconds = 20 * 60; // 20 minutes
 
             // Combat settings
@@ -1269,6 +1272,12 @@ namespace Global {
             // Nano Policy Extras
             float NanoMinIncomeForFirst = 10.0f;
             float T2LabStoredMetalThresholdRatio = 0.9f;
+            // The first T2 plant's bank trigger: T2LabStoredMetalThresholdRatio of
+            // its cost, or this share of our metal storage when that is smaller
+            // (storage ~1,900 never holds 90% of a 2,600 plant), and only at this
+            // metal income or more
+            float FirstT2StoredStorageRatio = 0.8f;
+            float FirstT2StoredMinMetalIncome = 15.0f;
 
             // Transition thresholds for switching between T1 factory types (Bot <-> Vehicle)
             float MinimumMetalIncomeForT1FactoryTransition = 200.0f;

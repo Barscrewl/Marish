@@ -597,6 +597,12 @@ namespace RoleFront {
         // Route T1 land constructors (bot or vehicle) to FRONT logic; others fallback
         int ctorTier = UnitHelpers::GetConstructorTier(udef);
         if (ctorTier == 1) {
+            // The first T2 plant of each kind: every T1 constructor, not only the
+            // primary / secondary ones routed below (Front_TryFirstT2Plant)
+            {
+                IUnitTask@ tFirstT2 = Front_TryFirstT2Plant(builder, UnitHelpers::GetSideForUnitName(udef.GetName()), Economy::GetMinMetalIncomeLast10s());
+                if (tFirstT2 !is null) return tFirstT2;
+            }
             if (builder is Builder::primaryT1BotConstructor || builder is Builder::secondaryT1BotConstructor
              || builder is Builder::primaryT1VehConstructor || builder is Builder::secondaryT1VehConstructor) {
                 // Use same economy snapshot style as T2: min over last 10s for incomes
@@ -825,6 +831,69 @@ namespace RoleFront {
         return null;
     }
 
+    // The first T2 plant's bank trigger: T2LabStoredMetalThresholdRatio of its
+    // cost, or FirstT2StoredStorageRatio of our metal storage when that is
+    // smaller, at FirstT2StoredMinMetalIncome or more. Played (team 15, All That
+    // Glitters 2026-09-28): storage ~1,900 against 2,340 for an armavp, so the
+    // bank trigger could never fire, whatever TECH shared.
+    bool Front_BankPaysFirstT2(CCircuitDef@ d, float metalIncome)
+    {
+        if (d is null || metalIncome < Global::RoleSettings::Front::FirstT2StoredMinMetalIncome) return false;
+        float need = d.costM * Global::RoleSettings::Front::T2LabStoredMetalThresholdRatio;
+        const float byStorage = aiEconomyMgr.metal.storage * Global::RoleSettings::Front::FirstT2StoredStorageRatio;
+        if (byStorage > 0.0f && byStorage < need) need = byStorage;
+        return aiEconomyMgr.metal.current >= need;
+    }
+
+    // Fast-track to the first T2 plant of a kind, for ANY T1 constructor that
+    // can build it (was the primary bot / vehicle constructor only: dead or busy,
+    // nothing tried). A bot constructor starts the T2 bot lab, a vehicle
+    // constructor the T2 vehicle plant, when none of that kind stands or is
+    // ordered and any trigger is met (OR): metal income, game time
+    // (TimeTriggerForFirstT2LabSeconds), or the bank (Front_BankPaysFirstT2).
+    IUnitTask@ Front_TryFirstT2Plant(CCircuitUnit@ u, const string &in unitSide, float metalIncome)
+    {
+        const bool timeMet = (ai.frame >= (Global::RoleSettings::Front::TimeTriggerForFirstT2LabSeconds * SECOND));
+        {
+            CCircuitDef@ d = ai.GetCircuitDef(UnitHelpers::GetT2BotLabForSide(unitSide));
+            if (d !is null && u.circuitDef.CanBuild(d)
+                && UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2BotLabs()) < 1
+                && aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::FACTORY), d) == 0) {
+                const bool incomeMet = (metalIncome >= Global::RoleSettings::Front::MinimumMetalIncomeForFirstT2Lab);
+                const bool bankMet = Front_BankPaysFirstT2(d, metalIncome);
+                if (incomeMet || timeMet || bankMet) {
+                    IUnitTask@ t = Builder::EnqueueT2BotLabIfNeeded(unitSide, Factory::GetT1BotLabPos(), SQUARE_SIZE * 30, SECOND * 300);
+                    if (t !is null) {
+                        GenericHelpers::LogUtil("[FRONT] first T2 bot lab " + d.GetName() + " by " + u.circuitDef.GetName() + " " + u.id
+                            + " (" + (incomeMet ? "income" : (timeMet ? "time" : "bank")) + ": +" + int(metalIncome) + " metal, bank "
+                            + int(aiEconomyMgr.metal.current) + " of " + int(aiEconomyMgr.metal.storage) + ")", 1);
+                        return t;
+                    }
+                }
+            }
+        }
+        {
+            const string vehName = (unitSide == "cortex") ? "coravp" : ((unitSide == "legion") ? "legavp" : "armavp");
+            CCircuitDef@ d = ai.GetCircuitDef(vehName);
+            if (d !is null && u.circuitDef.CanBuild(d)
+                && UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2VehicleLabs()) < 1
+                && aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::FACTORY), d) == 0) {
+                const bool incomeMet = (metalIncome >= Global::RoleSettings::Front::MinimumMetalIncomeForFirstT2VehiclePlant);
+                const bool bankMet = Front_BankPaysFirstT2(d, metalIncome);
+                if (incomeMet || timeMet || bankMet) {
+                    IUnitTask@ t = Builder::EnqueueT2VehiclePlant(unitSide, Factory::GetPreferredFactoryPos(), SQUARE_SIZE * 24, 600 * SECOND);
+                    if (t !is null) {
+                        GenericHelpers::LogUtil("[FRONT] first T2 vehicle plant " + d.GetName() + " by " + u.circuitDef.GetName() + " " + u.id
+                            + " (" + (incomeMet ? "income" : (timeMet ? "time" : "bank")) + ": +" + int(metalIncome) + " metal, bank "
+                            + int(aiEconomyMgr.metal.current) + " of " + int(aiEconomyMgr.metal.storage) + ")", 1);
+                        return t;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     IUnitTask@ Front_T1Constructor_AiMakeTask(CCircuitUnit@ u, IUnitTask@ defaultTask, float metalIncome, float energyIncome, bool isEnergyStalling, bool isEnergyFull) {
         // Econ snapshot is passed by caller (min over last 10s for incomes)
 
@@ -836,28 +905,7 @@ namespace RoleFront {
             int t2ConstructionBotCount = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2BotConstructors());
             int t2LabCount = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2BotLabs());
 
-            // Fast-track: if we have zero T2 bot labs and ANY trigger is met, build a T2 Bot Lab now.
-            // Triggers (OR):
-            //  1) metal income >= configured threshold
-            //  2) game time >= 22 minutes
-            //  3) stored metal >= T2 bot lab cost
-            if (t2LabCount < 1) {
-                const float incomeTrigger = Global::RoleSettings::Front::MinimumMetalIncomeForFirstT2Lab;
-                const bool timeTriggerMet = (ai.frame >= (Global::RoleSettings::Front::TimeTriggerForFirstT2LabSeconds * SECOND));
-                const bool incomeTriggerMet = (metalIncome >= incomeTrigger);
-                // Resolve T2 lab cost for stored-metal trigger
-                bool storedMetalTriggerMet = false;
-                string t2LabName = UnitHelpers::GetT2BotLabForSide(unitSide);
-                CCircuitDef@ t2LabDef = ai.GetCircuitDef(t2LabName);
-                if (t2LabDef !is null) {
-                    storedMetalTriggerMet = (aiEconomyMgr.metal.current >= (t2LabDef.costM * Global::RoleSettings::Front::T2LabStoredMetalThresholdRatio));
-                }
-                if (incomeTriggerMet || timeTriggerMet || storedMetalTriggerMet) {
-                    AIFloat3 anchor2 = Factory::GetT1BotLabPos();
-                    IUnitTask@ t2b = Builder::EnqueueT2BotLabIfNeeded(unitSide, anchor2, SQUARE_SIZE * 30, SECOND * 300);
-                    if (t2b !is null) return t2b;
-                }
-            }
+            // The first T2 bot lab's fast-track is Front_TryFirstT2Plant, above, for any T1 constructor.
 
             // Transition to vehicles if metal income > threshold and no vehicle plant
             int t1VehLabCount = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT1VehicleLabs());
@@ -898,33 +946,7 @@ namespace RoleFront {
 
         // Primary constructor branch (Vehicles)
         if (u is Builder::primaryT1VehConstructor) {
-            int t2VehLabCount = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2VehicleLabs());
-            
-            // Fast-track: if we have zero T2 vehicle labs and ANY trigger is met, build a T2 Vehicle Plant now.
-            if (t2VehLabCount < 1) {
-                const float incomeTrigger = Global::RoleSettings::Front::MinimumMetalIncomeForFirstT2VehiclePlant;
-                const bool timeTriggerMet = (ai.frame >= (Global::RoleSettings::Front::TimeTriggerForFirstT2LabSeconds * SECOND));
-                const bool incomeTriggerMet = (metalIncome >= incomeTrigger);
-                
-                // Resolve T2 vehicle lab cost for stored-metal trigger
-                bool storedMetalTriggerMet = false;
-                string t2VehName = "";
-                if (unitSide == "armada") t2VehName = "armavp";
-                else if (unitSide == "cortex") t2VehName = "coravp";
-                else if (unitSide == "legion") t2VehName = "legavp";
-                
-                if (t2VehName != "") {
-                    CCircuitDef@ t2VehDef = ai.GetCircuitDef(t2VehName);
-                    if (t2VehDef !is null) {
-                        storedMetalTriggerMet = (aiEconomyMgr.metal.current >= (t2VehDef.costM * Global::RoleSettings::Front::T2LabStoredMetalThresholdRatio));
-                    }
-                }
-
-                if (incomeTriggerMet || timeTriggerMet || storedMetalTriggerMet) {
-                    IUnitTask@ tVeh2 = Builder::EnqueueT2VehiclePlant(unitSide, Factory::GetPreferredFactoryPos(), SQUARE_SIZE * 24, 600 * SECOND);
-                    if (tVeh2 !is null) return tVeh2;
-                }
-            }
+            // The first T2 vehicle plant's fast-track is Front_TryFirstT2Plant, above, for any T1 constructor.
 
             // Transition to bots if metal income > threshold and no bot lab
             int t1BotLabCount = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT1BotLabs());
