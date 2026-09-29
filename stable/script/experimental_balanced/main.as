@@ -103,6 +103,7 @@ namespace Main {
 		Spam::Update();          // economy-gated spam: activation, focus rotation
 		BomberStock::Update();   // T2 bombers: parked until the wave size, then launched together
 		BuildPower::Update();    // metal capping from income or trade: construction turrets at the factories
+		NavalWaves::Update();    // frigates and destroyers: held, then launched together at the threshold
 		Team::Ferry::Update();   // transport ferry: hand-over on arrival, run polling
 		Team::SeaAssist::Update();  // SEA seeds a TACTICAL ally with a construction ship
 		Team::Donation::Update();   // a teammate without T2 asks TECH for a constructor

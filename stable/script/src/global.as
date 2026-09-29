@@ -120,6 +120,26 @@ namespace Global {
         int MissRestSeconds = 90;        // a factory whose turret ended unbuilt is skipped this long
     }
 
+    // Frigates and destroyers of every faction: held at base, then every held
+    // ship launched as one attack, see manager/naval_waves.as.
+    namespace NavalWaves {
+        bool Enabled = true;
+        array<string> Ships = {
+            "armpship", "armroy",               // Armada: Ellysaw frigate, destroyer
+            "corpship", "corroy",               // Cortex: Riptide frigate, destroyer
+            "legnavyfrigate", "legnavydestro"   // Legion: Argonaut frigate, destroyer
+        };
+        int LaunchAt = 7;                // held ships, combined, that launch the whole hold
+        // Safety valve: a hold of at least TimeoutMinSize that has waited this long
+        // launches anyway, so a yard that cannot reach LaunchAt never parks for
+        // good. 0 turns it off.
+        int TimeoutMinSize = 4;
+        int MaxHoldSeconds = 300;
+        // Released ships re-enter Military::AiMakeTask within a few seconds and
+        // take the wave's attack task while this window is open.
+        int ReleaseWindowSeconds = 15;
+    }
+
     // Spam: economy-gated mass production on parallel routes, see manager/spam.as
     // and doc/spam-routes.md. Units need "attribute": ["spam"] in behaviour.json.
     // Air transport ferry (Team::Ferry, manager/ferry.as). AIR builds one

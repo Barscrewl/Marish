@@ -5,6 +5,7 @@
 #include "spam.as"
 #include "ferry.as"
 #include "bomber_stock.as"
+#include "naval_waves.as"
 
 namespace Military {
 
@@ -47,6 +48,11 @@ namespace Military {
 		// bombers fall through to it.
 		if (BomberStock::Claims(u)) return null;
 
+		// Frigates and destroyers: held, then launched together at the threshold
+		// (manager/naval_waves.as). Ahead of the role policy, whatever the role.
+		@t = NavalWaves::MakeTask(u);
+		if (t !is null) return t;
+
 		RoleConfig@ cfg = (Global::profileController is null) ? null : Global::profileController.RoleCfg;
 		if (cfg !is null && cfg.MilitaryAiMakeTaskHandler !is null) {
 			@t = cfg.MilitaryAiMakeTaskHandler(u);
@@ -69,6 +75,7 @@ namespace Military {
 	void AiTaskRemoved(IUnitTask@ task, bool done)
 	{
 		Spam::OnTaskRemoved(task);
+		NavalWaves::OnTaskRemoved(task);
 		RoleConfig@ cfg = (Global::profileController is null) ? null : Global::profileController.RoleCfg;
 		if (cfg !is null && cfg.MilitaryAiTaskRemovedHandler !is null) {
 			cfg.MilitaryAiTaskRemovedHandler(task, done);
@@ -91,6 +98,7 @@ namespace Military {
 	{
 		Team::Ferry::OnUnitRemoved(unit);
 		BomberStock::OnUnitRemoved(unit);
+		NavalWaves::OnUnitRemoved(unit);
 
 		// Delegate to role-specific handler if registered
 		RoleConfig@ cfg = (Global::profileController is null) ? null : Global::profileController.RoleCfg;
