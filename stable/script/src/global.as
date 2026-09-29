@@ -461,7 +461,7 @@ namespace Global {
             bool ExpTurretNearLab = true;                   // D-069: the next box turret slot is the one nearest a standing lab, not the one nearest the pair's centre
             float ExpLabBuildPowerReach = 260.0f;           // D-069: elmos within which static build power (turrets) counts for a lab site: a nano's build distance plus the lab's radius
             float ExpLabSiteRadius = 480.0f;                // D-069, superseded by D-073 (no longer read): the lab site is the turret-layout footprint the most turret slots reach
-            string EndgamePlan = "auto";                   // D-080: nuke | t2rush | t3rush | lrpc | auto (deterministic from the team id) - what follows the rush objective
+            string EndgamePlan = "nuke";                   // D-080: nuke | t2rush | t3rush | lrpc | auto (deterministic from the team id) - what follows the rush objective. "nuke" for every TECH: our main-branch nuke rush (NukeRush 1): one silo right after the advanced fusion
             float PlanCombatGate = 200.0f;                  // D-080: no mobile combat unit under this metal income (every plan)
             float PlanT3RushCombatGate = 500.0f;            // D-080: ... the t3rush plan's gate
             float PlanLrpcMetal = 300.0f;                   // D-080: the lrpc plan's income before the long-range cannon
