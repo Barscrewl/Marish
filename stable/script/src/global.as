@@ -95,29 +95,39 @@ namespace Global {
         float ExcessMetalBudgetMod = 2.0f;
     }
 
-    // Build power on capped metal, see manager/build_power.as. While the metal
-    // bank sits full - from income or from metal traded in by teammates -
-    // construction turrets are added at the factories until it drains.
+    // FRONT and AIR near max metal, see manager/build_power.as. While the bank
+    // sits near full - from income or from metal TECH trades in - construction
+    // turrets go on the T2 plants and gantries; if it stays maxed, another gantry.
     namespace BuildPower {
         bool Enabled = true;
-        bool SkipTech = true;            // TECH's eco planner owns its build power; D-106 shares its surplus
+        bool Front = true;
+        bool Air = true;
         int MinMinutes = 3;
         int IntervalSeconds = 6;         // one step at most this often
-        float CapFill = 0.85f;           // bank / storage at which metal counts as capping
-        float ReleaseFill = 0.60f;       // below this the capped stretch ends
-        int SustainSeconds = 20;         // capped this long before the first turret
+        float CapFill = 0.80f;           // bank / storage at which metal counts as near max
+        float ReleaseFill = 0.55f;       // below this the capped stretch ends
+        int SustainSeconds = 15;         // near max this long before the first turret
         float TargetFill = 0.50f;        // the bank above this is drained over DrainSeconds
         int DrainSeconds = 120;
         float MetalPerNano = 8.0f;       // metal/s one 200 build power turret spends
         int MaxPerStep = 2;
         int MaxInFlight = 3;             // our turret tasks queued at once
         int MaxNanos = 60;               // all T1 turrets, ours and the roles'
-        float MinEnergyFill = 0.25f;     // no turrets below this energy fill, or while stalling
-        int NanosPerT1Factory = 6;       // ours per factory, on top of the roles' own
-        int NanosPerT2Factory = 12;
+        float MinEnergyFill = 0.25f;     // nothing added below this energy fill, or while stalling
+        int NanosPerT2Factory = 12;      // ours per plant, on top of the roles' own
         int NanosPerGantry = 16;
+        bool T1Fallback = true;          // T1 plants take turrets only while there is no T2 plant or gantry
+        int NanosPerT1Factory = 6;
         int TaskTimeoutSeconds = 120;
-        int MissRestSeconds = 90;        // a factory whose turret ended unbuilt is skipped this long
+        int MissRestSeconds = 90;        // a plant whose turret ended unbuilt is skipped this long
+        // Another land gantry once the bank has stayed at GantryFill without a
+        // break for GantrySeconds (the turrets did not drain it).
+        float GantryFill = 0.90f;
+        int GantrySeconds = 180;
+        float GantryMinIncome = 60.0f;
+        int GantryMinMinutes = 12;
+        int GantryIntervalSeconds = 300; // between gantries queued here
+        int MaxGantries = 3;             // land gantries in all
     }
 
     // Frigates and destroyers of every faction: held at base, then every held

@@ -746,6 +746,9 @@ namespace RoleFront {
         // Gantries
         array<string> gantries = UnitHelpers::GetAllGantries();
         int gantryCap = (metalIncome >= Global::RoleSettings::Front::MetalIncomeForGantry) ? 1 : 0;
+        // Gantries added on maxed metal (manager/build_power.as) stay allowed.
+        const int buildPowerGantries = BuildPower::GantryCapFloor();
+        if (gantryCap < buildPowerGantries) gantryCap = buildPowerGantries;
         UnitHelpers::BatchApplyUnitCaps(gantries, gantryCap);
     }
 
@@ -780,7 +783,7 @@ namespace RoleFront {
             nanoCap = Global::RoleSettings::Front::NanoMaxCount;
         }
         // Turrets queued on capped metal (manager/build_power.as) stay buildable.
-        const int buildPowerFloor = BuildPower::CapFloor();
+        const int buildPowerFloor = BuildPower::NanoCapFloor();
         if (nanoCap < buildPowerFloor) nanoCap = buildPowerFloor;
         array<string> nanos = UnitHelpers::GetT1NanoUnitNames();
         UnitHelpers::BatchApplyUnitCaps(nanos, nanoCap);

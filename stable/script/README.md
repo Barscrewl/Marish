@@ -86,7 +86,9 @@ The experimental runtime sequence is:
 
 `src/manager/economy.as` derives empty/full/stalling flags from native resource snapshots, maintains rolling ten-second minimum income values, exposes economy placement anchors, and tracks owned mexes and upgrade state. It delegates role-specific income/cap transitions after updating shared state. Save/load hooks currently contain no persistence logic.
 
-`src/manager/build_power.as` (`BuildPower`) scales build power to capped metal: while the bank sits at `Global::BuildPower::CapFill` of storage or more, from income or from metal traded in by teammates, it queues construction turrets at the factories (gantries, then T2, then T1; naval turrets at water factories), sized from the unspent surplus, gated on energy, for every role but TECH. It runs from `Main::AiUpdate`; FRONT's turret cap keeps room for the turrets it has queued.
+`src/manager/build_power.as` (`BuildPower`) is FRONT's and AIR's answer to metal near max, from their own income or from metal TECH trades in: while the bank sits at `Global::BuildPower::CapFill` of storage or more it queues construction turrets on the T2 plants and gantries (T1 plants only while there are none), sized from the unspent surplus and gated on energy; if the bank stays at `GantryFill` for `GantrySeconds` it queues another land gantry, raising the gantry cap (AIR starts at 0) within any map limit. It runs from `Main::AiUpdate`; FRONT's turret and gantry caps keep room for what it has queued.
+
+`src/manager/naval_waves.as` (`NavalWaves`) holds every faction's frigates and destroyers in a hold task that cannot self-promote and launches every held ship as one attack once `Global::NavalWaves::LaunchAt` (7) are held.
 
 ### Military manager policy
 
