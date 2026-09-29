@@ -314,8 +314,10 @@ namespace Global {
         bool Enabled = true;
 
         // Wave N launches at FirstWaveSize + WaveSizeGrowth * (N - 1) live
-        // bombers - 5, 8, 11, 14, 17, 20 - then 20 every wave until the game
-        // ends (40 once the late-game lift opens, Air::LateBomberWaveMaxSize).
+        // bombers - 5, 8, 11, 14, 17, 20 - then 20 every wave, and once the
+        // late-game lift opens (Air::LateBomberWaveMaxSize) on from 20 by the
+        // same step to 40: 23, 26 ... 38, 40. Never a skipped size, whatever
+        // the income (BomberStock::WaveSize).
         // A launch never takes more than MaxWaveSize; extras stay parked
         // for the next wave. This is a per-wave size, not a limit on how many
         // bombers the AI owns: the plant refills the stock after every launch.
@@ -1118,18 +1120,10 @@ namespace Global {
             // six waves with no escort. Parked fighters still go with a launching
             // wave as escorts. 1 = no parking.
             int FighterGroupSize = 4;
-            // Growth applied to the previous wave size from its survival ratio, measured
-            // EvaluateSeconds after launch: heavy losses mean the enemy anti-air is winning
-            // and the next wave needs mass; light losses grow gently.
-            float BomberWaveLowSurvival = 0.4f;
-            float BomberWaveHighSurvival = 0.8f;
-            float BomberWaveGrowthOnHeavyLoss = 2.0f;
-            float BomberWaveGrowthDefault = 1.5f;
-            float BomberWaveGrowthOnLightLoss = 1.25f;
+            // Every wave is Global::BomberStock::WaveSizeGrowth (3) bigger than the last
+            // (manager/air_waves.as Sizing): no survival growth, enemy-AA or income floor.
+            // The survival ratio is measured this long after launch and logged.
             int BomberWaveEvaluateSeconds = 120;
-            // Enemy anti-air floor: the wave's bomber metal must reach this fraction of the
-            // enemy anti_air metal on the map (Military cost cache, refreshed every update).
-            float BomberWaveEnemyAAMetalFraction = 0.5f;
             // Launch anyway once FirstSize bombers have been held this long, so production
             // that cannot reach the target in time never stalls the air war.
             int BomberWaveMaxHoldSeconds = 8 * 60;
@@ -1138,12 +1132,6 @@ namespace Global {
             int BomberWaveReleaseWindowSeconds = 15;
             // Minimum metal income before the T2 plant produces wave aircraft.
             float BomberWaveProductionMetalIncome = 40.0f;
-            // Income floor on the wave size (D-045): every IncomeStep of metal
-            // income adds SizePerIncomeStep bombers to what a wave must hold
-            // before it launches - at +100 a wave is 50, at +200 it is 100.
-            // The survival growth still applies above the floor.
-            float BomberWaveIncomeStep = 100.0f;
-            int BomberWaveSizePerIncomeStep = 50;
 
             /******************** WAVE ATTACK METHODS ********************/
             // Each launch draws a method by these weights (doc/air-wave-attacks.md).

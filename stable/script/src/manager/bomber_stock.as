@@ -67,6 +67,7 @@ namespace BomberStock {
     dictionary releasing;        // id string -> int id, launched, not yet re-tasked
     int releaseUntilFrame = -1;
     int waveIndex = 0;           // waves launched so far
+    int plannedSize = 0;         // the next wave's size before the cap (WaveSize); 0 = the first wave
 
     // Stall launch: the stock launches what it holds once it has not grown for
     // Global::BomberStock::StallLaunchSeconds and holds at least the last wave's
@@ -98,16 +99,14 @@ namespace BomberStock {
         return AiMax(normalCap, Global::RoleSettings::Air::LateBomberWaveMaxSize);
     }
 
-    // Size of the next wave: 5, 8, 11, ... (Global::BomberStock), raised to Cent's
-    // income floor (AirWaves::IncomeFloor, D-045: 50 bombers per 100 metal income),
-    // capped. His held waves already obeyed the floor; stocked waves did not, and
-    // launched 5 and 8 into 2821 and 11670 metal of AA with no survivors (All That
-    // Glitters 2026-09-27, income 121-300).
+    // Size of the next wave: FirstWaveSize, then WaveSizeGrowth more than the
+    // last wave's size every wave - 5, 8, 11, 14, 17, 20 - held at the cap, and
+    // on from the cap by WaveSizeGrowth once the late lift raises it (23, 26 ...
+    // 40), never skipping a size. No income floor: Cent's (D-045, 50 bombers per
+    // +100 metal) sent every wave from +100 straight to the cap.
     int WaveSize()
     {
-        int size = Global::BomberStock::FirstWaveSize + Global::BomberStock::WaveSizeGrowth * waveIndex;
-        const int floor = AirWaves::IncomeFloor();
-        if (size < floor) size = floor;
+        int size = (plannedSize > 0) ? plannedSize : Global::BomberStock::FirstWaveSize;
         const int cap = WaveCap(Global::BomberStock::MaxWaveSize);
         if (size > cap) size = cap;
         if (size < 1) size = 1;
@@ -311,6 +310,7 @@ namespace BomberStock {
     {
         const int size = WaveSize();   // this wave's size, before waveIndex moves on
         ++waveIndex;
+        plannedSize = size + Global::BomberStock::WaveSizeGrowth;   // from the size this wave had, so a raised cap goes on by 3
         lastLaunched = (live < size) ? live : size;
         stallBest = 0;
         stallSinceFrame = -1;

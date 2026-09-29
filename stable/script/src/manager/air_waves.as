@@ -46,13 +46,12 @@ Native primitives used (no C++ required):
            an escort whose bomber died re-attaches to another living wave bomber
            while the wave still has one.
 
-Sizing (ComputeNextWaveSize): the next wave starts from the previous size and
-grows by a factor picked from the previous wave's survival ratio, measured
-BomberWaveEvaluateSeconds after launch: heavy losses mean the enemy anti-air is
-winning and the next wave needs mass; light losses grow gently. The result is
-raised to an enemy-anti-air floor (wave bomber metal >= a fraction of the enemy
-anti_air metal on the map, from the Military cost cache) and clamped to
-[BomberWaveFirstSize, BomberWaveMaxSize]. BomberWaveMaxSize is also a hard cap on
+Sizing: every wave is Global::BomberStock::WaveSizeGrowth (3) bigger than the
+last - BomberStock's 5, 8, 11, ... while it is on (Required() is its WaveSize),
+and from BomberWaveFirstSize in steps of 3 for held waves otherwise - clamped to
+[BomberWaveFirstSize, BomberWaveMaxSize]. No survival growth, enemy-AA floor or
+income floor: those jumped a wave straight to the cap. The survival ratio is
+still measured BomberWaveEvaluateSeconds after launch and logged. BomberWaveMaxSize is also a hard cap on
 every launch: BomberStock's batch goes first, held survivors fill what is left,
 and anything past the cap stays in the hold for the next wave. A wave also
 launches on a time-out
@@ -64,10 +63,6 @@ unit; bombers and fighters are grown together so the escort never lags,
 but never two fighters in a row: after every fighter the next pick is a
 wave bomber (lastPickFighter), so a fighter pool that dies as fast as it
 is built cannot starve the wave.
-
-Income floor (D-045): whatever the survival growth says, a wave must hold
-BomberWaveSizePerIncomeStep bombers for every BomberWaveIncomeStep of
-sliding-minimum metal income - 50 at +100, 100 at +200 - before it launches.
 
 Attack methods (D-045, doc/air-wave-attacks.md): each launch draws one of
 CARPET / FLANK / PINCER / STRIKE / DEEP / FEINT by weight and hands every
@@ -304,24 +299,13 @@ namespace AirWaves {
         return _MakeHoldTask(u, isBomber);
     }
 
-    /**************************************************************************
-     Sizing floor from income (D-045).
-     **************************************************************************/
-    int IncomeFloor()
-    {
-        const float step = Global::RoleSettings::Air::BomberWaveIncomeStep;
-        if (step <= 0.0f) return 0;
-        const float mi = Economy::GetMinMetalIncomeLast10s();
-        return int(mi / step) * Global::RoleSettings::Air::BomberWaveSizePerIncomeStep;
-    }
-
-    // What the next wave must hold: the survival-grown target or the income floor.
+    // What the next wave must hold: BomberStock's size while it is on, else the
+    // held path's own (3 more a wave, see Sizing). No income floor.
     int Required()
     {
-        const int floor = IncomeFloor();
-        int req = (nextWaveSize > floor) ? nextWaveSize : floor;
+        if (BomberStock::IsEnabled()) return BomberStock::WaveSize();
         const int hi = BomberStock::WaveCap(Global::RoleSettings::Air::BomberWaveMaxSize);   // 40 late
-        return (req > hi) ? hi : req;
+        return (nextWaveSize > hi) ? hi : nextWaveSize;
     }
 
     /**************************************************************************
@@ -604,7 +588,7 @@ namespace AirWaves {
         const bool timedOut = (bombers >= minSize) && (bombers >= required)
             && (frame - holdSinceFrame) >= Global::RoleSettings::Air::BomberWaveMaxHoldSeconds * SECOND;
         if (!targetReached && !timedOut) return;
-        _Launch(frame, targetReached ? ("target " + required + " reached (income floor " + IncomeFloor() + ")")
+        _Launch(frame, targetReached ? ("target " + required + " reached")
                                      : ("hold time-out at " + bombers + "/" + required));
     }
 
@@ -660,8 +644,8 @@ namespace AirWaves {
         lastWaveEvaluated = false;
         releaseUntilFrame = frame + Global::RoleSettings::Air::BomberWaveReleaseWindowSeconds * SECOND;
         holdSinceFrame = -1;
-        // Provisional target until the survival ratio is known.
-        nextWaveSize = _Clamp(int(float(lastWaveSize) * Global::RoleSettings::Air::BomberWaveGrowthDefault + 0.5f));
+        // The held path's next wave: 3 more than this one was to hold (see Sizing)
+        nextWaveSize = _Clamp(nextWaveSize + Global::BomberStock::WaveSizeGrowth);
 
         GenericHelpers::LogUtil("[AIR][Waves] Wave " + waveIndex + " launched (" + reason + "): bombers=" + launchedBombers
             + " fighters=" + launchedFighters + " holdTasksAborted=" + aborted.length()
@@ -726,37 +710,9 @@ namespace AirWaves {
         const float survival = (lastWaveSize > 0) ? float(survivors) / float(lastWaveSize) : 1.0f;
         const float enemyAAMetal = Military::GetCachedRoleCost("anti_air");
         const float bomberCost = _WaveBomberCost();
-        const int previous = nextWaveSize;
-        nextWaveSize = ComputeNextWaveSize(lastWaveSize, survival, enemyAAMetal, bomberCost);
         GenericHelpers::LogUtil("[AIR][Waves] Wave " + waveIndex + " evaluated: launched=" + lastWaveSize
             + " survivors=" + survivors + " survival=" + survival + " enemyAAMetal=" + enemyAAMetal
-            + " bomberCost=" + bomberCost + " next=" + nextWaveSize + " (provisional was " + previous + ")", 1);
-    }
-
-    /**************************************************************************
-     Sizing. Pure function of the previous wave and the enemy anti-air, so it can
-     be reasoned about from the settings alone:
-       growth  = survival < Low  ? GrowthOnHeavyLoss
-               : survival > High ? GrowthOnLightLoss
-               :                   GrowthDefault
-       next    = round(previous * growth)
-       aaFloor = round(enemyAAMetal * EnemyAAMetalFraction / bomberCost)
-       result  = clamp(max(next, aaFloor), FirstSize, MaxSize)
-     **************************************************************************/
-    int ComputeNextWaveSize(int previous, float survival, float enemyAAMetal, float bomberCost)
-    {
-        float growth = Global::RoleSettings::Air::BomberWaveGrowthDefault;
-        if (survival < Global::RoleSettings::Air::BomberWaveLowSurvival) {
-            growth = Global::RoleSettings::Air::BomberWaveGrowthOnHeavyLoss;
-        } else if (survival > Global::RoleSettings::Air::BomberWaveHighSurvival) {
-            growth = Global::RoleSettings::Air::BomberWaveGrowthOnLightLoss;
-        }
-        int next = int(float(previous) * growth + 0.5f);
-        if (bomberCost > 0.0f && enemyAAMetal > 0.0f) {
-            const int aaFloor = int(enemyAAMetal * Global::RoleSettings::Air::BomberWaveEnemyAAMetalFraction / bomberCost + 0.5f);
-            if (next < aaFloor) next = aaFloor;
-        }
-        return _Clamp(next);
+            + " bomberCost=" + bomberCost + " next=" + Required(), 1);
     }
 
     int _Clamp(int size)
