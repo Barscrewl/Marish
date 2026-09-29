@@ -1224,9 +1224,13 @@ namespace RoleAir {
      but a repair (TechBuild::QueuedOrder): on TECH's economy AIR built no porc
      at all (no Juno, anti-nuke, Bertha or EMP in three games, where the games
      on AIR's own economy built one to seven). This row hands the queued porc
-     orders out, the nearest first, to at most PorcBuildersMin builders at a
-     time, or one per PorcConstructorsPerBuilder of our constructors. How much
-     is queued stays the porc policy's (PREVENT while metal-starved).
+     orders (DEFENCE, BIG_GUN) out, the nearest first, once a T2 aircraft plant
+     stands, to one builder per PorcConstructorsPerBuilder of our constructors
+     (PorcBuildersMin at least). Not before: with a flat minimum of two and
+     native's radar orders counted, two of AIR's three constructors spent 1:26
+     to 7:00 on radar towers and the T2 plant came three minutes after TECH's
+     (Starwatcher 2026-09-29); TECH's defence.base row covers the base until
+     then. How much is queued stays the porc policy's (PREVENT while starved).
      **************************************************************************/
     dictionary g_airPorcBuilders;   // builder id -> the porc order it was given
     int g_airPorcLog = -100000;
@@ -1245,9 +1249,10 @@ namespace RoleAir {
         }
         const int cons = UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT1Cons()) + UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT2Cons());
         const int per = (Global::RoleSettings::Air::PorcConstructorsPerBuilder < 1) ? 1 : Global::RoleSettings::Air::PorcConstructorsPerBuilder;
+        if (EcoRole::PrimaryT2Lab() is null) return null;   // the economy first: nothing before the T2 aircraft plant
         const int cap = AiMax(Global::RoleSettings::Air::PorcBuildersMin, cons / per);
         if (onPorc >= cap) return null;
-        array<int> types = { int(Task::BuildType::DEFENCE), int(Task::BuildType::BIG_GUN), int(Task::BuildType::RADAR) };
+        array<int> types = { int(Task::BuildType::DEFENCE), int(Task::BuildType::BIG_GUN) };   // no RADAR: native's own radar schedule, not porc
         for (uint i = 0; i < types.length(); ++i) {
             IUnitTask@ t = aiBuilderMgr.FindQueuedTask(u, types[i]);
             if (t is null) continue;

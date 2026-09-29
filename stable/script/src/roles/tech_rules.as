@@ -536,6 +536,58 @@ namespace TechRules {
         return null;
     }
 
+    // Census, level 1 every CensusSeconds (TechBuild::Tick): what every builder
+    // and every construction turret was last given, and the turret block's
+    // counts. The per-ask trace repeats a key only at level 3, so a builder that
+    // keeps getting the same row, keep.current or wait is otherwise silent
+    // (Starwatcher 2026-09-29: AIR's turrets and ten constructors went quiet
+    // for three minutes and the log could not say why).
+    int censusFrame = -100000;
+    void Census()
+    {
+        if (ai.frame - censusFrame < int(Global::RoleSettings::Tech::CensusSeconds * SECOND)) return;
+        censusFrame = ai.frame;
+        dictionary mob, tur;
+        int nMob = 0, nTur = 0;
+        array<string>@ keys = lastKeyByUnit.getKeys();
+        for (uint i = 0; keys !is null && i < keys.length(); ++i) {
+            if (keys[i].findFirst("ask") == 0) continue;
+            CCircuitUnit@ u = ai.GetTeamUnit(parseInt(keys[i]));
+            if (u is null || u.circuitDef is null) { lastKeyByUnit.delete(keys[i]); continue; }
+            string k; lastKeyByUnit.get(keys[i], k);
+            dictionary@ d = u.circuitDef.IsMobile() ? @mob : @tur;
+            int n = 0; if (d.exists(k)) d.get(k, n);
+            d.set(k, n + 1);
+            if (u.circuitDef.IsMobile()) ++nMob; else ++nTur;
+        }
+        const string side = Global::AISettings::Side;
+        CCircuitDef@ nano = ai.GetCircuitDef(UnitHelpers::GetT1NanoNameForSide(side));
+        const int unfinished = (nano is null) ? 0 : aiBuilderMgr.GetUnfinishedCount(nano);
+        const int standing = (nano is null) ? 0 : nano.count - unfinished;
+        const int queued = (nano is null) ? 0 : aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::NANO), nano);
+        string why;
+        const int allowed = Layout::TurretsAllowed(why);
+        const float bp = aiBuilderMgr.GetBuildPowerNear(Layout::BaseCentre(), Global::RoleSettings::Tech::EcoBuildPowerRadius);
+        GenericHelpers::LogUtil("[Rule][census] " + nMob + " builders: " + _CensusLine(mob) + " | " + nTur + " turrets: " + _CensusLine(tur)
+            + " | turrets " + standing + " standing, " + unfinished + " frames, " + queued + " orders unstarted; in flight "
+            + Layout::TurretsInFlight() + " of " + allowed + " allowed" + (Layout::TurretsCapped() ? " (capped)" : "")
+            + " | build power near " + int(bp) + " | M +" + int(Economy::GetMinMetalIncomeLast10s()) + " bank " + int(aiEconomyMgr.metal.current)
+            + "/" + int(aiEconomyMgr.metal.storage) + " | E +" + int(Economy::GetMinEnergyIncomeLast10s()) + " bank " + int(aiEconomyMgr.energy.current)
+            + "/" + int(aiEconomyMgr.energy.storage) + (aiEconomyMgr.isEnergyStalling ? " stalling" : ""), 1);
+    }
+    string _CensusLine(dictionary@ d)
+    {
+        array<string>@ keys = d.getKeys();
+        if (keys is null || keys.length() == 0) return "-";
+        keys.sortAsc();
+        string s = "";
+        for (uint i = 0; i < keys.length(); ++i) {
+            int n = 0; d.get(keys[i], n);
+            s += (i > 0 ? ", " : "") + keys[i] + " " + n;
+        }
+        return s;
+    }
+
     void Trace(Ctx@ c, const Rule@ r)
     {
         const string id = "" + c.u.id;

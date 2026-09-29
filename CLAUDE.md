@@ -114,8 +114,8 @@ TECH's turret rows; BuildPower is off for AIR, since the table never takes
 native orders. AIR adds three rows: `air.plants` (`Air_PlantsRow`: more T2
 aircraft plants by income, and 10-16 nanos, more on a full bank, at each
 plant past the first), `air.porc` (`Air_PorcTask`: native's queued porc
-orders, which the table would otherwise never adopt, a few builders at a
-time) and `air.turret.plant` (turrets assist a T2 plant in reach). AIR also
+orders, which the table would otherwise never adopt, from the first T2
+plant, one builder per 5 constructors) and `air.turret.plant` (turrets assist a T2 plant in reach). AIR also
 reclaims its T1 converters once 2 advanced converters stand. Metal-starved
 mode still holds AIR's porc and T2 production. TECH code that asks "which lab" should go through `EcoRole`,
 not name bot labs.

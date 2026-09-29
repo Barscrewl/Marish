@@ -595,6 +595,7 @@ namespace TechBuild {
     {
         TrackMetal();   // D-075
         ShareOverflow();   // D-106
+        TechRules::Census();   // level 1, every CensusSeconds: what each builder and turret is on
         // AIR keeps its plants and has no land constructors to send forward:
         // no lab retirement, no forward or spam work (manager/eco_role.as)
         if (!EcoRole::ReclaimsLabs()) return;
