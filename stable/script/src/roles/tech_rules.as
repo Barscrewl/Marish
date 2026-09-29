@@ -403,6 +403,14 @@ namespace TechRules {
     // up to NukeLimit, from NukeSustainAfterSeconds at NukeSustainMinMetalIncome
     // (the goldberg branch's late-game sustain, 23900e8). Each goes into the set
     // of silos, wall to wall (Layout::PlaceSilo).
+    // A silo order that never gets a frame (played, Starwatcher 2026-09-29:
+    // silos 1-4 filled their set, the layout had no room for another, native's
+    // order at the crowded base centre died at once, and from 27:13 to the end
+    // it was re-ordered 1,484 times - every T2 constructor that asked was handed
+    // it, and the T1 constructors guarding the primary T2 one stood with it):
+    // after an order, none for NukeRetrySeconds. Native's fallback is anchored
+    // at our existing silos with a wider search, not the base centre.
+    int nukeNextRetryAt = -1;
     IUnitTask@ DoNukeNext(Ctx@ c)
     {
         CCircuitDef@ d = ai.GetCircuitDef(TechChain::DefFor("silo"));
@@ -413,10 +421,21 @@ namespace TechRules {
         if (d.count >= Global::RoleSettings::Tech::NukeLimit) return null;
         const int after = Global::RoleSettings::Tech::NukeSustainAfterSeconds;
         if ((after > 0 && ai.frame < after * SECOND) || c.mi < Global::RoleSettings::Tech::NukeSustainMinMetalIncome) return null;
+        if (ai.frame < nukeNextRetryAt) return null;   // the last order is still due or died: not every ask
         IUnitTask@ t = Layout::PlaceSilo(d, 300 * SECOND, c.u);
-        if (t is null) @t = Builder::EnqueueNukeSilo(Global::AISettings::Side, Layout::BaseCentre(), SQUARE_SIZE * 32, 300 * SECOND);
-        if (t !is null) GenericHelpers::LogUtil("[TECH][Nuke] silo " + (d.count + 1) + " of " + Global::RoleSettings::Tech::NukeLimit
-            + ": the last one is finished (+" + int(c.mi) + " metal) by " + c.d.GetName() + " " + c.u.id, 1);
+        string where = "in the layout";
+        if (t is null) {
+            // no layout room: native, beside our silos (the base centre is the most crowded ground)
+            CCircuitUnit@ near = aiBuilderMgr.FindOwnNear(Layout::BaseCentre(), 4000.0f, d);
+            const AIFloat3 anchor = (near is null) ? Layout::BaseCentre() : near.GetPos(ai.frame);
+            @t = Builder::EnqueueNukeSilo(Global::AISettings::Side, anchor, SQUARE_SIZE * 64, 300 * SECOND);
+            where = "native, within 512 of (" + int(anchor.x) + ", " + int(anchor.z) + ")";
+        }
+        if (t !is null) {
+            nukeNextRetryAt = ai.frame + int(Global::RoleSettings::Tech::NukeRetrySeconds * SECOND);
+            GenericHelpers::LogUtil("[TECH][Nuke] silo " + (d.count + 1) + " of " + Global::RoleSettings::Tech::NukeLimit
+                + " ordered " + where + " (+" + int(c.mi) + " metal) by " + c.d.GetName() + " " + c.u.id, 1);
+        }
         return t;
     }
     IUnitTask@ DoDefence(Ctx@ c)        { return TechBuild::Defence(c.u); }

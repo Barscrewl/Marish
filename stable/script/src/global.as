@@ -589,6 +589,7 @@ namespace Global {
             int LayoutLabFrontGapCells = 3;          // D-096: the advanced lab's front-line site may stand this many cells ahead of turret row 0 (the zone's edge, a rock)
             int LayoutAfusSetSize = 3;               // D-101: advanced fusions per set: the first flush against a turret, the rest lined up away from it
             int LayoutConvSetSize = 5;               // D-101: advanced converters per set, the same way
+            float NukeRetrySeconds = 60.0f;          // nuke.next: after a silo order, none again for this long (a dead order is not re-issued every ask)
             int LayoutSiloSetSize = 4;               // nuclear silos per set (Layout::PlaceSilo): wall to wall, the first flush against a turret
             float LayoutSetHoldSeconds = 300.0f;     // D-101: a set's unserved slots are released when nothing asked for its def this long
             float LayoutFrontMinCost = 1500.0f;      // D-096: a seen enemy group counts as a front at this metal cost; until one is seen the front is the map centre

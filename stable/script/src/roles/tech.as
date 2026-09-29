@@ -2052,7 +2052,7 @@ namespace RoleTech
 			if (Builder::primaryT2BotConstructor !is null && !(u is Builder::primaryT2BotConstructor))
 			{
 				GenericHelpers::LogUtil("[TECH][Float] T1 constructor " + u.id + " assists the T2 constructor (metal "
-					+ int(bank) + ")", 1);
+					+ int(bank) + ")", 2);   // level 2: every ask (22,356 lines in one game)
 				return GuardHelpers::AssignWorkerGuard(u, Builder::primaryT2BotConstructor, Task::Priority::HIGH, true, 60 * SECOND);
 			}
 			return null;   // nothing a T1 constructor can spend it on; normal ladder, capped nanos
