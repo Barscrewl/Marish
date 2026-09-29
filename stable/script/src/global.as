@@ -1189,8 +1189,17 @@ namespace Global {
             int MinAiSwitchTime = 20;
             int MaxAiSwitchTime = 60;
 
-            // NukeLimit: maximum number of nukes allowed for FRONT role
-            int NukeLimit = 0;
+            // NukeLimit: maximum number of nukes allowed for FRONT role.
+            // Applied only once the silo window opens (NukeSustainAfterSeconds);
+            // until then StartCapNukeSilos keeps the silo defs unavailable to FRONT.
+            int NukeLimit = 6;
+
+            /******************** NUCLEAR SILO THRESHOLDS ********************/
+            // FRONT does not rush silos. It builds them late, once its economy can
+            // carry one without starving the front line, and then one at a time
+            // (main's 23900e8, ported). 0 seconds disables FRONT silos entirely.
+            int NukeSustainAfterSeconds = 18 * 60;      // 18 minutes
+            float NukeSustainMinMetalIncome = 225.0f;
             /******************** FRONT BASE SETTINGS ********************/
             // All settings applied to front role at game start, logic can change throughout game
             float AllyRange = 900.0f;

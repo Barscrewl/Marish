@@ -613,13 +613,16 @@ namespace RoleFront {
                 return Front_T1Constructor_AiMakeTask(builder, defaultTask, metalIncome, energyIncome, isEnergyStalling, isEnergyFull);
             }
         } else if (ctorTier == 2) {
-            // Mirror TECH role routing: handle primary/secondary T2 bot constructors explicitly
+            // Mirror TECH role routing: handle primary/secondary/freelance T2 constructors explicitly.
+            // Vehicle constructors too (main's d5c9904): a vehicle-opening FRONT otherwise never
+            // reached the fusion step or the silo block (Front_T2Constructor_AiMakeTask).
             bool isEnergyFull = aiEconomyMgr.isEnergyFull;
             float metalIncome = Economy::GetMinMetalIncomeLast10s();
             float energyIncome = Economy::GetMinEnergyIncomeLast10s();
             float metalCurrent = aiEconomyMgr.metal.current;
             bool isEnergyLessThan90Percent = aiEconomyMgr.energy.current < aiEconomyMgr.energy.storage * Global::RoleSettings::Front::EnergyStorageLowPercent;
-            if (builder is Builder::primaryT2BotConstructor || builder is Builder::secondaryT2BotConstructor || builder is Builder::freelanceT2BotConstructor) {
+            if (builder is Builder::primaryT2BotConstructor || builder is Builder::secondaryT2BotConstructor || builder is Builder::freelanceT2BotConstructor
+             || builder is Builder::primaryT2VehConstructor || builder is Builder::secondaryT2VehConstructor || builder is Builder::freelanceT2VehConstructor) {
                 return Front_T2Constructor_AiMakeTask(builder, defaultTask, isEnergyFull, metalIncome, energyIncome, metalCurrent, isEnergyLessThan90Percent);
             }
         }
@@ -975,7 +978,7 @@ namespace RoleFront {
         string unitSide = UnitHelpers::GetSideForUnitName(u.circuitDef.GetName());
 
         // Freelance T2 constructors just do default tasks
-        if (u is Builder::freelanceT2BotConstructor) {
+        if (u is Builder::freelanceT2BotConstructor || u is Builder::freelanceT2VehConstructor) {
             return defaultTask;
         }
 
@@ -999,6 +1002,34 @@ namespace RoleFront {
             )) {
                 IUnitTask@ tFus2 = Builder::EnqueueFUS(unitSide, anchor, SQUARE_SIZE * 32, SECOND * 300);
                 if (tFus2 !is null) return tFus2;
+            }
+
+            // Nuclear silos, late only (main's 23900e8, ported). FRONT never
+            // rushes one: from NukeSustainAfterSeconds of game time, at
+            // NukeSustainMinMetalIncome or more, one silo at a time - none ordered
+            // or under construction - up to NukeLimit.
+            const int nukeAfter = Global::RoleSettings::Front::NukeSustainAfterSeconds;
+            if (nukeAfter > 0 && ai.frame >= nukeAfter * SECOND
+                && metalIncome >= Global::RoleSettings::Front::NukeSustainMinMetalIncome) {
+                // Front_ApplyStartLimits pins the silo defs to StartCapNukeSilos (0),
+                // so EnqueueNukeSilo would find them unavailable: the cap goes to
+                // NukeLimit once the window is open (only written when it changes).
+                UnitHelpers::BatchApplyUnitCaps(UnitHelpers::GetAllNukeSilos(), Global::RoleSettings::Front::NukeLimit);
+                int unfinished = 0;
+                array<string> silos = UnitHelpers::GetAllNukeSilos();
+                for (uint i = 0; i < silos.length(); ++i) {
+                    CCircuitDef@ sd = ai.GetCircuitDef(silos[i]);
+                    if (sd !is null) unfinished += aiBuilderMgr.GetUnfinishedCount(sd);
+                }
+                const int nukeTotal = EconomyHelpers::GetNukeSiloCount();
+                if (!Builder::IsNukeSiloBuildQueued() && unfinished == 0 && nukeTotal < Global::RoleSettings::Front::NukeLimit) {
+                    IUnitTask@ tNuke = Builder::EnqueueNukeSilo(unitSide, anchor, SQUARE_SIZE * 32, SECOND * 300);
+                    if (tNuke !is null) {
+                        GenericHelpers::LogUtil("[FRONT] nuclear silo " + (nukeTotal + 1) + " of " + Global::RoleSettings::Front::NukeLimit
+                            + " (+" + int(metalIncome) + " metal, " + int(ai.frame / MINUTE) + " min) by " + u.circuitDef.GetName() + " " + u.id, 1);
+                        return tNuke;
+                    }
+                }
             }
         } 
 
