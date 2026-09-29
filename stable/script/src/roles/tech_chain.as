@@ -399,7 +399,12 @@ namespace TechChain
             return aiBuilderMgr.Enqueue(TaskB::Spot(Task::BuildType::MEXUP, Task::Priority::NOW, d, at, -1));
         }
         if (key == "nano") return Layout::NanoTask(u, Task::Priority::HIGH);
-        if (key == "silo") return Builder::EnqueueNukeSilo(Global::AISettings::Side, Layout::BaseCentre(), SQUARE_SIZE * 32, 300 * SECOND);
+        if (key == "silo") {
+            // the first of a set of silos, wall to wall (Layout::PlaceSilo); native's spiral when the layout has no site
+            IUnitTask@ st = Layout::PlaceSilo(d, 300 * SECOND, u);
+            if (st !is null) return st;
+            return Builder::EnqueueNukeSilo(Global::AISettings::Side, Layout::BaseCentre(), SQUARE_SIZE * 32, 300 * SECOND);
+        }
         if (key == "gantry") {
             bool routed;   // D-114: a front factory cluster from +200 metal
             IUnitTask@ ft = TechFactories::Route(UnitHelpers::GetLandGantryForSide(Global::AISettings::Side), u, routed);

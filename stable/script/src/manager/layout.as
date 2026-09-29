@@ -834,10 +834,14 @@ namespace Layout {
         const string side = Global::AISettings::Side;
         if (def.GetName() == UnitHelpers::GetAdvFusionNameForSide(side)) return Global::RoleSettings::Tech::LayoutAfusSetSize;
         if (def.GetName() == UnitHelpers::GetAdvEnergyConverterNameForSide(side)) return Global::RoleSettings::Tech::LayoutConvSetSize;
+        if (UnitHelpers::GetAllNukeSilos().find(def.GetName()) >= 0) return Global::RoleSettings::Tech::LayoutSiloSetSize;
         return 0;
     }
 
     dictionary setAsk;   // D-101: def name -> the frame Place last asked for it
+    // a set whose def is still wanted, though not asked this minute (a nuclear
+    // silo takes longer to build than LayoutSetHoldSeconds): its slots are kept
+    void HoldSet(CCircuitDef@ def) { if (def !is null) setAsk.set(def.GetName(), ai.frame); }
 
     // D-101: a set's unserved slots go back to the pool once nothing has asked
     // for its def for LayoutSetHoldSeconds (the plan moved on)
@@ -929,6 +933,35 @@ namespace Layout {
     int noRoomSince = -1;     // D-099: INV-020
     int noRoomLog = -100000;
     string noRoomDef = "";
+
+    // A nuclear silo, D-101's way (SetSizeOf: LayoutSiloSetSize a set): the
+    // set's next slot, else a new set - the first flush against a turret, the
+    // rest lined up from it one footprint a step (native PackSet), so the silos
+    // stand wall to wall (block_map.json's "silo" class has no yard); else any
+    // box cell nearest a turret. Ordered as native orders a silo (TaskB::Factory,
+    // Builder::EnqueueNukeSilo) and pinned to the slot. Null when the layout has
+    // no site: the caller falls back to Builder::EnqueueNukeSilo.
+    IUnitTask@ PlaceSilo(CCircuitDef@ def, int timeout, CCircuitUnit@ builder = null)
+    {
+        if (def is null || !def.IsAvailable(ai.frame) || !HasBox()) return null;
+        setAsk.set(def.GetName(), ai.frame);   // TickSets keeps the set's slots while silos are asked for
+        int id = aiTerrainMgr.NextSetSlot(def);
+        string how = "next in its set";
+        if (id < 0) { id = PackSetAnywhere(def, TurretSeed(), SetSizeOf(def)); how = "a new set"; }
+        if (id < 0) {
+            const AIFloat3 anchor = (builder is null) ? TurretSeed() : builder.GetPos(ai.frame);
+            for (int i = 0; i < ZoneCount() && id < 0; ++i)
+                id = aiTerrainMgr.PackNearGroup(ZoneAt(i), def, nanoGroup, facing, anchor, 0.0f, 0.0f, 0);
+            how = "alone (no room for a set)";
+        }
+        if (id < 0) return null;
+        const AIFloat3 p = aiTerrainMgr.GetReservationPos(id);
+        IUnitTask@ t = aiBuilderMgr.Enqueue(TaskB::Factory(Task::Priority::NOW, def, p, def, 0.0f, false, true, timeout));
+        if (t is null) { aiTerrainMgr.ReleaseReservation(id); return null; }
+        if (!AiPinReservation(t, id)) GenericHelpers::LogUtil("[Layout] could not pin " + def.GetName() + " to slot " + id, 1);
+        GenericHelpers::LogUtil("[Layout] " + def.GetName() + " at (" + int(p.x) + ", " + int(p.z) + "): " + how, 1);
+        return t;
+    }
 
     IUnitTask@ Place(Task::BuildType type, Task::Priority priority, CCircuitDef@ def, int timeout, CCircuitUnit@ builder = null)
     {

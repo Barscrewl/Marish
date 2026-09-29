@@ -363,6 +363,13 @@ namespace Global {
 
             // NukeLimit: maximum number of nukes allowed for TECH role
             int NukeLimit = 20;
+            // Nuke rush (EndgamePlan "nuke"): after the chain's silo, another nuclear
+            // silo each time the last one is finished - none under construction, none
+            // ordered - up to NukeLimit (TechRules nuke.next). The gates are the goldberg
+            // branch's late-game sustain (23900e8): not before NukeSustainAfterSeconds
+            // (0 = no time gate), not under NukeSustainMinMetalIncome.
+            int NukeSustainAfterSeconds = 22 * 60;
+            float NukeSustainMinMetalIncome = 225.0f;
 
             /******************** FLOATING METAL ********************/
             // Every gate in the T2 constructor ladder is income-based, so a
@@ -576,6 +583,7 @@ namespace Global {
             int LayoutLabFrontGapCells = 3;          // D-096: the advanced lab's front-line site may stand this many cells ahead of turret row 0 (the zone's edge, a rock)
             int LayoutAfusSetSize = 3;               // D-101: advanced fusions per set: the first flush against a turret, the rest lined up away from it
             int LayoutConvSetSize = 5;               // D-101: advanced converters per set, the same way
+            int LayoutSiloSetSize = 4;               // nuclear silos per set (Layout::PlaceSilo): wall to wall, the first flush against a turret
             float LayoutSetHoldSeconds = 300.0f;     // D-101: a set's unserved slots are released when nothing asked for its def this long
             float LayoutFrontMinCost = 1500.0f;      // D-096: a seen enemy group counts as a front at this metal cost; until one is seen the front is the map centre
             float LayoutLabFlushElmos = 160.0f;      // D-088: INV-017 - the nearest turret to the advanced lab, centre to centre, flush like the pair's nanos at the T1 lab     // D-086: the advanced lab keeps its planned footprint only if a standing turret is within this; else it is packed nearest a standing turret

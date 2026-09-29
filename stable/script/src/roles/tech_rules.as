@@ -146,6 +146,7 @@ namespace TechRules {
     // land front/spam factories are TECH's; AIR has its own plant row
     bool TechRole(Ctx@ c)         { return !EcoRole::IsAir(); }
     bool AirRole(Ctx@ c)          { return EcoRole::IsAir(); }
+    bool NukePlan(Ctx@ c)         { return TechPlan::plan == "nuke"; }
     bool NoLabAtAll(Ctx@ c)       { return c.t1Labs == 0 && c.t2Labs == 0 && !c.intoT2; }
     bool NoConstructors(Ctx@ c)   { return c.constructors == 0; }
     bool T2LabStands(Ctx@ c)      { return c.t2Labs > 0; }
@@ -395,6 +396,27 @@ namespace TechRules {
         if (c.who == COMMANDER) return RoleTech::Tech_Commander_AiMakeTask(c.u, null, c.mi);
         return TechBuild::Strategic(c.u, c.mi, c.ei);
     }
+    // The nuke rush (plan "nuke", every TECH): after the chain's silo, another
+    // each time the last is finished - none under construction, none ordered -
+    // up to NukeLimit, from NukeSustainAfterSeconds at NukeSustainMinMetalIncome
+    // (the goldberg branch's late-game sustain, 23900e8). Each goes into the set
+    // of silos, wall to wall (Layout::PlaceSilo).
+    IUnitTask@ DoNukeNext(Ctx@ c)
+    {
+        CCircuitDef@ d = ai.GetCircuitDef(TechChain::DefFor("silo"));
+        if (d is null || !d.IsAvailable(ai.frame) || !c.d.CanBuild(d)) return null;
+        const int unfinished = aiBuilderMgr.GetUnfinishedCount(d);
+        if (d.count >= 1) Layout::HoldSet(d);   // the next silo goes beside the last, not in a new set
+        if (d.count - unfinished < 1 || unfinished > 0 || Builder::IsNukeSiloBuildQueued()) return null;   // the chain's first, then one at a time
+        if (d.count >= Global::RoleSettings::Tech::NukeLimit) return null;
+        const int after = Global::RoleSettings::Tech::NukeSustainAfterSeconds;
+        if ((after > 0 && ai.frame < after * SECOND) || c.mi < Global::RoleSettings::Tech::NukeSustainMinMetalIncome) return null;
+        IUnitTask@ t = Layout::PlaceSilo(d, 300 * SECOND, c.u);
+        if (t is null) @t = Builder::EnqueueNukeSilo(Global::AISettings::Side, Layout::BaseCentre(), SQUARE_SIZE * 32, 300 * SECOND);
+        if (t !is null) GenericHelpers::LogUtil("[TECH][Nuke] silo " + (d.count + 1) + " of " + Global::RoleSettings::Tech::NukeLimit
+            + ": the last one is finished (+" + int(c.mi) + " metal) by " + c.d.GetName() + " " + c.u.id, 1);
+        return t;
+    }
     IUnitTask@ DoDefence(Ctx@ c)        { return TechBuild::Defence(c.u); }
     IUnitTask@ DoQueuedRepair(Ctx@ c)   { return TechBuild::QueuedOrder(c.u); }
     IUnitTask@ DoAssistAny(Ctx@ c)
@@ -454,6 +476,7 @@ namespace TechRules {
         table.insertLast(Rule("energy.convert.float", MOBILE,     W4(@EnergyFloatsBank, @NotStalling, @NoDearOrderPending, @NotMetalFull), @DoConverter,    "D-079: before the chain - energy floats (TechChain::EnergyFloats): a converter, whatever the chain is doing"));
         table.insertLast(Rule("power.turret",      MOBILE,       W4(@MetalAhead, @StructureBuilding, @NotStalling, @NoDearOrderPending), @DoPowerTurret, "D-075: metal income above spending while a structure is under construction: a turret, Layout::TurretsAllowed at a time (D-097), else assist the turret going up"));
         table.insertLast(Rule("air.plants",        CONSTRUCTORS, W1(@AirRole), @DoAirPlants,  "AIR: another T2 aircraft plant as income stages allow (100, 200), placed by the layout"));
+        table.insertLast(Rule("nuke.next",         CONSTRUCTORS, W2(@TechRole, @NukePlan), @DoNukeNext, "the nuke rush: another nuclear silo each time the last is finished (NukeSustainAfterSeconds, NukeSustainMinMetalIncome, NukeLimit), in the set of silos"));
         table.insertLast(Rule("chain.next",        MOBILE,       W1(@ChainActive), @DoChain,      "the rush chain (D-070): the first unmet target - assist its frame, wait for its order, or order it"));
         table.insertLast(Rule("lab.t1.opening",    MOBILE,       W3(@OpeningDone, @NotIntoT2, @NoT1Lab), @DoStartFactory, "the throwaway first lab at the commander; a constructor uses the pair's slot"));
         table.insertLast(Rule("lab.t1.recover",    COMMANDER,    W3(@OpeningDone, @NoConstructors, @NoLabAtAll), @DoStartFactory, "every constructor and every lab lost: the commander rebuilds a T1 lab"));
