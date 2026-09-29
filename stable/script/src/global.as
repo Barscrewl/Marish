@@ -304,6 +304,19 @@ namespace Global {
     }
 
     // Role-specific overrideable variables in a dedicated namespace
+    // manager/builder_watchdog.as: a T2 constructor that neither moves MoveElmos
+    // nor adds build progress for StallSeconds (checked every CheckSeconds) is
+    // taken out of AI control for ParkSeconds, then handed back for a new task;
+    // not again for CooldownSeconds.
+    namespace BuilderWatchdog {
+        bool Enabled = true;
+        float CheckSeconds = 10.0f;
+        float StallSeconds = 45.0f;
+        float ParkSeconds = 3.0f;
+        float CooldownSeconds = 60.0f;
+        float MoveElmos = 96.0f;
+    }
+
     namespace BomberStock {
         // Every T2 bomber built (UnitHelpers::GetAllT2WaveBombers) is counted,
         // and while the count builds its def's main role and attribute are

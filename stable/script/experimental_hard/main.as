@@ -100,6 +100,7 @@ namespace Main {
 		Builder::FlushAborts();  // tasks refused inside AiMakeTask: aborted here, outside any task callback
 		Spam::Update();          // economy-gated spam: activation, focus rotation
 		BomberStock::Update();   // T2 bombers: parked until the wave size, then launched together
+		BuilderWatchdog::Update();   // stalled T2 constructors: parked a moment, then a new task
 		BuildPower::Update();    // metal capping from income or trade: construction turrets at the factories
 		NavalWaves::Update();    // frigates and destroyers: held, then launched together at the threshold
 		Team::Ferry::Update();   // transport ferry: hand-over on arrival, run polling

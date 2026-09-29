@@ -18,6 +18,7 @@
 #include "layout.as"
 #include "sea_assist.as"
 #include "build_power.as"
+#include "builder_watchdog.as"
 
 namespace Builder {
 	// CCircuitUnit is registered as asOBJ_NOCOUNT (see InitScript.cpp).
@@ -2549,6 +2550,7 @@ namespace Builder {
 		if (ctorTier == 1 || uname == "legnavyconship") {
 			Team::RegisterT1Constructor(unit);   // orphan-rescue donor pool
 		}
+		if (ctorTier == 2 && cdef !is null && cdef.IsMobile() && !UnitHelpers::IsCommander(cdef)) BuilderWatchdog::Register(unit);   // stalled T2 constructors (manager/builder_watchdog.as)
 		int ctorCat = 0; // 1=bot, 2=veh, 3=air, 4=sea, 5=hover
 
 		// TODO: Consider moving constructor category/tier detection into UnitHelpers
