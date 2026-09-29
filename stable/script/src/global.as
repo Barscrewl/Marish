@@ -139,12 +139,15 @@ namespace Global {
             "corpship", "corroy",               // Cortex: Riptide frigate, destroyer
             "legnavyfrigate", "legnavydestro"   // Legion: Argonaut frigate, destroyer
         };
-        int LaunchAt = 7;                // held ships, combined, that launch the whole hold
-        // Safety valve: a hold of at least TimeoutMinSize that has waited this long
-        // launches anyway, so a yard that cannot reach LaunchAt never parks for
-        // good. 0 turns it off.
-        int TimeoutMinSize = 4;
-        int MaxHoldSeconds = 300;
+        // Each wave launches the whole hold once it holds a size drawn fresh per
+        // wave from [MinWaveSize, MaxWaveSize], frigates and destroyers combined.
+        int MinWaveSize = 7;
+        int MaxWaveSize = 10;
+        // Time-out: a hold of at least TimeoutMinSize that has waited this long
+        // launches anyway, so a yard that cannot reach the drawn size never parks
+        // for good (main's 4 minutes and 3 ships). 0 turns it off.
+        int TimeoutMinSize = 3;
+        int MaxHoldSeconds = 240;
         // Released ships re-enter Military::AiMakeTask within a few seconds and
         // take the wave's attack task while this window is open.
         int ReleaseWindowSeconds = 15;

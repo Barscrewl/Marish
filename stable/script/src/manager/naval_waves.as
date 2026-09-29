@@ -9,10 +9,10 @@
 
 NAVAL WAVES (frigates and destroyers, every faction)
 
-Ported from main (5de4272, bb41a7d, 6ff38cc) onto Cent's release, reshaped to
-one rule: hold the frigates and destroyers, and once the hold reaches
-Global::NavalWaves::LaunchAt ships combined, send every held ship out as one
-attack.
+Ported from main (5de4272, bb41a7d, 6ff38cc) onto Cent's release: hold the
+frigates and destroyers, and once the hold reaches a size drawn fresh for
+each wave from [Global::NavalWaves::MinWaveSize, MaxWaveSize] (7 - 10),
+frigates and destroyers combined, send every held ship out as one attack.
 
     Armada   armpship (Ellysaw, frigate)       armroy (destroyer)
     Cortex   corpship (Riptide, frigate)       corroy (destroyer)
@@ -52,9 +52,9 @@ Mechanism (native primitives only)
   end      CAttackTask aborts itself when losses take it under minAttackers;
            survivors come back idle and rejoin the hold for the next wave.
 
-Safety valve: a hold of at least TimeoutMinSize ships that has waited
-MaxHoldSeconds launches anyway (0 turns it off), so a yard that cannot reach
-LaunchAt never parks its fleet for good.
+Time-out: a hold of at least TimeoutMinSize ships that has waited
+MaxHoldSeconds (4 minutes) launches anyway (0 turns it off), so a yard that
+cannot reach the drawn size never parks its fleet for good.
 
 Only ids are stored (CCircuitUnit is not ref-counted); the wave task handle is
 kept for the release window only. Log, grep [NAVY][Waves].
@@ -74,9 +74,19 @@ namespace NavalWaves {
     int releaseUntilFrame = -1;  // >= 0 while released ships re-task
 
     int waveIndex = 0;
+    int nextWaveSize = 0;        // drawn per wave, see _DrawWaveSize
     int statusFrame = -100000;
 
     bool IsEnabled() { return Global::NavalWaves::Enabled; }
+
+    int _DrawWaveSize()
+    {
+        int lo = Global::NavalWaves::MinWaveSize;
+        int hi = Global::NavalWaves::MaxWaveSize;
+        if (lo < 1) lo = 1;
+        if (hi < lo) hi = lo;
+        return AiRandom(lo, hi);   // inclusive at both ends
+    }
 
     void _BuildRoster()
     {
@@ -89,8 +99,9 @@ namespace NavalWaves {
             shipDefs.set(n, true);
             names += (names.length() > 0 ? ", " : "") + n;
         }
-        GenericHelpers::LogUtil("[NAVY][Waves] roster: " + names + "; launch at " + Global::NavalWaves::LaunchAt
-            + " combined", 2);
+        nextWaveSize = _DrawWaveSize();
+        GenericHelpers::LogUtil("[NAVY][Waves] roster: " + names + "; first wave at " + nextWaveSize
+            + " combined (" + Global::NavalWaves::MinWaveSize + "-" + Global::NavalWaves::MaxWaveSize + ")", 2);
     }
 
     bool IsWaveShip(const CCircuitDef@ d)
@@ -174,16 +185,16 @@ namespace NavalWaves {
 
         if (frame - statusFrame >= MINUTE) {
             statusFrame = frame;
-            GenericHelpers::LogUtil("[NAVY][Waves] holding " + ships + "/" + Global::NavalWaves::LaunchAt
+            GenericHelpers::LogUtil("[NAVY][Waves] holding " + ships + "/" + nextWaveSize
                 + " frigates and destroyers for " + heldSeconds + " s (waves so far " + waveIndex + ")", 1);
         }
 
-        const bool reached = ships >= Global::NavalWaves::LaunchAt;
+        const bool reached = ships >= nextWaveSize;
         const bool timedOut = Global::NavalWaves::MaxHoldSeconds > 0
             && ships >= Global::NavalWaves::TimeoutMinSize
             && heldSeconds >= Global::NavalWaves::MaxHoldSeconds;
         if (!reached && !timedOut) return;
-        _Launch(frame, reached ? "threshold reached" : "held " + heldSeconds + " s");
+        _Launch(frame, reached ? "reached " + nextWaveSize : "held " + heldSeconds + " s");
     }
 
     void _Launch(int frame, const string &in reason)
@@ -200,8 +211,9 @@ namespace NavalWaves {
 
         ++waveIndex;
         releaseUntilFrame = frame + Global::NavalWaves::ReleaseWindowSeconds * SECOND;
+        nextWaveSize = _DrawWaveSize();
         GenericHelpers::LogUtil("[NAVY][Waves] wave " + waveIndex + " launched (" + reason + "): "
-            + launched + " ships, " + aborted.length() + " hold task(s) released", 1);
+            + launched + " ships, " + aborted.length() + " hold task(s) released; next wave at " + nextWaveSize, 1);
     }
 
     // Every held ship goes to the launch queue; each distinct DEFEND hold task is
