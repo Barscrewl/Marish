@@ -154,7 +154,9 @@ namespace Porc {
     // Set the native knobs for this visit, run the native placement, then the caretaker.
     // forceFull: a role's handler asks for the whole order at this cluster whatever
     // the phase (FRONT's base clusters, roles/front.as); the budget rules still apply.
-    void MakeDefence(int cluster, const AIFloat3 &in pos, bool forceFull = false)
+    // withNano: the caretaker per cluster (_TryNanoWithPorc); off for AIR on TECH's
+    // economy, whose builders cannot adopt a native turret order (roles/air.as).
+    void MakeDefence(int cluster, const AIFloat3 &in pos, bool forceFull = false, bool withNano = true)
     {
         float budgetMod = 1.0f;
         string reason;
@@ -175,7 +177,7 @@ namespace Porc {
         GenericHelpers::LogUtil("[Porc] cluster=" + cluster + " mode=" + ModeName(mode) + " budgetMod=" + budgetMod
             + " mi=" + metalIncome + " ei=" + energyIncome + " (" + reason + ")", 3);
         aiMilitaryMgr.DefaultMakeDefence(cluster, pos);
-        _TryNanoWithPorc(cluster, pos, mode, metalIncome, energyIncome, energyStalling);
+        if (withNano) _TryNanoWithPorc(cluster, pos, mode, metalIncome, energyIncome, energyStalling);
     }
 }  // namespace Porc
 }  // namespace Military

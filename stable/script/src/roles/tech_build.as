@@ -834,6 +834,23 @@ namespace TechBuild {
         const string side = Global::AISettings::Side;
         return FinishedOf(UnitHelpers::GetFusionNameForSide(side)) + FinishedOf(UnitHelpers::GetAdvFusionNameForSide(side)) > 0;
     }
+    // AIR: its T1 energy converters are reclaimed once
+    // Air::RetireT1ConvertersAtAdvConverters advanced converters stand finished,
+    // or an advanced fusion does, and never built again (EcoPlanner::PickConverter);
+    // AIR's eco retirement before TECH's economy. TECH never reclaims its T1
+    // converters (it builds them only under BuildT1ConvertersUntilMetalIncome).
+    bool airT1ConvRetired = false;
+    bool AirT1ConvertersRetired()
+    {
+        if (!EcoRole::IsAir()) return false;
+        if (airT1ConvRetired) return true;
+        const string side = Global::AISettings::Side;
+        const int adv = FinishedOf(UnitHelpers::GetAdvEnergyConverterNameForSide(side));
+        if (adv < Global::RoleSettings::Air::RetireT1ConvertersAtAdvConverters && FinishedOf(UnitHelpers::GetAdvFusionNameForSide(side)) < 1) return false;
+        airT1ConvRetired = true;
+        GenericHelpers::LogUtil("[AIR][Eco] T1 energy converters retired: " + adv + " advanced converter(s) stand; reclaimed from now on, never built again", 1);
+        return true;
+    }
     IUnitTask@ ReclaimEnergy(CCircuitUnit@ u, const EcoPlanner::State@ s)
     {
         if (u is null || s is null) return null;
@@ -859,6 +876,7 @@ namespace TechBuild {
         if (t1Ok && s.winds > 0) names.insertLast(UnitHelpers::GetWindNameForSide(side));
         if (t1Ok && s.solars > 0) names.insertLast(UnitHelpers::GetSolarNameForSide(side));
         if (advOk && s.advSolars > 0) names.insertLast(UnitHelpers::GetAdvSolarNameForSide(side));
+        if (s.t1Convs > 0 && AirT1ConvertersRetired()) names.insertLast(UnitHelpers::GetEnergyConverterNameForSide(side));
         for (uint i = 0; i < names.length(); ++i) {
             CCircuitDef@ d = ai.GetCircuitDef(names[i]);
             if (d is null) continue;

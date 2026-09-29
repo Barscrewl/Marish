@@ -983,6 +983,26 @@ namespace Global {
             // beyond them take TECH's dedicated converter / advanced fusion roles
             // (D-107); the factory builds those on top, from TECH's plan (+200).
             int ChainT2Constructors = 2;
+            // T1 energy converters: reclaimed once this many advanced converters
+            // stand finished (or an advanced fusion does), and never built again
+            // (AIR's eco retirement; TECH never reclaims its T1 converters)
+            int RetireT1ConvertersAtAdvConverters = 2;
+            // Porc on TECH's economy (the air.porc row): native's queued porc
+            // orders go to at most this many builders at a time, or one per
+            // PorcConstructorsPerBuilder of our constructors when that is more
+            int PorcBuildersMin = 2;
+            int PorcConstructorsPerBuilder = 5;
+            // Nanos at every T2 aircraft plant past the first (the first is served
+            // by TECH's turret block): PlantNanosBase, one more per
+            // PlantNanosIncomeStep of metal income above PlantNanosIncomeFrom, up to
+            // PlantNanosMax; PlantNanosFloatBonus more while the metal bank stays
+            // full (TechBuild::MetalFullLong); PlantNanosInFlight ordered at a time.
+            int PlantNanosBase = 10;
+            int PlantNanosMax = 16;
+            float PlantNanosIncomeFrom = 100.0f;
+            float PlantNanosIncomeStep = 50.0f;
+            int PlantNanosFloatBonus = 8;
+            int PlantNanosInFlight = 2;
 
             /******************** METAL-STARVED MODE (Air_UpdateEcoPriority) ********************/
             // Starved from the moment the metal bank drops below EnterPercent of

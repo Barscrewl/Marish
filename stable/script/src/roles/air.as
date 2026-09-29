@@ -187,6 +187,8 @@ namespace RoleAir {
         g_airStrikeOpenerQueuedCount = 0;
         g_airLastScoutFrame = -1;
         g_airT2ProductionTurn = 0;
+        g_airPlantNanoTasks.resize(0);
+        g_airPorcBuilders.deleteAll();
 
         // Apply AIR role settings
         aiTerrainMgr.SetAllyZoneRange(Global::RoleSettings::Air::AllyRange);
@@ -436,7 +438,9 @@ namespace RoleAir {
         // Same opening gate as the handler-less path in Military::AiMakeDefence.
         if (!((ai.frame > 10 * MINUTE) || (aiEconomyMgr.metal.income > 10.f) || (aiEnemyMgr.mobileThreat > 0.f))) return;
         if (!Air_IsMetalStarved()) {
-            Military::Porc::MakeDefence(cluster, pos);
+            // no caretaker on TECH's economy: an orphaned native turret order (see
+            // PORC ON TECH'S ECONOMY) held Layout's turret count full
+            Military::Porc::MakeDefence(cluster, pos, false, !EcoRole::Enabled());
             return;
         }
         aiMilitaryMgr.porcMode = Military::Porc::MODE_PREVENT;
@@ -1016,6 +1020,8 @@ namespace RoleAir {
     }
 
     void Air_BuilderAiTaskRemoved(IUnitTask@ task, bool done) {
+        Air_OnPlantNanoTaskRemoved(task);
+        Air_OnPorcTaskRemoved(task);
     }
 
     void Air_BuilderAiUnitRemoved(CCircuitUnit@ unit, Unit::UseAs usage)
@@ -1109,6 +1115,162 @@ namespace RoleAir {
                 + " " + where + " (avg metal income " + int(aiEconomyMgr.metal.income) + ")", 1);
         }
         return t;
+    }
+
+    // The whole air.plants row: another T2 aircraft plant when one is due,
+    // else a nano for a plant past the first.
+    IUnitTask@ Air_PlantsRow(CCircuitUnit@ u, float mi)
+    {
+        IUnitTask@ t = Air_T2Plants(u);
+        if (t !is null) return t;
+        return Air_PlantNanos(u, mi);
+    }
+
+    /**************************************************************************
+     NANOS AT THE T2 AIRCRAFT PLANTS PAST THE FIRST
+
+     The first T2 aircraft plant is the economy's advanced lab, flush against
+     TECH's turret block, and served by it. The plants the air.plants row adds
+     are AIR's alone, so their build power is AIR's too: every finished T2
+     aircraft plant but the primary gets PlantNanosBase construction turrets,
+     one more per PlantNanosIncomeStep of metal income above
+     PlantNanosIncomeFrom up to PlantNanosMax, and PlantNanosFloatBonus more
+     while the metal bank stays full (TechBuild::MetalFullLong). A plant's
+     turrets are those within a turret's reach of it (static assist build
+     power there / a turret's). The plant fewest served first,
+     PlantNanosInFlight orders at a time, none while metal-starved. Native
+     places each at the plant (Builder::EnqueueT1Nano); the air.turret.plant
+     row keeps them on the plant's production.
+     **************************************************************************/
+    const float AIR_NANO_REACH = 400.0f;   // armnanotc / cornanotc / legnanotc builddistance
+    const float AIR_NANO_POWER = 200.0f;   // ... and workertime
+    array<IUnitTask@> g_airPlantNanoTasks;
+    int g_airPlantNanoLog = -100000;
+
+    int Air_PlantNanosWanted(float mi)
+    {
+        int n = Global::RoleSettings::Air::PlantNanosBase;
+        const float step = AiMax(Global::RoleSettings::Air::PlantNanosIncomeStep, 1.0f);
+        if (mi > Global::RoleSettings::Air::PlantNanosIncomeFrom)
+            n += int((mi - Global::RoleSettings::Air::PlantNanosIncomeFrom) / step);
+        if (n > Global::RoleSettings::Air::PlantNanosMax) n = Global::RoleSettings::Air::PlantNanosMax;
+        if (TechBuild::MetalFullLong()) n += Global::RoleSettings::Air::PlantNanosFloatBonus;
+        return n;
+    }
+
+    IUnitTask@ Air_PlantNanos(CCircuitUnit@ u, float mi)
+    {
+        if (u is null || u.circuitDef is null || Air_IsMetalStarved()) return null;
+        if (int(g_airPlantNanoTasks.length()) >= Global::RoleSettings::Air::PlantNanosInFlight) return null;
+        const string side = Global::AISettings::Side;
+        CCircuitDef@ nano = ai.GetCircuitDef(UnitHelpers::GetT1NanoNameForSide(side));
+        if (nano is null || !nano.IsAvailable(ai.frame) || !u.circuitDef.CanBuild(nano)) return null;
+        const int wanted = Air_PlantNanosWanted(mi);
+        CCircuitUnit@ best = null;
+        int bestHave = wanted;
+        array<string>@ keys = Factory::allFactories.getKeys();
+        for (uint i = 0; keys !is null && i < keys.length(); ++i) {
+            CCircuitUnit@ fac = null;
+            if (!Factory::allFactories.get(keys[i], @fac) || fac is null || fac.circuitDef is null) continue;
+            if (fac is Factory::primaryT2AirPlant || !UnitHelpers::IsT2AircraftPlant(fac.circuitDef.GetName())) continue;
+            const int have = int(aiBuilderMgr.GetStaticBuildPowerNear(fac.GetPos(ai.frame), AIR_NANO_REACH) / AIR_NANO_POWER);
+            if (have < bestHave) { bestHave = have; @best = fac; }
+        }
+        if (best is null) return null;
+        IUnitTask@ t = Builder::EnqueueT1Nano(side, best.GetPos(ai.frame), SQUARE_SIZE * 16, 120 * SECOND, Task::Priority::NORMAL);
+        if (t is null) return null;
+        g_airPlantNanoTasks.insertLast(t);
+        if (ai.frame - g_airPlantNanoLog > 10 * SECOND) {
+            g_airPlantNanoLog = ai.frame;
+            GenericHelpers::LogUtil("[AIR][Plants] nano " + (bestHave + 1) + "/" + wanted + " for " + best.circuitDef.GetName() + " " + best.id
+                + " (+" + int(mi) + " metal" + (TechBuild::MetalFullLong() ? ", bank full" : "") + ") by " + u.circuitDef.GetName() + " " + u.id, 1);
+        }
+        return t;
+    }
+
+    void Air_OnPlantNanoTaskRemoved(IUnitTask@ task)
+    {
+        for (uint i = 0; i < g_airPlantNanoTasks.length(); ++i)
+            if (g_airPlantNanoTasks[i] is task) { g_airPlantNanoTasks.removeAt(i); return; }
+    }
+
+    // The air.turret.plant row: a construction turret with a producing T2
+    // aircraft plant in reach assists it (production is AIR's sink); TECH's
+    // turret rows above it keep the economy under construction first.
+    IUnitTask@ Air_TurretAssistPlant(CCircuitUnit@ u)
+    {
+        if (u is null) return null;
+        const AIFloat3 here = u.GetPos(ai.frame);
+        CCircuitUnit@ best = null;
+        float bestSq = 1.0e30f;
+        array<string>@ keys = Factory::allFactories.getKeys();
+        for (uint i = 0; keys !is null && i < keys.length(); ++i) {
+            CCircuitUnit@ fac = null;
+            if (!Factory::allFactories.get(keys[i], @fac) || fac is null || fac.circuitDef is null || fac.task is null) continue;
+            if (!UnitHelpers::IsT2AircraftPlant(fac.circuitDef.GetName())) continue;
+            const float sq = MapHelpers::SqDist(here, fac.GetPos(ai.frame));
+            const float r = AIR_NANO_REACH + 48.0f;   // the turret's reach plus the plant's half-size
+            if (sq <= r * r && sq < bestSq) { bestSq = sq; @best = fac; }
+        }
+        if (best is null) return null;
+        return GuardHelpers::AssignWorkerGuard(u, best, Task::Priority::LOW, true, 20 * SECOND);
+    }
+
+    /**************************************************************************
+     PORC ON TECH'S ECONOMY (the air.porc row)
+
+     Native porc (Air_AiMakeDefence, Cent's air-denial chain) queues DEFENCE,
+     BIG_GUN and RADAR orders, and TECH's rule table adopts no native order
+     but a repair (TechBuild::QueuedOrder): on TECH's economy AIR built no porc
+     at all (no Juno, anti-nuke, Bertha or EMP in three games, where the games
+     on AIR's own economy built one to seven). This row hands the queued porc
+     orders out, the nearest first, to at most PorcBuildersMin builders at a
+     time, or one per PorcConstructorsPerBuilder of our constructors. How much
+     is queued stays the porc policy's (PREVENT while metal-starved).
+     **************************************************************************/
+    dictionary g_airPorcBuilders;   // builder id -> the porc order it was given
+    int g_airPorcLog = -100000;
+
+    IUnitTask@ Air_PorcTask(CCircuitUnit@ u)
+    {
+        if (u is null || u.circuitDef is null) return null;
+        int onPorc = 0;
+        array<string>@ keys = g_airPorcBuilders.getKeys();
+        for (uint i = 0; keys !is null && i < keys.length(); ++i) {
+            IUnitTask@ given = null;
+            g_airPorcBuilders.get(keys[i], @given);
+            CCircuitUnit@ b = ai.GetTeamUnit(parseInt(keys[i]));
+            if (b is null || given is null || b.task !is given) { g_airPorcBuilders.delete(keys[i]); continue; }
+            ++onPorc;
+        }
+        const int cons = UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT1Cons()) + UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT2Cons());
+        const int per = (Global::RoleSettings::Air::PorcConstructorsPerBuilder < 1) ? 1 : Global::RoleSettings::Air::PorcConstructorsPerBuilder;
+        const int cap = AiMax(Global::RoleSettings::Air::PorcBuildersMin, cons / per);
+        if (onPorc >= cap) return null;
+        array<int> types = { int(Task::BuildType::DEFENCE), int(Task::BuildType::BIG_GUN), int(Task::BuildType::RADAR) };
+        for (uint i = 0; i < types.length(); ++i) {
+            IUnitTask@ t = aiBuilderMgr.FindQueuedTask(u, types[i]);
+            if (t is null) continue;
+            g_airPorcBuilders.set("" + u.id, @t);
+            if (ai.frame - g_airPorcLog > 10 * SECOND) {
+                g_airPorcLog = ai.frame;
+                IBuilderTask@ bt = cast<IBuilderTask>(t);
+                GenericHelpers::LogUtil("[AIR][Porc] " + ((bt !is null && bt.buildDef !is null) ? bt.buildDef.GetName() : "order")
+                    + " by " + u.circuitDef.GetName() + " " + u.id + " (" + (onPorc + 1) + " of " + cap + " builders on porc)", 1);
+            }
+            return t;
+        }
+        return null;
+    }
+
+    void Air_OnPorcTaskRemoved(IUnitTask@ task)
+    {
+        array<string>@ keys = g_airPorcBuilders.getKeys();
+        for (uint i = 0; keys !is null && i < keys.length(); ++i) {
+            IUnitTask@ given = null;
+            g_airPorcBuilders.get(keys[i], @given);
+            if (given is task) g_airPorcBuilders.delete(keys[i]);
+        }
     }
 
     /******************************************************************************

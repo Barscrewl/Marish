@@ -111,9 +111,13 @@ tick are TECH only. AIR's first `Air::ChainT2Constructors` T2 air
 constructors do what TECH's T2 bot constructors do (mohos, fusion, AFUS);
 only extra ones get the dedicated converter / AFUS roles (D-107). Nanos are
 TECH's turret rows; BuildPower is off for AIR, since the table never takes
-native orders. AIR adds one row, `air.plants` (`Air_T2Plants`): more T2
-aircraft plants by income. Metal-starved mode still holds AIR's porc and T2
-production. TECH code that asks "which lab" should go through `EcoRole`,
+native orders. AIR adds three rows: `air.plants` (`Air_PlantsRow`: more T2
+aircraft plants by income, and 10-16 nanos, more on a full bank, at each
+plant past the first), `air.porc` (`Air_PorcTask`: native's queued porc
+orders, which the table would otherwise never adopt, a few builders at a
+time) and `air.turret.plant` (turrets assist a T2 plant in reach). AIR also
+reclaims its T1 converters once 2 advanced converters stand. Metal-starved
+mode still holds AIR's porc and T2 production. TECH code that asks "which lab" should go through `EcoRole`,
 not name bot labs.
 
 ## Never abort a task inside AiMakeTask

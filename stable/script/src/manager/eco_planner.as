@@ -394,7 +394,7 @@ namespace EcoPlanner {
             return adv.key;
         }
         Option@ t1 = Make("t1conv", UnitHelpers::GetEnergyConverterNameForSide(side), s, false);
-        if (t1 !is null && s.t1ConvsQueued < par
+        if (t1 !is null && s.t1ConvsQueued < par && !TechBuild::AirT1ConvertersRetired()   // AIR: retired T1 converters are not rebuilt
             && (!s.builderIsT2 || s.mIncome < Global::RoleSettings::Tech::MinimumMetalIncomeForAdvConverter)
             && surplus >= t1.energyUse
             && s.mIncome < Global::RoleSettings::Tech::BuildT1ConvertersUntilMetalIncome) {

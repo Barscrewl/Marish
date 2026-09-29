@@ -187,7 +187,7 @@ namespace TechRules {
     bool NoAfusYet(Ctx@ c)        { return !TechBuild::IntoAfus(); }   // D-078: no advanced lab is ordered once the advanced fusion is under way
     bool NoDearOrderPending(Ctx@ c) { return !TechChain::DearOrderPending(); }   // D-084
     bool EnergyFloatsBank(Ctx@ c) { return TechChain::EnergyFloats(); }   // D-079: the bank-based float, the chain's definition
-    bool EnergyReclaimable(Ctx@ c){ const EcoPlanner::State@ s = c.eco; return TechBuild::ReactorStands() && (s.winds + s.solars + s.advSolars) > 0; }   // D-077; D-101: a finished reactor, not a frame
+    bool EnergyReclaimable(Ctx@ c){ const EcoPlanner::State@ s = c.eco; return TechBuild::ReactorStands() && ((s.winds + s.solars + s.advSolars) > 0 || (s.t1Convs > 0 && TechBuild::AirT1ConvertersRetired())); }   // D-077; D-101: a finished reactor, not a frame; AIR: its T1 converters too
     bool MetalAhead(Ctx@ c)       { return c.aheadM; }                 // D-075: income above spending, the bank rising
     bool StructureBuilding(Ctx@ c){ return c.building !is null; }      // D-075: a structure of ours is under construction
     bool ConverterSurplus(Ctx@ c) { return c.floatingE || c.surplus >= 2.0f * Global::RoleSettings::Tech::EcoConverterUse; }
@@ -389,7 +389,9 @@ namespace TechRules {
     }
     // AIR: more T2 aircraft plants as income allows (roles/air.as); its nanos
     // are TECH's turret rows; nothing of TECH's strategic ladder
-    IUnitTask@ DoAirPlants(Ctx@ c)      { return RoleAir::Air_T2Plants(c.u); }
+    IUnitTask@ DoAirPlants(Ctx@ c)      { return RoleAir::Air_PlantsRow(c.u, c.mi); }
+    IUnitTask@ DoAirPorc(Ctx@ c)        { return RoleAir::Air_PorcTask(c.u); }
+    IUnitTask@ DoAirTurretPlant(Ctx@ c) { return RoleAir::Air_TurretAssistPlant(c.u); }
     IUnitTask@ DoLegacy(Ctx@ c)
     {
         if (EcoRole::IsAir()) return null;
@@ -455,6 +457,7 @@ namespace TechRules {
         table.insertLast(Rule("turret.spam",       TURRET,       W1(@TechRole), @DoTurretSpam,   "D-109: the two turrets directly behind a spam lab always work for that lab"));
         table.insertLast(Rule("turret.assist",     TURRET,       W0(), @DoTurretAssist, "reclaim in reach, then the economy under construction by the D-065 order"));
         table.insertLast(Rule("turret.any",        TURRET,       W0(), @DoTurretAny,    "any structure of ours under construction within reach"));
+        table.insertLast(Rule("air.turret.plant",  TURRET,       W1(@AirRole), @DoAirTurretPlant, "AIR: a producing T2 aircraft plant in reach: assist its production"));
         table.insertLast(Rule("turret.factory",    TURRET,       W1(@MetalFloodedLong), @DoTurretFactory, "D-105: the metal bank full and nothing to build in reach: assist a producing factory in reach (production is the sink)"));
         table.insertLast(Rule("turret.wait",       TURRET,       W0(), @DoWaitShort,    "5 s"));
         table.insertLast(Rule("ferry.cargo",       MOBILE,       W0(), @DoFerryCargo,   "D-110/D-112: a gift (in flight or queued) keeps the ferry's hold or its park behind the base until the drop-off; nothing else"));
@@ -475,7 +478,8 @@ namespace TechRules {
         table.insertLast(Rule("power.t1",          CON_T1,       W2(@DearFrameUp, @TurretRoom), @DoT1Turret,     "D-105: a dear frame is up and the turret calculation has room: a T1 constructor adds a construction turret rather than assist"));
         table.insertLast(Rule("energy.convert.float", MOBILE,     W4(@EnergyFloatsBank, @NotStalling, @NoDearOrderPending, @NotMetalFull), @DoConverter,    "D-079: before the chain - energy floats (TechChain::EnergyFloats): a converter, whatever the chain is doing"));
         table.insertLast(Rule("power.turret",      MOBILE,       W4(@MetalAhead, @StructureBuilding, @NotStalling, @NoDearOrderPending), @DoPowerTurret, "D-075: metal income above spending while a structure is under construction: a turret, Layout::TurretsAllowed at a time (D-097), else assist the turret going up"));
-        table.insertLast(Rule("air.plants",        CONSTRUCTORS, W1(@AirRole), @DoAirPlants,  "AIR: another T2 aircraft plant as income stages allow (100, 200), placed by the layout"));
+        table.insertLast(Rule("air.plants",        CONSTRUCTORS, W1(@AirRole), @DoAirPlants,  "AIR: another T2 aircraft plant as income stages allow (100, 200), placed by the layout; else a nano for a plant past the first (Air_PlantNanos)"));
+        table.insertLast(Rule("air.porc",          CONSTRUCTORS, W1(@AirRole), @DoAirPorc,    "AIR: native's queued porc orders (Cent's air-denial chain), a few builders at a time (Air_PorcTask)"));
         table.insertLast(Rule("nuke.next",         CONSTRUCTORS, W2(@TechRole, @NukePlan), @DoNukeNext, "the nuke rush: another nuclear silo each time the last is finished (NukeSustainAfterSeconds, NukeSustainMinMetalIncome, NukeLimit), in the set of silos"));
         table.insertLast(Rule("chain.next",        MOBILE,       W1(@ChainActive), @DoChain,      "the rush chain (D-070): the first unmet target - assist its frame, wait for its order, or order it"));
         table.insertLast(Rule("lab.t1.opening",    MOBILE,       W3(@OpeningDone, @NotIntoT2, @NoT1Lab), @DoStartFactory, "the throwaway first lab at the commander; a constructor uses the pair's slot"));
