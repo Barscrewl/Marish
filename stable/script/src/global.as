@@ -964,10 +964,17 @@ namespace Global {
             // tech_rules.as, tech_chain.as, tech_plan.as, manager/eco_planner.as,
             // manager/layout.as) run on the aircraft plants through manager/eco_role.as:
             // the T1 aircraft plant is kept (never reclaimed to fund the economy), the
-            // chain's advanced lab is a T2 aircraft plant, and the air.plants row
-            // (Air_PlantsAndNanos) adds the further T2 plants and their nanos.
-            // false leaves AIR's economy to native CircuitAI.
+            // chain's advanced lab is a T2 aircraft plant, the nanos are TECH's turret
+            // rows (the block in the turret box), and the air.plants row
+            // (Air_T2Plants) adds the further T2 plants. BuildPower is off for AIR
+            // while this is on. false leaves AIR's economy to native CircuitAI.
             bool ExperimentalEco = true;
+            // The first this-many T2 air constructors are the chain's, what TECH's
+            // two T2 bot constructors are: mohos first, then the fusion, then the
+            // advanced fusion, and the mex upgrades after. Only T2 air constructors
+            // beyond them take TECH's dedicated converter / advanced fusion roles
+            // (D-107); the factory builds those on top, from TECH's plan (+200).
+            int ChainT2Constructors = 2;
 
             /******************** METAL-STARVED MODE (Air_UpdateEcoPriority) ********************/
             // Starved from the moment the metal bank drops below EnterPercent of
@@ -975,7 +982,7 @@ namespace Global {
             //   T2 plant  wave bombers and the T2 air constructor minimum; no T2
             //             fighters or escorts, heavy air, T2 scouts, dynamic or
             //             native fallback production (the plant waits instead)
-            //   plants    no further T2 aircraft plant (Air_PlantsAndNanos)
+            //   plants    no further T2 aircraft plant (Air_T2Plants)
             //   porc      PREVENT: one structure per cluster, no budget bonus
             // The economy (TECH's rule table) is not held back.
             bool EcoPriorityEnabled = true;
@@ -984,7 +991,7 @@ namespace Global {
             int EcoPriorityFactoryWaitSeconds = 5;
 
             /******************** T2 AIRCRAFT PLANT THRESHOLDS (AIR role) ********************/
-            // Metal in the bank before the air.plants row (Air_PlantsAndNanos) orders
+            // Metal in the bank before the air.plants row (Air_T2Plants) orders
             // another T2 aircraft plant.
             float RequiredMetalCurrentForT2AircraftPlant = 50.0f;
             // Extra advanced aircraft plants by native average metal income: the second
@@ -1008,26 +1015,12 @@ namespace Global {
             // stays the ally's own business.
             bool PorcAlliedClustersAA = true;
 
-            /******************** PLANTS AND THEIR NANOS (Air_PlantsAndNanos) ********************/
-            // "Floating": aiEconomyMgr.isMetalFull (> 80% of storage), or
-            // current above LateMetalCurrent - and income above LateMetalIncome
-            // either way, so a full bank on a dead economy does not trigger it.
-            // While floating the air.plants row adds nanos at the T2 plants.
-            float LateMetalCurrent = 2500.0f;
-            float LateMetalIncome = 35.0f;
+            /******************** T2 AIRCRAFT PLANTS (Air_T2Plants) ********************/
             // Ring round the start position a T2 plant falls back to when the layout
             // has no flush site, and the site-search radius each gets.
             float LateExpansionRadius = 1400.0f;
             float LateExpansionShake = 384.0f;   // SQUARE_SIZE * 48
             int LateRingSlots = 6;
-            // Nanos per T2 air plant while floating.
-            // 8 (was 4): with the bank floating past 10 000, four per plant left
-            // the plants unable to spend it (All That Glitters 2026-09-27).
-            int LateNanosPerT2Plant = 8;
-
-            /******************** AIR NANO POLICY ********************/
-            // Cap on T1 nano caretakers the air.plants row builds.
-            int NanoMaxCount = 200;
 
             // T1 air constructors, Barb4-style: the first is unconditional, then
             // MinT1AirConstructorCount outright and one per T1AirConstructorPerMetalIncome

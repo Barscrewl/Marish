@@ -25,20 +25,28 @@ plants: the opening mexes, the rush chain to the advanced fusion (mexes, T1
 aircraft plant, energy, the advanced aircraft plant, T2 mex upgrades, fusion,
 turrets, advanced fusion), the planned base (the factory pair and the turret
 box: every economy structure packed within a turret's reach, D-060/D-063),
-the eco planner's energy, converter, storage and turret rows, the two
-dedicated T2 air constructors (advanced converters / advanced fusions,
-D-107), energy reclaim once a reactor stands (D-077), and after the chain the
-metal-income ladder (mex upgrades, advanced fusions) to +200 and +500. Every
-builder asks roles/tech_rules.as (TechBuild::MakeTask); never null.
+the eco planner's energy, converter, storage and turret rows, the block of
+construction turrets in the turret box (the chain's nano step, power.t1,
+power.turret, turret.build: D-075/D-097/D-105), energy reclaim once a reactor
+stands (D-077), and after the chain the metal-income ladder (mex upgrades,
+advanced fusions) to +200 and +500. Every builder asks roles/tech_rules.as
+(TechBuild::MakeTask); never null.
 
 What differs from TECH (manager/eco_role.as):
   - the labs are the T1 and T2 aircraft plants, and neither is ever reclaimed
     to fund the economy
   - TECH's land rows (forward constructors, front factory clusters, spam labs)
     do not run
+  - every T2 constructor is an air constructor: the first
+    Air::ChainT2Constructors are the chain's (what TECH's T2 bot constructors
+    are: mohos first, then the fusion, then the advanced fusion); only those
+    the plan adds beyond them (from +200) take the dedicated converter /
+    advanced fusion roles (D-107)
   - row air.plants: another T2 aircraft plant at each income stage (100, 200,
-    ADVANCED AIRCRAFT PLANT CAP), placed by the layout, and nanos at the
-    plants while metal floats (Air_PlantsAndNanos)
+    ADVANCED AIRCRAFT PLANT CAP), placed by the layout (Air_T2Plants)
+  - BuildPower (manager/build_power.as) is off: its native turret and gantry
+    orders are never taken by the table, and its queued turrets held the
+    layout's turret count full
   - METAL-STARVED MODE still holds porc to the preventive structure and the
     plants to wave bombers
 
@@ -179,8 +187,6 @@ namespace RoleAir {
         g_airStrikeOpenerQueuedCount = 0;
         g_airLastScoutFrame = -1;
         g_airT2ProductionTurn = 0;
-        g_airLateNanoTasks.resize(0);
-        g_airLateNanoMisses = 0;
 
         // Apply AIR role settings
         aiTerrainMgr.SetAllyZoneRange(Global::RoleSettings::Air::AllyRange);
@@ -397,7 +403,7 @@ namespace RoleAir {
     of metal storage, until back above EcoPriorityExitPercent, porc is held to
     the preventive structure per cluster (Air_AiMakeDefence), the T2 plants to
     wave bombers and constructors (no escorts, scouts, heavy air or fallback
-    fighters), and no further T2 plant is ordered (Air_PlantsAndNanos). The
+    fighters), and no further T2 plant is ordered (Air_T2Plants). The
     economy itself (TECH's rule table) is not held back.
 
     ******************************************************************************/
@@ -715,12 +721,15 @@ namespace RoleAir {
                 && energyIncome >= Global::RoleSettings::Air::SecondT2AirConstructorEnergyIncome) {
                 minT2Cons = maxT2Cons;
             }
-            // The economy (see ECONOMY) gives the first two T2 air constructors
-            // dedicated roles (D-107) and wants one per PlanAirConstructorPerMetal
-            // of income from PlanAirConstructorsFromMetal, as TECH's plan does
+            // The economy (see ECONOMY): the chain's constructors at once
+            // (Air::ChainT2Constructors, TECH's T2 constructors: mohos, fusion,
+            // advanced fusion), not staged on income - the mohos are what the
+            // income waits on; on top of them TECH's plan wants one per
+            // PlanAirConstructorPerMetal of income from PlanAirConstructorsFromMetal,
+            // and the first two of those are dedicated (D-107)
             if (EcoRole::Enabled()) {
-                const int ecoWant = TechPlan::AirConstructorsWanted();
-                if (ecoWant > minT2Cons) minT2Cons = ecoWant;
+                if (minT2Cons < Global::RoleSettings::Air::ChainT2Constructors) minT2Cons = Global::RoleSettings::Air::ChainT2Constructors;
+                minT2Cons += TechPlan::AirConstructorsWanted();
             }
             if (minT2Cons > 0) {
                 array<string> t2AirCons; t2AirCons = { "armaca", "coraca", "legaca" };
@@ -912,7 +921,7 @@ namespace RoleAir {
     and there is never a fourth (MaxT2AircraftPlants). Enforced as the def cap on
     armaap / coraap / legaap, so native UpdateFactoryTasks (which skips an
     unavailable factory) obeys it as well as the air.plants row
-    (Air_PlantsAndNanos). One-way: a later dip does not lower the
+    (Air_T2Plants). One-way: a later dip does not lower the
     cap under a plant that is already on the map or in construction.
 
     ******************************************************************************/
@@ -968,7 +977,7 @@ namespace RoleAir {
 
     With the experimental economy on (see ECONOMY) every builder - commander,
     T1 and T2 air constructors, turrets - takes its task from TECH's rule table;
-    AIR's own work is the table's air.plants row (Air_PlantsAndNanos). The
+    AIR's own work is the table's air.plants row (Air_T2Plants). The
     table never returns null. Off, native's default task.
 
     ******************************************************************************/
@@ -1006,7 +1015,6 @@ namespace RoleAir {
     }
 
     void Air_BuilderAiTaskRemoved(IUnitTask@ task, bool done) {
-        Air_OnLateNanoTaskRemoved(task, done);
     }
 
     void Air_BuilderAiUnitRemoved(CCircuitUnit@ unit, Unit::UseAs usage)
@@ -1027,20 +1035,14 @@ namespace RoleAir {
     ******************************************************************************/
 
     /**************************************************************************
-     PLANTS AND THEIR NANOS (the air.plants row)
+     T2 AIRCRAFT PLANTS (the air.plants row)
 
-     Metal floats (Air_IsFloating, Global::RoleSettings::Air::Late*): the
-     nanos at the T2 aircraft plants. A T2 plant the layout has no footprint
-     for goes on a ring LateExpansionRadius out from the start, one slot per
-     plant, so the base grows outward instead of packing the core.
+     A T2 plant the layout has no footprint for goes on a ring
+     LateExpansionRadius out from the start, one slot per plant, so the base
+     grows outward instead of packing the core. Nanos are TECH's: the chain's
+     nano step and the power.t1 / power.turret / turret.build rows place them
+     in the layout's turret box, flush against the plants.
      **************************************************************************/
-    bool Air_IsFloating(float mi)
-    {
-        if (mi < Global::RoleSettings::Air::LateMetalIncome) return false;
-        return aiEconomyMgr.isMetalFull
-            || aiEconomyMgr.metal.current >= Global::RoleSettings::Air::LateMetalCurrent;
-    }
-
     AIFloat3 Air_ClampToMap(const AIFloat3 &in p, float margin)
     {
         const float w = float(aiTerrainMgr.GetTerrainWidth());
@@ -1074,100 +1076,38 @@ namespace RoleAir {
         return Air_ClampToMap(AIFloat3(c.x + dx * r, c.y, c.z + dz * r), Global::RoleSettings::Air::LateExpansionShake);
     }
 
-    // Late nanos. The anchor used to be ring slot `nanos`: when that site could not
-    // be built (unsafe, cliff, water - the nano task only searches within the
-    // nano's own build distance and falls back to a patrol), no nano was ever
-    // finished, `nanos` stayed 0 and the same slot was asked for again every
-    // couple of seconds for the rest of the game (All That Glitters 2026-09-27:
-    // "nano 1/12" from f=39225 on while AIR's bank rose from 4 700 to 13 000).
-    // Now each late nano that ends unbuilt moves the next one to the next anchor:
-    // the primary T2 air plant first - AIR floats metal because its plants cannot
-    // spend it, so a nano there assists production at once - then the ring slots.
-    array<IUnitTask@> g_airLateNanoTasks;
-    int g_airLateNanoMisses = 0;
-
-    AIFloat3 Air_LateNanoAnchor()
-    {
-        const int slots = (Global::RoleSettings::Air::LateRingSlots < 1) ? 1 : Global::RoleSettings::Air::LateRingSlots;
-        const int k = g_airLateNanoMisses % (slots + 1);
-        if (k == 0) {
-            const AIFloat3 plant = Factory::GetT2AirPlantPos();
-            if (plant.x >= 0.0f) return plant;
-        }
-        return Air_RingAnchor(k == 0 ? 0 : k - 1);
-    }
-
-    // Air_BuilderAiTaskRemoved.
-    void Air_OnLateNanoTaskRemoved(IUnitTask@ task, bool done)
-    {
-        if (task is null) return;
-        for (uint i = 0; i < g_airLateNanoTasks.length(); ++i) {
-            if (g_airLateNanoTasks[i] !is task) continue;
-            g_airLateNanoTasks.removeAt(i);
-            if (!done) {
-                ++g_airLateNanoMisses;
-                GenericHelpers::LogUtil("[AIR][Late] nano site unusable; next nano moves to anchor "
-                    + g_airLateNanoMisses % ((Global::RoleSettings::Air::LateRingSlots < 1 ? 1 : Global::RoleSettings::Air::LateRingSlots) + 1)
-                    + " (0 = T2 air plant, then ring slots)", 1);
-            }
-            return;
-        }
-    }
-
     // The air.plants row of TECH's rule table (roles/tech_rules.as). The first
     // T2 aircraft plant is the economy's advanced lab (the chain's alab step
-    // and the lab.t2 row, placed by the layout); after it:
-    //   1. another T2 aircraft plant whenever the ADVANCED AIRCRAFT PLANT CAP
-    //      stage allows one more (2nd at SecondT2AircraftPlantMetalIncome, 3rd
-    //      at ThirdT2AircraftPlantMetalIncome) and the bank holds
-    //      RequiredMetalCurrentForT2AircraftPlant: flush against the turrets
-    //      (Layout::OrderFactory), else on the ring round the start; not while
-    //      metal-starved;
-    //   2. while metal floats (Air_IsFloating), construction turrets up to
-    //      LateNanosPerT2Plant per T2 aircraft plant, at the plants first.
-    // Null when neither is due: the table goes on to the chain and the economy.
-    IUnitTask@ Air_PlantsAndNanos(CCircuitUnit@ u, float mi)
+    // and the lab.t2 row, placed by the layout); after it, another T2 aircraft
+    // plant whenever the ADVANCED AIRCRAFT PLANT CAP stage allows one more (2nd
+    // at SecondT2AircraftPlantMetalIncome, 3rd at ThirdT2AircraftPlantMetalIncome)
+    // and the bank holds RequiredMetalCurrentForT2AircraftPlant: flush against
+    // the turrets (Layout::OrderFactory), else on the ring round the start; not
+    // while metal-starved. Null when none is due: the table goes on to the chain
+    // and the economy.
+    IUnitTask@ Air_T2Plants(CCircuitUnit@ u)
     {
         if (u is null || u.circuitDef is null) return null;
         const string side = Global::AISettings::Side;
         const int t2Plants = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2AircraftPlants());
-
-        if (t2Plants >= 1 && t2Plants < g_airT2PlantsAllowed && !Factory::IsT2AirPlantBuildQueued()
-            && !Air_IsMetalStarved() && Builder::IsT2FactoryOffCooldown()
-            && aiEconomyMgr.metal.current >= Global::RoleSettings::Air::RequiredMetalCurrentForT2AircraftPlant) {
-            CCircuitDef@ d = ai.GetCircuitDef(UnitHelpers::GetT2AirPlantForSide(side));
-            if (d !is null && d.IsAvailable(ai.frame) && u.circuitDef.CanBuild(d)) {
-                IUnitTask@ t = Layout::OrderFactory(d, 600 * SECOND);
-                string where = "flush against the turrets";
-                if (t !is null) {
-                    Builder::MarkT2FactoryEnqueued();
-                } else {
-                    @t = Builder::EnqueueT2AirPlant(side, Air_RingAnchor(t2Plants - 1), Global::RoleSettings::Air::LateExpansionShake, 600 * SECOND);
-                    where = "on ring slot " + (t2Plants - 1);
-                }
-                if (t !is null) {
-                    GenericHelpers::LogUtil("[AIR][Plants] T2 aircraft plant " + (t2Plants + 1) + "/" + g_airT2PlantsAllowed
-                        + " " + where + " (avg metal income " + int(aiEconomyMgr.metal.income) + ")", 1);
-                    return t;
-                }
-            }
+        if (t2Plants < 1 || t2Plants >= g_airT2PlantsAllowed || Factory::IsT2AirPlantBuildQueued()
+            || Air_IsMetalStarved() || !Builder::IsT2FactoryOffCooldown()
+            || aiEconomyMgr.metal.current < Global::RoleSettings::Air::RequiredMetalCurrentForT2AircraftPlant) return null;
+        CCircuitDef@ d = ai.GetCircuitDef(UnitHelpers::GetT2AirPlantForSide(side));
+        if (d is null || !d.IsAvailable(ai.frame) || !u.circuitDef.CanBuild(d)) return null;
+        IUnitTask@ t = Layout::OrderFactory(d, 600 * SECOND);
+        string where = "flush against the turrets";
+        if (t !is null) {
+            Builder::MarkT2FactoryEnqueued();
+        } else {
+            @t = Builder::EnqueueT2AirPlant(side, Air_RingAnchor(t2Plants - 1), Global::RoleSettings::Air::LateExpansionShake, 600 * SECOND);
+            where = "on ring slot " + (t2Plants - 1);
         }
-
-        if (t2Plants > 0 && Air_IsFloating(mi)) {
-            const int nanos = UnitDefHelpers::GetUnitDefCount(UnitHelpers::GetT1NanoNameForSide(side));
-            const int nanosQueued = int(g_airLateNanoTasks.length());
-            const int nanoTarget = t2Plants * Global::RoleSettings::Air::LateNanosPerT2Plant;
-            if (nanos + nanosQueued < nanoTarget && nanos + nanosQueued < Global::RoleSettings::Air::NanoMaxCount) {
-                IUnitTask@ t = Builder::EnqueueT1Nano(side, Air_LateNanoAnchor(), Global::RoleSettings::Air::LateExpansionShake, 120 * SECOND, Task::Priority::NORMAL);
-                if (t !is null) {
-                    g_airLateNanoTasks.insertLast(t);
-                    GenericHelpers::LogUtil("[AIR][Plants] nano " + (nanos + nanosQueued + 1) + "/" + nanoTarget
-                        + " at the plants (metal " + int(aiEconomyMgr.metal.current) + ", income " + int(mi) + ")", 1);
-                    return t;
-                }
-            }
+        if (t !is null) {
+            GenericHelpers::LogUtil("[AIR][Plants] T2 aircraft plant " + (t2Plants + 1) + "/" + g_airT2PlantsAllowed
+                + " " + where + " (avg metal income " + int(aiEconomyMgr.metal.income) + ")", 1);
         }
-        return null;
+        return t;
     }
 
     /******************************************************************************

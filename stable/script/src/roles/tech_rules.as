@@ -386,9 +386,9 @@ namespace TechRules {
             if (EcoPlanner::Affordable(opts[i], c.eco)) return ByKey(c, opts[i].key);
         return null;
     }
-    // AIR: more T2 aircraft plants as income allows, and the nanos that serve
-    // them (roles/air.as); nothing of TECH's strategic ladder
-    IUnitTask@ DoAirPlants(Ctx@ c)      { return RoleAir::Air_PlantsAndNanos(c.u, c.mi); }
+    // AIR: more T2 aircraft plants as income allows (roles/air.as); its nanos
+    // are TECH's turret rows; nothing of TECH's strategic ladder
+    IUnitTask@ DoAirPlants(Ctx@ c)      { return RoleAir::Air_T2Plants(c.u); }
     IUnitTask@ DoLegacy(Ctx@ c)
     {
         if (EcoRole::IsAir()) return null;
@@ -453,7 +453,7 @@ namespace TechRules {
         table.insertLast(Rule("power.t1",          CON_T1,       W2(@DearFrameUp, @TurretRoom), @DoT1Turret,     "D-105: a dear frame is up and the turret calculation has room: a T1 constructor adds a construction turret rather than assist"));
         table.insertLast(Rule("energy.convert.float", MOBILE,     W4(@EnergyFloatsBank, @NotStalling, @NoDearOrderPending, @NotMetalFull), @DoConverter,    "D-079: before the chain - energy floats (TechChain::EnergyFloats): a converter, whatever the chain is doing"));
         table.insertLast(Rule("power.turret",      MOBILE,       W4(@MetalAhead, @StructureBuilding, @NotStalling, @NoDearOrderPending), @DoPowerTurret, "D-075: metal income above spending while a structure is under construction: a turret, Layout::TurretsAllowed at a time (D-097), else assist the turret going up"));
-        table.insertLast(Rule("air.plants",        CONSTRUCTORS, W1(@AirRole), @DoAirPlants,  "AIR: another T2 aircraft plant as income stages allow (100, 200), placed by the layout; nanos at the plants while metal floats"));
+        table.insertLast(Rule("air.plants",        CONSTRUCTORS, W1(@AirRole), @DoAirPlants,  "AIR: another T2 aircraft plant as income stages allow (100, 200), placed by the layout"));
         table.insertLast(Rule("chain.next",        MOBILE,       W1(@ChainActive), @DoChain,      "the rush chain (D-070): the first unmet target - assist its frame, wait for its order, or order it"));
         table.insertLast(Rule("lab.t1.opening",    MOBILE,       W3(@OpeningDone, @NotIntoT2, @NoT1Lab), @DoStartFactory, "the throwaway first lab at the commander; a constructor uses the pair's slot"));
         table.insertLast(Rule("lab.t1.recover",    COMMANDER,    W3(@OpeningDone, @NoConstructors, @NoLabAtAll), @DoStartFactory, "every constructor and every lab lost: the commander rebuilds a T1 lab"));

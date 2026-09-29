@@ -78,7 +78,11 @@ namespace BuildPower {
         if (!Global::BuildPower::Enabled || Global::AISettings::Side.length() == 0) return false;
         const AiRole role = Global::AISettings::Role;
         if (role == AiRole::FRONT) return Global::BuildPower::Front;
-        if (role == AiRole::AIR) return Global::BuildPower::Air;
+        // AIR on TECH's economy (manager/eco_role.as): its builders take work only
+        // from TECH's rule table, which never takes these native orders, and the
+        // queued turrets held Layout's turret count full, so TECH's own turret
+        // rows placed none (All That Glitters 2026-09-28)
+        if (role == AiRole::AIR) return Global::BuildPower::Air && !Global::RoleSettings::Air::ExperimentalEco;
         return false;
     }
 

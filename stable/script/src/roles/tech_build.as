@@ -353,6 +353,33 @@ namespace TechBuild {
     }
     // D-108: every T2 air constructor seen, so a freed role is handed on at once
     dictionary airConsSeen;
+    // AIR (manager/eco_role.as): every T2 constructor is an air constructor, so
+    // the first Air::ChainT2Constructors of them are what TECH's T2 bot
+    // constructors are - the chain's mohos, then the fusion, then the advanced
+    // fusion, and the mex upgrades - and never hold a dedicated role; only those
+    // beyond them do (played, All That Glitters 2026-09-28: AIR's first two T2
+    // air constructors took the advanced fusion and converter roles, no T1 mex
+    // was upgraded and the advanced fusion went up at +26 metal). A chain
+    // constructor lost is replaced by the next T2 air constructor that asks.
+    dictionary airChainCons;
+    bool IsAirChainCon(CCircuitUnit@ u)
+    {
+        if (!EcoRole::IsAir() || !IsT2AirCon(u)) return false;
+        const string key = "" + u.id;
+        if (airChainCons.exists(key)) return true;
+        if (u.id == airConvId || u.id == airAfusId) return false;   // a dedicated builder keeps its role
+        int alive = 0;
+        array<string>@ keys = airChainCons.getKeys();
+        for (uint i = 0; keys !is null && i < keys.length(); ++i) {
+            if (ai.GetTeamUnit(parseInt(keys[i])) is null) airChainCons.delete(keys[i]);
+            else ++alive;
+        }
+        if (alive >= Global::RoleSettings::Air::ChainT2Constructors) return false;
+        airChainCons.set(key, ai.frame);
+        GenericHelpers::LogUtil("[AIR][Eco] " + u.circuitDef.GetName() + " " + u.id + " is chain constructor " + (alive + 1) + "/"
+            + Global::RoleSettings::Air::ChainT2Constructors + ": mohos, fusion, advanced fusion, as TECH's T2 constructors", 1);
+        return true;
+    }
     // D-108: a role whose builder is gone goes at once to another T2 air
     // constructor of ours that holds no role
     // D-108: a builder handed a role drops a job of another kind at once
@@ -401,6 +428,7 @@ namespace TechBuild {
     int AirConRole(CCircuitUnit@ u)
     {
         if (!IsT2AirCon(u)) return 0;
+        if (IsAirChainCon(u)) return 0;   // AIR: never seen as a candidate for a role
         airConsSeen.set("" + u.id, ai.frame);
         RefillAirRoles();
         if (u.id == airConvId) return 1;
@@ -479,7 +507,7 @@ namespace TechBuild {
     // advanced fusion going up the moment the converters cannot stay on
     IUnitTask@ AirFlexible(CCircuitUnit@ u)
     {
-        if (!IsT2AirCon(u) || AirConRole(u) != 0) return null;
+        if (!IsT2AirCon(u) || IsAirChainCon(u) || AirConRole(u) != 0) return null;
         const string side = Global::AISettings::Side;
         if (ConvertersStarve()) return AssistNearestOf(u, UnitHelpers::GetAdvFusionNameForSide(side));
         if (TechChain::EnergyFloats()) return BuildByLayout(u, UnitHelpers::GetAdvEnergyConverterNameForSide(side), Task::BuildType::CONVERT);

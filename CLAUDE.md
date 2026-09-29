@@ -107,10 +107,14 @@ differ: which labs and constructors count (aircraft plants and air
 constructors for AIR), how a T1 or T2 lab is enqueued, and
 `ReclaimsLabs()` - AIR never reclaims its T1 or T2 plant, and TECH's land
 rows (forward constructors, front factories, spam labs) and the invariant
-tick are TECH only. AIR adds one row, `air.plants` (`Air_PlantsAndNanos`): more
-T2 aircraft plants by income, nanos at them while metal floats.
-Metal-starved mode still holds AIR's porc and T2 production. TECH code
-that asks "which lab" should go through `EcoRole`, not name bot labs.
+tick are TECH only. AIR's first `Air::ChainT2Constructors` T2 air
+constructors do what TECH's T2 bot constructors do (mohos, fusion, AFUS);
+only extra ones get the dedicated converter / AFUS roles (D-107). Nanos are
+TECH's turret rows; BuildPower is off for AIR, since the table never takes
+native orders. AIR adds one row, `air.plants` (`Air_T2Plants`): more T2
+aircraft plants by income. Metal-starved mode still holds AIR's porc and T2
+production. TECH code that asks "which lab" should go through `EcoRole`,
+not name bot labs.
 
 ## Never abort a task inside AiMakeTask
 
