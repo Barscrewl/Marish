@@ -95,64 +95,6 @@ namespace Global {
         float ExcessMetalBudgetMod = 2.0f;
     }
 
-    // FRONT and AIR near max metal, see manager/build_power.as. While the bank
-    // sits near full - from income or from metal TECH trades in - construction
-    // turrets go on the T2 plants and gantries; if it stays maxed, another gantry.
-    namespace BuildPower {
-        bool Enabled = true;
-        bool Front = true;
-        bool Air = true;
-        int MinMinutes = 3;
-        int IntervalSeconds = 6;         // one step at most this often
-        float CapFill = 0.80f;           // bank / storage at which metal counts as near max
-        float ReleaseFill = 0.55f;       // below this the capped stretch ends
-        int SustainSeconds = 15;         // near max this long before the first turret
-        float TargetFill = 0.50f;        // the bank above this is drained over DrainSeconds
-        int DrainSeconds = 120;
-        float MetalPerNano = 8.0f;       // metal/s one 200 build power turret spends
-        int MaxPerStep = 2;
-        int MaxInFlight = 3;             // our turret tasks queued at once
-        int MaxNanos = 60;               // all T1 turrets, ours and the roles'
-        float MinEnergyFill = 0.25f;     // nothing added below this energy fill, or while stalling
-        int NanosPerT2Factory = 12;      // ours per plant, on top of the roles' own
-        int NanosPerGantry = 16;
-        bool T1Fallback = true;          // T1 plants take turrets only while there is no T2 plant or gantry
-        int NanosPerT1Factory = 6;
-        int TaskTimeoutSeconds = 120;
-        int MissRestSeconds = 90;        // a plant whose turret ended unbuilt is skipped this long
-        // Another land gantry once the bank has stayed at GantryFill without a
-        // break for GantrySeconds (the turrets did not drain it).
-        float GantryFill = 0.90f;
-        int GantrySeconds = 180;
-        float GantryMinIncome = 60.0f;
-        int GantryMinMinutes = 12;
-        int GantryIntervalSeconds = 300; // between gantries queued here
-        int MaxGantries = 3;             // land gantries in all
-    }
-
-    // Frigates and destroyers of every faction: held at base, then every held
-    // ship launched as one attack, see manager/naval_waves.as.
-    namespace NavalWaves {
-        bool Enabled = true;
-        array<string> Ships = {
-            "armpship", "armroy",               // Armada: Ellysaw frigate, destroyer
-            "corpship", "corroy",               // Cortex: Riptide frigate, destroyer
-            "legnavyfrigate", "legnavydestro"   // Legion: Argonaut frigate, destroyer
-        };
-        // Each wave launches the whole hold once it holds a size drawn fresh per
-        // wave from [MinWaveSize, MaxWaveSize], frigates and destroyers combined.
-        int MinWaveSize = 7;
-        int MaxWaveSize = 10;
-        // Time-out: a hold of at least TimeoutMinSize that has waited this long
-        // launches anyway, so a yard that cannot reach the drawn size never parks
-        // for good (main's 4 minutes and 3 ships). 0 turns it off.
-        int TimeoutMinSize = 3;
-        int MaxHoldSeconds = 240;
-        // Released ships re-enter Military::AiMakeTask within a few seconds and
-        // take the wave's attack task while this window is open.
-        int ReleaseWindowSeconds = 15;
-    }
-
     // Spam: economy-gated mass production on parallel routes, see manager/spam.as
     // and doc/spam-routes.md. Units need "attribute": ["spam"] in behaviour.json.
     // Air transport ferry (Team::Ferry, manager/ferry.as). AIR builds one
@@ -160,9 +102,14 @@ namespace Global {
     // lab; TECH uses it to fly donated T2 constructors to their recipients.
     namespace Ferry {
         float DropPullback = 300.0f;
+        float SafeDropRadius = 900.0f;
+        float DropSurfaceThreat = 1.0f;
+        float DropAirThreat = 1.0f;
+        int AwaitTransportSeconds = 120;
         float ParkDistance = 450.0f;      // D-112: gifts wait this far behind our start (away from the map centre)
         float ParkSpacing = 80.0f;        // D-112: gifts park this far apart
         int ParkWaitSeconds = 900;        // D-112: a gift's park (renewed at every ask)
+        int FerryUnloadSeconds = 15;      // D-122: INV-052: a run unloads within this
         float GiveNearDrop = 800.0f;      // D-112: a failed run gives its cargo only within this of the drop
         int FerryRunAttempts = 2;         // D-112: flown runs tried for one gift before it walks     // D-110: the drop point is this far short of the teammate's start, toward our base (open ground)
         bool Enabled = true;
@@ -304,54 +251,6 @@ namespace Global {
     }
 
     // Role-specific overrideable variables in a dedicated namespace
-    // manager/builder_watchdog.as: a T2 constructor that neither moves MoveElmos
-    // nor adds build progress for StallSeconds (checked every CheckSeconds) is
-    // taken out of AI control for ParkSeconds, then handed back for a new task;
-    // not again for CooldownSeconds.
-    namespace BuilderWatchdog {
-        bool Enabled = true;
-        float CheckSeconds = 10.0f;
-        float StallSeconds = 45.0f;
-        float ParkSeconds = 3.0f;
-        float CooldownSeconds = 60.0f;
-        float MoveElmos = 96.0f;
-    }
-
-    namespace BomberStock {
-        // Every T2 bomber built (UnitHelpers::GetAllT2WaveBombers) is counted,
-        // and while the count builds its def's main role and attribute are
-        // replaced with "support". At the current wave size of live counted
-        // bombers the defs get their regular role and attribute back (bomber /
-        // siege) and the batch is launched as an attack wave. See
-        // manager/bomber_stock.as.
-        bool Enabled = true;
-
-        // Wave N launches at FirstWaveSize + WaveSizeGrowth * (N - 1) live
-        // bombers - 5, 8, 11, 14, 17, 20 - then 20 every wave, and once the
-        // late-game lift opens (Air::LateBomberWaveMaxSize) on from 20 by the
-        // same step to 40: 23, 26 ... 38, 40. Never a skipped size, whatever
-        // the income (BomberStock::WaveSize).
-        // A launch never takes more than MaxWaveSize; extras stay parked
-        // for the next wave. This is a per-wave size, not a limit on how many
-        // bombers the AI owns: the plant refills the stock after every launch.
-        int FirstWaveSize = 5;
-        int WaveSizeGrowth = 3;
-        int MaxWaveSize = 20;
-
-        // Upper bound on how long the defs stay on their regular role after a
-        // launch while the released bombers re-task. The window closes early
-        // once every released bomber has taken its new task.
-        int ReleaseWindowSeconds = 12;
-
-        // A stock that has not grown for this long launches what it holds, as long
-        // as that is at least the last wave's size (FirstWaveSize before the first)
-        // and StallLaunchMinPercent of the current wave size. Without the second
-        // floor a stall sent 5, 6, 8 and 9 bombers at a wave size of 20 (Supreme
-        // Isthmus 2026-09-27, 23 500 - 77 500 metal of AA, no survivors in any).
-        int StallLaunchSeconds = 60;
-        int StallLaunchMinPercent = 75;
-    }
-
     namespace RoleSettings {        
         /******************** MEX UPGRADE PRIORITY ********************/
         // A mex upgrade is the best metal-per-metal available and spots are
@@ -371,6 +270,9 @@ namespace Global {
         // Independent from primary/secondary caps. Default 0 disables tactical guarding.
         int BuilderMaxGuardsPerTacticalLeader = 0;
 
+        // Shared AIR/TECH wall exclusion, measured from every allied start.
+        float WallBaseExclusionRadius = 1200.0f;
+
         namespace Tech {
             // Role switch cadence (seconds)
             int MinAiSwitchTime = 400;
@@ -378,13 +280,6 @@ namespace Global {
 
             // NukeLimit: maximum number of nukes allowed for TECH role
             int NukeLimit = 20;
-            // Nuke rush (EndgamePlan "nuke"): after the chain's silo, another nuclear
-            // silo each time the last one is finished - none under construction, none
-            // ordered - up to NukeLimit (TechRules nuke.next). The gates are the goldberg
-            // branch's late-game sustain (23900e8): not before NukeSustainAfterSeconds
-            // (0 = no time gate), not under NukeSustainMinMetalIncome.
-            int NukeSustainAfterSeconds = 18 * 60;   // 18: the first silo stood by 14:37-17:22 and build power near the base was 12,800-18,900 at 18 min (Salt Reef, Erebos Lakes 2026-09-28); a silo is 7,700-8,100 metal, 178,500-181,000 build time
-            float NukeSustainMinMetalIncome = 225.0f;
 
             /******************** FLOATING METAL ********************/
             // Every gate in the T2 constructor ladder is income-based, so a
@@ -429,6 +324,124 @@ namespace Global {
             float ExpOrderRadius = 2000.0f;                 // native's queued defence/radar/repair orders are taken only within this of the base
             float ExpCommanderHomeRadius = 800.0f;          // the commander assists only within this of the base after the opening
             float ExpFirstLabRadius = 224.0f;               // the first (throwaway) T1 lab goes on the nearest footprint within this of the commander ...
+            int FirstFactorySeconds = 300;                  // D-120: INV-050
+            // D-121: cramped ground (no planned pair): structures packed this far from the nearest lab,
+            // turrets near the labs: CrampedTurretsBase + one per CrampedTurretMetalStep of income, at most CrampedTurretsMax
+            // D-121: the harbour (an island TECH, Global::Map::LandLocked): after this many advanced
+            // fusions the economy moves to the water and the shipyards come; see roles/tech_harbour.as
+            bool HarbourEnabled = true;
+            int HarbourAfterAdvancedFusions = 2;
+            int HarbourLatestSeconds = 900;                 // ... or this far in once an advanced lab has stood (the island's ground runs out first; played: raids from 17 minutes)
+            // D-123: an air constructor with nothing else to do builds defences: the mex clusters' AA,
+            // then a ring round the base toward the front (AirDefenceMax of each kind at most)
+            int AirDefenceMax = 60;
+            int AirIdleAsks = 2;                            // D-123: asks in a row while idle before an air constructor takes defences instead
+            float AirDefenceRadius = 900.0f;
+            float AirDefenceRingStep = 300.0f;
+            int AirDefenceRingSize = 7;
+            float AirDefenceArc = 0.35f;
+            float AirDefenceShake = 320.0f;
+            /******************** LANES (D-127) ********************/
+            // manager/lanes.as, doc/roles/tech-lanes.md; data/config/lanes.json overrides each
+            bool LanesEnabled = true;                   // lanes/enabled
+            int LaneAlternatives = 3;                   // lanes/alternatives
+            float LaneMergeRadius = 450.0f;             // lanes/merge_radius
+            float LaneThreatWeight = 1.0f;              // lanes/threat_weight
+            float LaneRecalcSeconds = 180.0f;           // lanes/recalc_seconds
+            float LaneRecalcShift = 1000.0f;            // lanes/recalc_shift
+            float LaneRecalcMinSeconds = 60.0f;         // lanes/recalc_min_seconds: at most this often on a front move
+            bool LaneDraw = true;                       // lanes/draw
+            int LaneDrawSeconds = 30;                   // lanes/draw_seconds: owner: 30 s after the intro
+            int LaneDrawFallbackSeconds = 300;           // lanes/draw_fallback_seconds
+            float LaneSymbolSpacing = 1400.0f;          // lanes/symbol_spacing
+            float LaneSymbolSize = 260.0f;              // lanes/symbol_size
+            float LaneLabelSize = 240.0f;               // lanes/label_size
+
+            /******************** WEAPON CLUSTERS (D-126) ********************/
+            // TECH's weapon clusters (roles/tech_weapons.as, doc/roles/tech-weapon-clusters.md).
+            // These are the defaults; data/config/weapons.json (and a profile's own
+            // weapons.json) overrides each at game start (TechWeapons::LoadSettings),
+            // the JSON path in the comment.
+            bool WeaponClustersEnabled = true;          // weapons/enabled
+            float WeaponStartMetalIncome = 200.0f;      // weapons/start_metal_income: owner: no weapon cluster before +200 metal
+            float WeaponBudgetShare = 0.25f;            // weapons/budget/share: of metal income, into weapon clusters
+            float WeaponBudgetShareAttacked = 0.40f;    // weapons/budget/share_attacked: while the base area is being fought over
+            float WeaponBudgetWindowSeconds = 60.0f;    // weapons/budget/window_seconds: the budget saves up at most this many seconds of share
+            float WeaponAttackedHeat = 30.0f;           // weapons/budget/attacked_heat: combat heat within WeaponBaseRadius that counts as under attack
+            float WeaponBaseRadius = 2500.0f;           // weapons/budget/base_radius
+            int WeaponMaxConcurrent = 4;                // weapons/budget/max_concurrent: weapon orders out at once (the super cannon's escort apart)
+            // income gates per cluster kind (metal income, 10 s minimum)
+            float WeaponKillMinIncome = 200.0f;         // weapons/gates/kill_zone
+            float WeaponAirMinIncome = 200.0f;          // weapons/gates/air_defence
+            float WeaponCoastMinIncome = 250.0f;        // weapons/gates/coast
+            float WeaponArtyMinIncome = 300.0f;         // weapons/gates/artillery
+            float WeaponLrpcMinIncome = 350.0f;         // weapons/gates/long_range
+            float SuperMinMetalIncome = 500.0f;         // weapons/super/min_metal_income: owner: at least +500 to start a super cannon
+            float SuperIdealMetalIncome = 1000.0f;      // weapons/super/ideal_metal_income: owner: ideally over +1000 (below it, only with a high need)
+            float SuperMinNeed = 1.5f;                  // weapons/super/min_need: the need a super cannon needs between the two incomes
+            float SuperEnergySpareFactor = 1.0f;        // weapons/super/energy_spare_factor: spare energy income x the cannon's sustained draw
+            // how many of each cluster kind, and each cluster's shape
+            int WeaponMaxKill = 4;                      // weapons/max/kill_zone
+            int WeaponMaxAir = 4;                       // weapons/max/air_defence
+            int WeaponMaxCoast = 4;                     // weapons/max/coast
+            int WeaponMaxArty = 3;                      // weapons/max/artillery
+            int WeaponMaxLrpc = 3;                      // weapons/max/long_range
+            int WeaponMaxSuper = 1;                     // weapons/max/super
+            int WeaponNanoPerCluster = 4;               // weapons/cluster/nanos: owner: at least 4 construction turrets per cluster
+            float WeaponWorkRadius = 8000.0f;           // weapons/cluster/work_radius: a land constructor takes cluster work within this
+            float WeaponCriticalSpacing = 1280.0f;      // weapons/cluster/critical_spacing: nuke AoE between critical structures
+            float WeaponAirSpacing = 260.0f;            // weapons/cluster/air_spacing: AA pieces apart (1.5 x a bomb's AoE)
+            // super cannon (owner, W9)
+            int SuperStorageMin = 2;                    // weapons/super/storage_min: advanced energy storages at least
+            float SuperStorageMargin = 1.1f;            // weapons/super/storage_margin: storage holds a full shot x this
+            int SuperFlakCount = 6;                     // weapons/super/flak: dense forward flak
+            int SuperLongRangeAACount = 2;              // weapons/super/long_range_aa
+            int SuperDeflectorCount = 2;                // weapons/super/deflectors
+            int SuperAntiNukeCount = 1;                 // weapons/super/anti_nukes (2 once an enemy silo is seen)
+            int SuperNanoCount = 8;                     // weapons/super/nanos
+            int SuperRadarCount = 2;                    // weapons/super/radars
+            float SuperBandMin = 0.2f;                  // weapons/super/band_min: of the cannon's range back from the active combat zone
+            float SuperBandMax = 0.4f;                  // weapons/super/band_max
+            float SuperEscortRadius = 900.0f;           // weapons/super/escort_radius
+            int SuperEscortSeconds = 300;               // weapons/super/escort_seconds: INV-058's grace
+            // long range (LRPCs share the band, owner)
+            float WeaponLrpcBandMin = 0.2f;             // weapons/long_range/band_min
+            float WeaponLrpcBandMax = 0.4f;             // weapons/long_range/band_max
+            // analysis
+            float WeaponReplanSeconds = 60.0f;          // weapons/analysis/replan_seconds: sites re-found and re-ranked
+            float WeaponAnalyseSeconds = 600.0f;        // weapons/analysis/analyse_seconds: routes and beaches recomputed
+            int WeaponRouteAlternatives = 3;            // weapons/analysis/route_alternatives
+            float WeaponChokeHalfWidth = 480.0f;        // weapons/analysis/choke_half_width
+            float WeaponChokeMerge = 900.0f;            // weapons/analysis/choke_merge
+            float WeaponKillShareMin = 0.2f;            // weapons/analysis/kill_share_min: kill zones between these shares of a route
+            float WeaponKillShareMax = 0.6f;            // weapons/analysis/kill_share_max
+            float WeaponCombatMinHeat = 5.0f;           // weapons/analysis/combat_min_heat: an active combat zone
+            float WeaponCombatHalfLife = 180.0f;        // weapons/analysis/combat_half_life
+            float WeaponAirHalfLife = 300.0f;           // weapons/analysis/air_half_life
+            float WeaponCoastRadius = 3500.0f;          // weapons/analysis/coast_radius: beaches this close to the base
+            float WeaponEnemyCoastRadius = 2500.0f;     // weapons/analysis/enemy_coast_radius: water this close to an enemy start is hostile
+            int HarbourMaxT2Shipyards = 1;
+            int HarbourYardSeconds = 480;                   // INV-051: the advanced shipyard framed this soon after the harbour begins
+            int HarbourHoverConstructors = 3;               // the hover plant's constructors: they float out and build the advanced shipyard
+            float HarbourYardSearch = 1200.0f;              // the advanced shipyard's site search around the hover plant (deep water)
+            int HarbourT1SeaConstructors = 3;
+            int HarbourT2SeaConstructors = 4;
+            int HarbourTurrets = 10;                        // floating construction turrets at the yards
+            float HarbourTurretRadius = 320.0f;
+            float HarbourRadius = 900.0f;                   // the sea economy is packed this far from the yards
+            float HarbourEnergyLowShare = 0.3f;             // energy under this share of storage: energy first
+            float HarbourConverterEnergyShare = 0.6f;       // construction subs add floating advanced converters while energy is over this share, else a naval fusion
+            float HarbourTidalUntilEnergy = 1500.0f;        // T1 construction ships add tidals while energy income is under this
+            float HarbourCommanderMinEnergy = 150.0f;       // ... and only with this much energy income
+            int HarbourCommanderConverters = 30;            // before the harbour: the commander's floating converters while energy floats, at most
+            float HarbourCommanderReach = 1200.0f;          // ... placed within this of it (the nearest deep-enough water)
+            float CrampedPlaceRadius = 640.0f;
+            float CrampedReachElmos = 128.0f;              // D-121: a lab site counts as reachable when a land constructor gets this close
+            float CrampedTurretRadius = 256.0f;
+            int CrampedTurretsBase = 2;
+            float CrampedTurretMetalStep = 10.0f;
+            int CrampedTurretsMax = 16;
+            float CrampedFirstLabRadius = 800.0f;          // D-120: with no planned pair (cramped ground) the first lab searches this far from the commander
             float ExpFirstLabClearance = 32.0f;             // ... but its footprint edge stays at least this far from the commander's position
             // D-114 (owner's rules): land factories move toward the front in front factory clusters
             float FrontMinShare = 0.2f;                     // D-114: a front cluster stands at least this share of the way from the base toward the front
@@ -463,6 +476,7 @@ namespace Global {
             float MexDefenceRadius = 400.0f;                // D-109: a defence within this of a cluster's centre counts for it
             float MexDefenceShake = 160.0f;                 // D-109: native picks the defence's site within this of the cluster's centre
             int ForwardOrderHoldSeconds = 120;              // D-109: an order at one place is not repeated within this
+            int PlannedFactoryClustersPerTier = 2;          // D-153: future ground only, per T1/T2/gantry
             int SpamLabGapCells = 2;                        // D-109, D-114: cells between side-by-side search positions of a front cluster (a lane each)
             float SpamClusterRadius = 600.0f;               // D-109: forward constructors assist what goes up within this of the spam cluster
             int SpamPadsMax = 2;                            // D-109: small 2x2 forward turret pads at the lab row's ends
@@ -483,8 +497,7 @@ namespace Global {
             bool ExpTurretNearLab = true;                   // D-069: the next box turret slot is the one nearest a standing lab, not the one nearest the pair's centre
             float ExpLabBuildPowerReach = 260.0f;           // D-069: elmos within which static build power (turrets) counts for a lab site: a nano's build distance plus the lab's radius
             float ExpLabSiteRadius = 480.0f;                // D-069, superseded by D-073 (no longer read): the lab site is the turret-layout footprint the most turret slots reach
-            float CensusSeconds = 30.0f;                    // TechRules::Census: one level-1 line of what every builder and turret is on (TECH and AIR)
-            string EndgamePlan = "nuke";                   // D-080: nuke | t2rush | t3rush | lrpc | auto (deterministic from the team id) - what follows the rush objective. "nuke" for every TECH: our main-branch nuke rush (NukeRush 1): one silo right after the advanced fusion
+            string EndgamePlan = "auto";                   // D-080: nuke | t2rush | t3rush | lrpc | auto (deterministic from the team id) - what follows the rush objective
             float PlanCombatGate = 200.0f;                  // D-080: no mobile combat unit under this metal income (every plan)
             float PlanT3RushCombatGate = 500.0f;            // D-080: ... the t3rush plan's gate
             float PlanLrpcMetal = 300.0f;                   // D-080: the lrpc plan's income before the long-range cannon
@@ -551,9 +564,6 @@ namespace Global {
             float ExpCombatMetalIncome = 200.0f;            // D-068: under this 10 s metal income TECH's labs make no combat unit (rush bots stay capped, no scout/fast-bot batches); 0 = never
             float EcoMexExpandRadius = 2500.0f;             // constructors expand to the nearest open spot within this ...
             float EcoMexExpandUntilIncome = 60.0f;          // ... while metal income is under this
-            float ExpandUpgradePauseSeconds = 30.0f;        // TechBuild::ExpandMex: the nearest open spot is our mex under a T2 upgrade: no expansion this long
-            int ExpandLoopOrders = 6;                       // ... the same spot ordered this many times in a minute without a mex ...
-            float ExpandLoopPauseSeconds = 120.0f;          // ... rests expansion this long
             bool LayoutEnabled = true;                      // the planned base (needs ExperimentalBuild)
             // The opening (D-063): the OpeningMexCap reachable mexes nearest
             // the start within this radius, taken nearest the commander first,
@@ -602,8 +612,6 @@ namespace Global {
             int LayoutLabFrontGapCells = 3;          // D-096: the advanced lab's front-line site may stand this many cells ahead of turret row 0 (the zone's edge, a rock)
             int LayoutAfusSetSize = 3;               // D-101: advanced fusions per set: the first flush against a turret, the rest lined up away from it
             int LayoutConvSetSize = 5;               // D-101: advanced converters per set, the same way
-            float NukeRetrySeconds = 60.0f;          // nuke.next: after a silo order, none again for this long (a dead order is not re-issued every ask)
-            int LayoutSiloSetSize = 4;               // nuclear silos per set (Layout::PlaceSilo): wall to wall, the first flush against a turret
             float LayoutSetHoldSeconds = 300.0f;     // D-101: a set's unserved slots are released when nothing asked for its def this long
             float LayoutFrontMinCost = 1500.0f;      // D-096: a seen enemy group counts as a front at this metal cost; until one is seen the front is the map centre
             float LayoutLabFlushElmos = 160.0f;      // D-088: INV-017 - the nearest turret to the advanced lab, centre to centre, flush like the pair's nanos at the T1 lab     // D-086: the advanced lab keeps its planned footprint only if a standing turret is within this; else it is packed nearest a standing turret
@@ -944,15 +952,126 @@ namespace Global {
         }
 
         namespace Air {
+            // AIR owns these settings and all air.* reservations. TECH never reads them.
+            bool ExperimentalBuild = true;
+            int MaxProductionBays = 0; // zero: no AIR policy cap; terrain/income/support still gate
+            int PlannedT2Bays = 6;
+            int PlannedT1Bays = 1;
+            int PlannedEcoModules = 4; // one AFUS and eight converter pins each; reservation, not a build order
+            float EcoFactorySeparation = 384.0f; // districts may abut; native envelopes still exclude overlap
+            float EcoReactorSpacing = 512.0f;
+            float EcoConverterClearance = 128.0f;
+            float OverflowGrowthSeconds = 180.0f;
+            int ConverterParallel = 3;
+            float ConverterDraw = 70.0f;
+            float ConverterEnergyReserve = 150.0f;
+            int T2NanoSoftLimit = 20;
+            int T2ExpansionSupport = 20; // completed turrets per existing T2 air lab; banked metal cannot bypass
+            int NanoParallel = 3; // funded support frames while metal floats
+            int T1NanoLimit = 5;
+            int MaxT1EconomyBuilders = 40;
+            int MaxT2EconomyBuilders = 24;
+            float EconomyBuildPowerPerMetal = 24.0f;
+            float HomeMexRadius = 1400.0f;
+            float HomeEconomyRadius = 2400.0f;
+            float HomeDefenceRadius = 1500.0f;
+            float AntiNukeCoreRadius = 800.0f;
+            float AntiNukeMetalIncome = 40.0f;
+            float AntiNukeEnergyIncome = 1200.0f;
+            int AntiNukeAfterSeconds = 15 * 60;
+            int EnergyParallel = 6;
+            float SmallProjectSeconds = 12.0f;
+            float ReactorProjectSeconds = 120.0f;
+            int ConstructorsPerFighter = 2;
+            int InterceptUpdateSeconds = 2;
+            float InterceptCostRatio = 1.5f;
+            float StrikeControlRatio = 1.25f;
+            float BuildPowerFloatFactor = 1.5f;
+            float BuildPowerBankDrainSeconds = 60.0f;
+            float WindClusterGap = 144.0f;
+            int EconomySearchRings = 24;
+            int FirstFusionTargetSeconds = 20 * 60;
+            int FirstFusionLeadSeconds = 12 * 60;
+            int PreFusionMexLimit = 6;
+            float FusionAccessMinMetal = 12.0f;
+            float FusionAccessMinEnergy = 450.0f;
+            float FusionAccessFundSeconds = 300.0f;
+            float WarmFactoryGapSeconds = 0.5f; // prior until measured; not cold opening time
+            float ProductionIncomeShare = 0.65f;
+            float TransitionMinMetal = 50.0f;
+            float T1BomberMetalStep = 8.0f;
+            int T1BomberCap = 12;
+            float T1SupportMetalStep = 4.0f;
+            int T1SupportCap = 16;
+            float TransitionMinEnergy = 1200.0f;
+            int TransitionEarliestSeconds = 8 * 60;
+            float TransitionFundSeconds = 100.0f;
+            int HomeFighterFloor = 6;
+            int HomeFighterCeiling = 60;
+            int OpeningAirConstructors = 3;
+            float CommanderEconomyRadius = 900.0f;
+            float HomeFightersPerMetal = 0.5f; // historical setting; armed-air value now sets demand
+            float HomeAirValueRatio = 1.2f;
+            int BomberOrdersClear = 6; // discretionary orders per ten, not resource percentages
+            int BomberOrdersParity = 3;
+            int StrikeFirstSize = 8; // legacy compatibility; experimental opening uses the range below
+            int FirstBomberWaveMin = 10;
+            int FirstBomberWaveMax = 20;
+            float TechEconomyMinMetal = 50.0f;
+            int MassBomberAfusCount = 2;
+            int MassBomberOrdersClear = 8;
+            int MassBomberOrdersParity = 5;
+            float StrikeReserveSeconds = 120.0f;
+            float StrikeUnknownReserve = 0.25f;
+            float StrikeRiskScale = 0.002f;
+            float StrikeArmyReserve = 0.15f;
+            float StrikeLocalAaReserve = 0.5f;
+            float StrikeLossGrowth = 1.5f;
+            float StrikeRiskRecovery = 0.9f;
+            float StrikeLearnedRiskMax = 3.0f;
+            float StrikeFailedSurvival = 0.25f;
+            int StrikeFailedRetrySeconds = 300;
+            float StrikeFailedRegionRadius = 640.0f;
+            float StrikeCorridorPadding = 320.0f;
+            float StrikeEdgeInset = 480.0f;
+            bool StrikeSynchronize = true;
+            int T1RaidMinimum = 3;
+            int StrikeWaveIncrement = 4;
+            int StrikeWaveCap = 80;
+            int StrikeCadenceSeconds = 4 * 60;
+            float StrikeBudgetShare = 0.35f;
+            float StrikeFormationWidth = 1320.0f;
+            float StrikeAssemblyRadius = 600.0f; // measured fixed-wing arrival tolerance, not lane spacing
+            float StrikeAssemblyFraction = 0.8f;
+            int StrikeJoinSeconds = 20;
+            float StrikeLaneSpacing = 180.0f;
+            float StrikeRankSpacing = 240.0f;
+            float StrikeLossAbort = 0.35f;
+            float StrikeDamageMargin = 1.3f;
+            float StrikePassFraction = 0.4f;
+            float StrikeThreatWeight = 1.0f;
+            float StrikeMaxThreat = 1500.0f;
+            float StrikeMinTargetMetal = 70.0f;
+            int ScoutReplaceSeconds = 120;
+            int ScreenFullFighters = 40;
+            int ScreenCells = 8;
+            float ScreenRearWidth = 600.0f;
+            float ScreenFrontWidth = 6000.0f;
+            float ScreenRearAdvance = 400.0f;
+            float ScreenFrontSetback = 600.0f;
+            int ScreenUpdateSeconds = 10;
+            float BaySpacing = 16.0f; // extra clearance between footprint-derived campus blocks
+            float BayExitClearance = 64.0f;
+            int BaySearchRings = 25; // 128-elmo steps; room to relocate after other future bays are held
+            int CapacityStableSeconds = 20;
+            int TelemetrySeconds = 10;
+            bool WaveAvoidHomeFocus = true;
             // Role switch cadence (seconds)
             int MinAiSwitchTime = 20;
             int MaxAiSwitchTime = 60;
 
             // NukeLimit: maximum number of nukes allowed for AIR role
             int NukeLimit = 0;
-            // legbastion stays capped at 0 until the native average metal income
-            // (aiEconomyMgr.metal.income) reaches this. See Air_UpdateBastionGate.
-            float BastionMinAvgMetalIncome = 115.0f;
             /******************** AIR BASE SETTINGS ********************/
             // All settings applied to air role at game start, logic can change throughout game
             float AllyRange = 1600.0f;
@@ -987,67 +1106,43 @@ namespace Global {
             // Mirrors Front role behavior but scoped to AIR so roles can diverge if needed.
             int DynamicQuotaDelaySeconds = 5 * 60;
 
-            /******************** AIR ECONOMY ********************/
-            // AIR's economy is TECH's experimental system (roles/tech_build.as,
-            // tech_rules.as, tech_chain.as, tech_plan.as, manager/eco_planner.as,
-            // manager/layout.as) run on the aircraft plants through manager/eco_role.as:
-            // the T1 aircraft plant is kept (never reclaimed to fund the economy), the
-            // chain's advanced lab is a T2 aircraft plant, the nanos are TECH's turret
-            // rows (the block in the turret box), and the air.plants row
-            // (Air_T2Plants) adds the further T2 plants. BuildPower is off for AIR
-            // while this is on. false leaves AIR's economy to native CircuitAI.
-            bool ExperimentalEco = true;
-            // The first this-many T2 air constructors are the chain's, what TECH's
-            // two T2 bot constructors are: mohos first, then the fusion, then the
-            // advanced fusion, and the mex upgrades after. Only T2 air constructors
-            // beyond them take TECH's dedicated converter / advanced fusion roles
-            // (D-107); the factory builds those on top, from TECH's plan (+200).
-            int ChainT2Constructors = 2;
-            // T1 energy converters: reclaimed once this many advanced converters
-            // stand finished (or an advanced fusion does), and never built again
-            // (AIR's eco retirement; TECH never reclaims its T1 converters)
-            int RetireT1ConvertersAtAdvConverters = 2;
-            // Porc on TECH's economy (the air.porc row): from the first T2
-            // aircraft plant, native's queued porc orders go to one builder per
-            // PorcConstructorsPerBuilder of our constructors, PorcBuildersMin at least
-            int PorcBuildersMin = 1;
-            int PorcConstructorsPerBuilder = 5;
-            // Nanos at every T2 aircraft plant past the first (the first is served
-            // by TECH's turret block): PlantNanosBase, one more per
-            // PlantNanosIncomeStep of metal income above PlantNanosIncomeFrom, up to
-            // PlantNanosMax; PlantNanosFloatBonus more while the metal bank stays
-            // full (TechBuild::MetalFullLong); PlantNanosInFlight ordered at a time.
-            int PlantNanosBase = 10;
-            int PlantNanosMax = 16;
-            float PlantNanosIncomeFrom = 100.0f;
-            float PlantNanosIncomeStep = 50.0f;
-            int PlantNanosFloatBonus = 8;
-            int PlantNanosInFlight = 2;
+            /******************** AIR ECONOMY SETTINGS ********************/
+            // Mostly delegate economy to AI for air, but give it an early start
 
-            /******************** METAL-STARVED MODE (Air_UpdateEcoPriority) ********************/
-            // Starved from the moment the metal bank drops below EnterPercent of
-            // storage until it is back above ExitPercent. While starved:
-            //   T2 plant  wave bombers and the T2 air constructor minimum; no T2
-            //             fighters or escorts, heavy air, T2 scouts, dynamic or
-            //             native fallback production (the plant waits instead)
-            //   plants    no further T2 aircraft plant (Air_T2Plants)
-            //   porc      PREVENT: one structure per cluster, no budget bonus
-            // The economy (TECH's rule table) is not held back.
-            bool EcoPriorityEnabled = true;
-            float EcoPriorityEnterPercent = 0.10f;
-            float EcoPriorityExitPercent = 0.20f;
-            int EcoPriorityFactoryWaitSeconds = 5;
+            //Continue building normal solars if ever below this energy income level
+            float SolarEnergyIncomeMinimum = 160.0f; 
+
+            // T1 Energy converter policy (Air-specific thresholds)
+            // Build converters while metal income is below this threshold
+            float BuildT1ConvertersUntilMetalIncome = 20.0f;
+            // Require at least this much energy income
+            float BuildT1ConvertersMinimumEnergyIncome = 250.0f;
+            // Require current energy to be at least this fraction of storage (e.g., 0.90 = 90%)
+            float BuildT1ConvertersMinimumEnergyCurrentPercent = 0.90f;
+
+            //Continue building advanced solars if ever below this energy income level
+            float AdvancedSolarEnergyIncomeMinimum = 1100.0f; 
+
+            //Stop building advanced solar if above this energy income level
+            float AdvancedSolarEnergyIncomeMaximum = 1200.0f; 
+            int AdvancedSolarEarliestSeconds = 5 * 60;
+            float AdvancedSolarMinimumMetalIncome = 15.0f;
+            float AdvancedSolarMinimumMetalCurrent = 250.0f;
+
+            // Prefer cheap wind generators before advanced solar when CircuitAI's
+            // effective average wind output exceeds BAR's good-wind threshold.
+            float GoodWindMinimumEnergy = 7.0f;
+            int CommanderWindTargetCount = 6;
+            float CommanderWindEnergyIncomeTarget = 300.0f;
+            float CommanderWindMinimumMetalCurrent = 80.0f;
 
             /******************** T2 AIRCRAFT PLANT THRESHOLDS (AIR role) ********************/
-            // Metal in the bank before the air.plants row (Air_T2Plants) orders
-            // another T2 aircraft plant.
+            // Economy thresholds and caps for building a T2 Aircraft Plant when in AIR role
+            // Defaults mirror TECH thresholds but are scoped to AIR so air.as does not reference TECH settings.
+            float RequiredMetalIncomeForT2AircraftPlant = 30.0f;
             float RequiredMetalCurrentForT2AircraftPlant = 50.0f;
-            // Extra advanced aircraft plants by native average metal income: the second
-            // at 100, the third at 200, never more than MaxT2AircraftPlants. Enforced
-            // as the def cap (Air_UpdateT2PlantCap), so native factory tasks obey it too.
-            int MaxT2AircraftPlants = 3;
-            float SecondT2AircraftPlantMetalIncome = 100.0f;
-            float ThirdT2AircraftPlantMetalIncome = 200.0f;
+            float RequiredEnergyIncomeForT2AircraftPlant = 1200.0f;
+            int MaxT2AircraftPlants = 1;
 
             /******************** PORC: AIR DENIAL ********************/
             // AIR porcs earlier, harder, and for the whole team. Global::Porc
@@ -1063,20 +1158,53 @@ namespace Global {
             // stays the ally's own business.
             bool PorcAlliedClustersAA = true;
 
-            /******************** T2 AIRCRAFT PLANTS (Air_T2Plants) ********************/
-            // Ring round the start position a T2 plant falls back to when the layout
-            // has no flush site, and the site-search radius each gets.
+            /******************** LATE-GAME EXPANSION ********************/
+            // AIR sat at max metal late: one T2 air plant, nanos capped by
+            // income, and nothing else to spend on. This ladder runs while
+            // metal is floating and turns the surplus into build power, more
+            // air production placed on a ring well outside the core, the energy
+            // to carry it, and finally a gantry - the only route to T3 air,
+            // since the experimental air plant is built solely by the T3 air
+            // constructor the gantry produces.
+            // "Floating": aiEconomyMgr.isMetalFull (> 80% of storage), or
+            // current above LateMetalCurrent - and income above LateMetalIncome
+            // either way, so a full bank on a dead economy does not trigger it.
+            float LateMetalCurrent = 2500.0f;
+            float LateMetalIncome = 35.0f;
+            // Ring the late structures are placed on, around the start position,
+            // and the site-search radius each gets. This is what grows the base.
             float LateExpansionRadius = 1400.0f;
             float LateExpansionShake = 384.0f;   // SQUARE_SIZE * 48
             int LateRingSlots = 6;
+            // Build power first: nanos per T2 air plant beyond the income target.
+            int LateNanosPerT2Plant = 4;
+            // Then production: total T2 air plants allowed while floating.
+            int LateMaxT2AircraftPlants = 3;
+            // Then energy: one fusion per this much energy income shortfall, and
+            // an advanced fusion once income and bank both clear these.
+            float LateEnergyPerT2Plant = 900.0f;
+            float LateAFUSMetalIncome = 60.0f;
+            float LateAFUSMetalCurrent = 6000.0f;
+            // Then T3: a gantry once this rich. Gantry production is
+            // FactoryProduction's business (EnqueueGantrySignatureBatch).
+            float LateGantryMetalIncome = 60.0f;
+            float LateGantryMetalCurrent = 6000.0f;
 
-            // T1 air constructors, Barb4-style: the first is unconditional, then
-            // MinT1AirConstructorCount outright and one per T1AirConstructorPerMetalIncome
-            // of (10 s minimum) metal income, up to MaxT1AirConstructorCount, held back
-            // only by an energy stall. They take their work from TECH's rule table.
+            /******************** AIR NANO POLICY ********************/
+            // How much income per additional T1 nano caretaker; and cap
+            float NanoEnergyPerUnit = 200.0f; // energy per nano
+            float NanoMetalPerUnit = 10.0f;   // metal per nano
+            int NanoMaxCount = 200;            // cap
+            // Reserves-based nano condition threshold
+            float NanoBuildWhenOverMetal = 1000.0f;
+
+            // Maximum staged T1 air-constructor target. When enabled, the first
+            // is unconditional; later constructors require the thresholds below.
             int MinT1AirConstructorCount = 3;
-            float T1AirConstructorPerMetalIncome = 5.0f;
-            int MaxT1AirConstructorCount = 8;
+            float SecondT1AirConstructorMetalIncome = 8.0f;
+            float SecondT1AirConstructorEnergyIncome = 160.0f;
+            float ThirdT1AirConstructorMetalIncome = 18.0f;
+            float ThirdT1AirConstructorEnergyIncome = 300.0f;
 
             // Maximum staged T2 air-constructor target. When enabled, the first
             // is unconditional.
@@ -1086,11 +1214,6 @@ namespace Global {
 
             // Minimum number of air scouts to maintain globally for early map vision
             int MinAirScoutCount = 1;
-            // After the opener, one air scout every this many seconds for the whole
-            // game (0 = off), skipped while MaxAliveAirScouts are still alive.
-            // See Air_TryAirScout.
-            int ScoutIntervalSeconds = 4 * 60;
-            int MaxAliveAirScouts = 4;
 
             // Small economy-gated interception reserve. Dynamic/native production
             // handles additional air-defense demand.
@@ -1098,14 +1221,20 @@ namespace Global {
             float T1CombatProductionMetalIncome = 12.0f;
             float T1CombatProductionEnergyIncome = 250.0f;
 
+            /******************** EARLY BUILD-POWER FOCUS ********************/
+            // Keep one strategic lane and one expansion lane until the economy is
+            // established or the deadline expires. Additional constructors assist
+            // those active lanes.
+            int BuildFocusDeadlineSeconds = 6 * 60;
+            float BuildFocusMetalIncome = 20.0f;
+            float BuildFocusEnergyIncome = 300.0f;
+            int BuildFocusAssistTimeoutSeconds = 15;
+            int BuildFocusIdleWaitSeconds = 5;
+
             // One-time T1 strike package. Keep this small so it does not delay economy growth.
             int T1StrikeOpenerSize = 3;
             float T1StrikeOpenerMinimumMetalIncome = 12.0f;
             float T1StrikeOpenerMinimumEnergyIncome = 250.0f;
-            // Until the first T2 aircraft plant is finished, each T1 bomber / gunship
-            // def (armthund, armkam, corshad, corbw, legmos, legcib, legkam) is capped
-            // at this many alive; then the caps go back. See Air_UpdateT1StrikeCap.
-            int T1StrikeCapBeforeT2 = 3;
 
             /******************** T2 BOMBER WAVES ********************/
             // T1 bombers keep the native trickle (each bomber attacks as it is built).
@@ -1113,35 +1242,26 @@ namespace Global {
             // together in waves that grow from FirstSize towards MaxSize. The sizing
             // algorithm and the native primitives are documented in manager/air_waves.as.
             bool BomberWavesEnabled = true;
-            int BomberWaveFirstSize = 10;          // bombers in the first wave, and the floor
-            int BomberWaveMaxSize = 20;            // hard cap on bombers per launch (stock or held)
-            // Late-game lift: 20-bomber waves die to mature AA before they reach
-            // anything. From LateBomberWaveMinutes on, once the average metal income
-            // (aiEconomyMgr.metal.income) reaches LateBomberWaveMetalIncome, both wave
-            // caps - BomberWaveMaxSize and Global::BomberStock::MaxWaveSize - rise to
-            // LateBomberWaveMaxSize. Latches: a later dip does not shrink the waves.
-            // See BomberStock::WaveCap.
-            int LateBomberWaveMinutes = 45;
-            float LateBomberWaveMetalIncome = 400.0f;
-            int LateBomberWaveMaxSize = 40;
+            int BomberWaveFirstSize = 20;          // bombers in the first wave, and the floor
+            int BomberWaveMaxSize = 300;           // hard cap on bombers per wave
             float BomberWaveFighterRatio = 1.0f;   // fighters held per bomber before a launch
             // Escorts do not soak AA (bombers are AA's first priority), so they
             // are only worth delaying a wave for when the enemy flies. Below the
             // first figure no escort is held; at the second the full ratio is.
             float EscortMinEnemyAirCost = 300.0f;
             float EscortFullEnemyAirCost = 3000.0f;
-            // New wave fighters park (out of AI control, holding position) until
-            // FighterGroupSize of them are waiting, then go into the fighter hold
-            // together as one squad. A hold engages enemy air inside our defence
-            // influence, and a lone fighter's hold did so on its own: on Baryon Tar
-            // Lake (2026-09-26) AIR lost roughly one Hawk per Hawk built and launched
-            // six waves with no escort. Parked fighters still go with a launching
-            // wave as escorts. 1 = no parking.
-            int FighterGroupSize = 4;
-            // Every wave is Global::BomberStock::WaveSizeGrowth (3) bigger than the last
-            // (manager/air_waves.as Sizing): no survival growth, enemy-AA or income floor.
-            // The survival ratio is measured this long after launch and logged.
+            // Growth applied to the previous wave size from its survival ratio, measured
+            // EvaluateSeconds after launch: heavy losses mean the enemy anti-air is winning
+            // and the next wave needs mass; light losses grow gently.
+            float BomberWaveLowSurvival = 0.4f;
+            float BomberWaveHighSurvival = 0.8f;
+            float BomberWaveGrowthOnHeavyLoss = 2.0f;
+            float BomberWaveGrowthDefault = 1.5f;
+            float BomberWaveGrowthOnLightLoss = 1.25f;
             int BomberWaveEvaluateSeconds = 120;
+            // Enemy anti-air floor: the wave's bomber metal must reach this fraction of the
+            // enemy anti_air metal on the map (Military cost cache, refreshed every update).
+            float BomberWaveEnemyAAMetalFraction = 0.5f;
             // Launch anyway once FirstSize bombers have been held this long, so production
             // that cannot reach the target in time never stalls the air war.
             int BomberWaveMaxHoldSeconds = 8 * 60;
@@ -1150,6 +1270,12 @@ namespace Global {
             int BomberWaveReleaseWindowSeconds = 15;
             // Minimum metal income before the T2 plant produces wave aircraft.
             float BomberWaveProductionMetalIncome = 40.0f;
+            // Income floor on the wave size (D-045): every IncomeStep of metal
+            // income adds SizePerIncomeStep bombers to what a wave must hold
+            // before it launches - at +100 a wave is 50, at +200 it is 100.
+            // The survival growth still applies above the floor.
+            float BomberWaveIncomeStep = 100.0f;
+            int BomberWaveSizePerIncomeStep = 50;
 
             /******************** WAVE ATTACK METHODS ********************/
             // Each launch draws a method by these weights (doc/air-wave-attacks.md).
@@ -1160,10 +1286,6 @@ namespace Global {
             float WaveWeightStrike = 2.0f;
             float WaveWeightDeep = 1.0f;
             float WaveWeightFeint = 1.0f;
-            // Waves of at least this many bombers (the lower wave limit, BomberStock's
-            // FirstWaveSize) draw only CARPET / STRIKE / DEEP - FLANK, PINCER and
-            // FEINT are weighted 0 for them. Smaller waves keep all six.
-            int WaveCarpetStrikeDeepOnlyFrom = 5;
             // Geometry, elmos: the line forms FormDistance short of the aim,
             // lanes Spacing apart, and runs Overrun past it.
             float WaveFormDistance = 1400.0f;
@@ -1177,24 +1299,21 @@ namespace Global {
             // STRIKE / DEEP target filter: statics at or above this cost, plus T3 ("heavy") mobiles.
             float WaveStrikeMinStaticCost = 2500.0f;
 
-            // Armada Liche in the waves: from this native average metal income, every
-            // LicheEveryNthBomber-th wave bomber is armliche (8 = 7 Blizzards + 1 Liche).
-            // 110 is where armaap's own factory.json weights (income_tier [50, 110])
-            // raise the Liche from 10% to 30%.
-            float LicheMinMetalIncome = 110.0f;
-            int LicheEveryNthBomber = 8;
-
             /******************** HEAVY AIR STRIKE POLICY (Legion/Cortex) ********************/
             // Maintain a bounded late-game heavy-air force for Legion/Cortex.
-            // 100, not 250: the AIR role spent a whole Hotlips match at 50-150
-            // metal income (peak 261), so 250 never let a Tyrannus/Dragon through.
-            float T2HeavyAirIncomeThreshold = 100.0f;
+            float T2HeavyAirIncomeThreshold = 250.0f;
             int T2HeavyAirTargetCount = 6;
-            // One heavy per heavy turn, and a heavy turn is one T2 production
-            // decision in this many; the rest go to the bomber waves (legphoenix /
-            // corhurc) and escorts. 1 = every turn, the old behaviour.
-            int T2HeavyAirBatchPerFactory = 1;
-            int T2HeavyAirEveryNthTurn = 4;
+            int T2HeavyAirBatchPerFactory = 2;
+
+            /******************** COMMANDER FACTORY ASSIST ********************/
+            // Maximum time spent assisting the opening aircraft plant. Assistance
+            // ends sooner as soon as the first construction aircraft is complete.
+            int CommanderFactoryAssistDeadlineSeconds = 90;
+
+            // Duration (in seconds) for each guard assignment when assisting the
+            // primary T1 aircraft plant. Tasks may be renewed while within the
+            // assist deadline window.
+            int CommanderFactoryAssistGuardTimeoutSeconds = 10; // default: 10-second guard tasks
 
         }
 
@@ -1203,17 +1322,8 @@ namespace Global {
             int MinAiSwitchTime = 20;
             int MaxAiSwitchTime = 60;
 
-            // NukeLimit: maximum number of nukes allowed for FRONT role.
-            // Applied only once the silo window opens (NukeSustainAfterSeconds);
-            // until then StartCapNukeSilos keeps the silo defs unavailable to FRONT.
-            int NukeLimit = 6;
-
-            /******************** NUCLEAR SILO THRESHOLDS ********************/
-            // FRONT does not rush silos. It builds them late, once its economy can
-            // carry one without starving the front line, and then one at a time
-            // (main's 23900e8, ported). 0 seconds disables FRONT silos entirely.
-            int NukeSustainAfterSeconds = 18 * 60;      // 18 minutes
-            float NukeSustainMinMetalIncome = 225.0f;
+            // NukeLimit: maximum number of nukes allowed for FRONT role
+            int NukeLimit = 0;
             /******************** FRONT BASE SETTINGS ********************/
             // All settings applied to front role at game start, logic can change throughout game
             float AllyRange = 900.0f;
@@ -1252,12 +1362,6 @@ namespace Global {
             // Reserves-based nano condition threshold
             float NanoBuildWhenOverMetal = 1000.0f;
 
-            // Base porc (Front_AiMakeDefence): clusters this close to the start walk
-            // the whole porc order (the Beamer / Twin Guard / Dragon's Jaw opening)
-            // from this minute on, instead of the native heuristic's single LLT.
-            float BasePorcRadius = 1600.0f;
-            int BasePorcFromMinutes = 3;
-
             // Minimum constructor maintenance targets for factory recruitment
             int MinT1BotConstructorCount = 1;
             int MinT1VehicleConstructorCount = 1;
@@ -1269,10 +1373,7 @@ namespace Global {
             int MinT2VehicleConstructorCount = 1;
 
             // Time triggers for T2 lab construction
-            // 13 (was 22): TECH shares its overflow metal with FRONT, and at 22
-            // minutes team 15 (All That Glitters 2026-09-28) had never met the
-            // income or bank trigger; its income collapsed that same minute
-            int TimeTriggerForFirstT2LabSeconds = 13 * 60; // 13 minutes
+            int TimeTriggerForFirstT2LabSeconds = 22 * 60; // 22 minutes
             int TimeTriggerForT2EcoGatingSeconds = 20 * 60; // 20 minutes
 
             // Combat settings
@@ -1307,12 +1408,6 @@ namespace Global {
             // Nano Policy Extras
             float NanoMinIncomeForFirst = 10.0f;
             float T2LabStoredMetalThresholdRatio = 0.9f;
-            // The first T2 plant's bank trigger: T2LabStoredMetalThresholdRatio of
-            // its cost, or this share of our metal storage when that is smaller
-            // (storage ~1,900 never holds 90% of a 2,600 plant), and only at this
-            // metal income or more
-            float FirstT2StoredStorageRatio = 0.8f;
-            float FirstT2StoredMinMetalIncome = 15.0f;
 
             // Transition thresholds for switching between T1 factory types (Bot <-> Vehicle)
             float MinimumMetalIncomeForT1FactoryTransition = 200.0f;

@@ -11,7 +11,7 @@ namespace Init {
 		SInitInfo data;
 		data.armor = InitArmordef();
 		data.category = InitCategories();
-		@data.profile = @(array<string> = {"behaviour", "block_map", "build_chain", "commander", "economy", "factory", "response"});
+		@data.profile = @(array<string> = {"behaviour", "block_map", "build_chain", "commander", "economy", "metal_map", "factory", "response", "weapons", "lanes"});
 		if (string(aiSetupMgr.GetModOptions()["experimentallegionfaction"]) == "1") {
 			AiLog("Inserting Legion");
 			Side::LEGION = aiSideMasker.GetTypeMask("legion");

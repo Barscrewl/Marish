@@ -1548,11 +1548,11 @@ namespace UnitHelpers {
 
     string GetStaticT2ArtilleryNameForSide(const string &in side)
     {
-        if (side == "armada") return "armpb";
-        if (side == "cortex") return "corvipe";
+        if (side == "armada") return "armamb";
+        if (side == "cortex") return "cortoast";
         if (side == "legion") return "legacluster";
         GenericHelpers::LogUtil("[UnitHelpers] GetStaticT2ArtilleryNameForSide: no matching side '" + side + "', defaulting to armada", 2);
-        return "armpb";
+        return "armamb";
     }
 
     string GetStaticRadarNameForSide(const string &in side)
@@ -1659,10 +1659,10 @@ namespace UnitHelpers {
     string GetStaticT2MediumTurretNameForSide(const string &in side)
     {
         // Medium plasma turrets
-        if (side == "armada") return "armguard";
-        if (side == "cortex") return "corpun";
+        if (side == "armada") return "armpb";
+        if (side == "cortex") return "corvipe";
         if (side == "legion") return "legapopupdef"; // Chimera (pop-up plasma/laser)
-        return "armguard";
+        return "armpb";
     }
 
     string GetStaticT2RadarNameForSide(const string &in side)
@@ -1739,7 +1739,7 @@ namespace UnitHelpers {
             string med = GetStaticT2MediumTurretNameForSide(sides[i]);
             if (med != "" && !seen.exists(med)) { ids.insertLast(med); seen.set(med, true); }
 
-            // Close-range heavy turrets (Pit Bull/Viper/Legion cluster)
+            // T2 static artillery (Ambassador/Arbitrator/Legion cluster).
             string arty = GetStaticT2ArtilleryNameForSide(sides[i]);
             if (arty != "" && !seen.exists(arty)) { ids.insertLast(arty); seen.set(arty, true); }
         }
@@ -1765,7 +1765,7 @@ namespace UnitHelpers {
         if (t == Objectives::BuildingType::T1_MEDIUM_AA)   return GetStaticAAHeavyNameForSide(side);
         if (t == Objectives::BuildingType::T1_LIGHT_TURRET) return GetStaticLLTNameForSide(side);
         if (t == Objectives::BuildingType::T1_MED_TURRET)   return GetStaticT2MediumTurretNameForSide(side); // TODO: use true T1 medium if available
-        if (t == Objectives::BuildingType::T1_ARTY)         return GetStaticT2ArtilleryNameForSide(side);    // TODO: replace with T1 artillery when available
+        if (t == Objectives::BuildingType::T1_ARTY)         return GetStaticT2ArtilleryNameForSide(side);    // Legacy objective upgrades to T2; T1 artillery is forbidden.
         if (t == Objectives::BuildingType::T1_TORP)         return GetStaticT1TorpNameForSide(side);
         if (t == Objectives::BuildingType::T1_JAMMER)       return GetStaticJammerNameForSide(side);
         if (t == Objectives::BuildingType::T1_RADAR)        return GetStaticRadarNameForSide(side);

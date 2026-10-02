@@ -239,7 +239,7 @@ namespace SupremeIsthmus {
 		dictionary hoverSeaLeg; hoverSeaLeg.set("leghp",4);
 
 		dictionary hoverSeaRole; hoverSeaRole.set("armada", @hoverSeaArm); hoverSeaRole.set("cortex", @hoverSeaCor); hoverSeaRole.set("legion", @hoverSeaLeg);
-		root.set("TACTICAL", @hoverSeaRole);
+		root.set("HOVER_SEA", @hoverSeaRole);
 
 		// TECH role
 		dictionary techArm; techArm.set("armlab",4);

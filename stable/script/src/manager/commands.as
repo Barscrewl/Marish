@@ -28,9 +28,8 @@ host-side console, never a network protocol. Lines are "barb|<command>|...":
     barb|draw|<teamId>|credits      draw the credits (the contributors) across the map centre
     barb|draw|<teamId>|clear        erase every line this instance drew
 
-At game start one instance (skirmish AI 0) plays the intro on its own: the
-commander with "Do not spec cheat!" beneath it for IntroHoldSeconds, erased, then
-the credits for IntroHoldSeconds, erased (IntroEnabled).
+The automatic match-start intro is disabled by default (IntroEnabled). Its
+title, commander, warning and credits remain available through the draw commands.
 
 Every command names the team it is meant for and is ignored by any other
 instance: the engine already routes Spring.SendSkirmishAIMessage(teamId, ...)
@@ -192,6 +191,7 @@ namespace Commands {
             return true;
         }
 
+        if (cmd == "theatres") { Lanes::RequestOverlay(parts.length() > 3 && parts[3] == "refresh"); return true; }
         if (cmd == "query") {
             if (Team::Roster::IsReady()) {
                 WidgetLink::Send("roster", "self|" + Team::Roster::Encode());
@@ -211,6 +211,7 @@ namespace Commands {
         }
         // barb|layout|<team>|on|off : push the planned base to the widget's overlay (D-053)
         if (cmd == "layout" && parts.length() >= 4) {
+            if (AirEconomy::Active()) { AirLayout::SetOverlay(parts[3] == "on"); return true; }
             Layout::SetOverlay(parts[3] == "on");
             if (!Layout::planned) WidgetLink::Send("layout", "0|0|none");
             return true;
@@ -259,13 +260,16 @@ namespace Commands {
     // erased. One instance draws it (skirmish AI 0), or every AI would. Map marks
     // made by a spectating host are seen by spectators; by a playing host, by its
     // allies and by spectators.
-    bool IntroEnabled = true;
+    bool IntroEnabled = false; // Keep the artwork and manual commands; skip the match-start intro.
     const int IntroStartFrame = 3 * SECOND;
     const int IntroHoldSeconds = 10;
+    const int IntroCreditsPercent = 5;   // owner: the credits in 5% of games, rolled once a game
     int introStage = 0;   // 0 waiting, 1 drawing the commander, 2 holding, 3 erasing, 4 drawing the credits, 5 holding, 6 erasing, 7 done
     int introHoldUntil = 0;
     void IntroTick()
     {
+        if (ai.skirmishAIId == 0 && (introStage >= 7 || !IntroEnabled) && AiIntroDoneFrame() < 0)
+            AiMarkIntroDone(ai.frame);   // D-127: the other AIs draw their lanes after it
         if (!IntroEnabled || ai.skirmishAIId != 0 || introStage >= 7) return;
         const bool drawn = AiDrawQueueSize() == 0 && !drawQueued, erased = AiDrawQueueSize() == 0;
         switch (introStage) {
@@ -286,6 +290,16 @@ namespace Commands {
             break;
         case 3:
             if (!erased) return;
+            {
+                const int roll = AiRandom(0, 99);
+                if (roll >= IntroCreditsPercent) {
+                    GenericHelpers::LogUtil("[Commands] intro done: the commander shown and erased; no credits this game (roll " + roll
+                        + ", shown under " + IntroCreditsPercent + ")", 1);
+                    introStage = 7;
+                    break;
+                }
+                GenericHelpers::LogUtil("[Commands] the credits this game (roll " + roll + ", shown under " + IntroCreditsPercent + ")", 1);
+            }
             Draw("credits");
             introStage = 4;
             break;
@@ -550,7 +564,10 @@ namespace Commands {
         GenericHelpers::LogUtil("[Commands] Role switch " + current + " -> " + roleName + " requested by widget", 1);
         // Leave: the old role's layout (reservations, zones, the native flag)
         // and the native manager settings its InitHandler changed (CR-007).
+        if (Global::AISettings::Role == AiRole::AIR) AirBuild::Leave();
         Layout::OnRoleLeave();
+        TechWeapons::OnRoleLeave();   // D-126
+        Lanes::OnRoleLeave();         // D-127
         NativeState::Restore();
         DefState::Restore();
 

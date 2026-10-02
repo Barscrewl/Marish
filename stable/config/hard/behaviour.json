@@ -1,5 +1,7 @@
     // Mono-space font required
 {
+"nuclear": {"structures_only": true, "repeat_seconds": 300, "repeat_radius": 0},
+"pulse": {"enabled": true, "priority": ["jammer_advanced", "jammer_static", "radar_advanced", "radar_static", "jammer_mobile", "radar_mobile"], "scatter": true, "pending_seconds": 45, "coverage_seconds": 90, "scatter_step": 384, "scatter_depth": 192},
     //attack = 0.3 means enemy threat = enemy_threat*0.3
     //and attack group select only targets that have threat lower than the group's power. Power is like threat, but behaviour.json has separate modifiers for threat (enemy) and power (own).
     //with attack=0.8..1.0 AI acts more careful, if it would also fight superior enemy near own static defences then those values would be great. 
@@ -70,6 +72,7 @@
 
 
 	"behaviour": {
+	"legcluster": {"build": false}, // construction veto also applies without the Legion profile fragment
 		"armcom": {
 			"role": ["builder"],
 			"attribute": ["commander"],
@@ -328,6 +331,7 @@
             "limit": 3	
 		},
 		"armguard": {
+			"build": false, // never construct T1 static artillery
 			"role": ["static"],
 			"on": false,
 			"threat":{
@@ -457,6 +461,7 @@
 			}
 		},
 		"corpun": {
+			"build": false, // never construct T1 static artillery
 			"role": ["static"],
 			"on": false,
 			"threat": {"air": 0.0, "water": 0.1,"surf": 0.5},

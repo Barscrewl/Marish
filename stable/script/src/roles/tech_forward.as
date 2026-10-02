@@ -165,7 +165,7 @@ namespace TechForward {
     // D-108's lesson: TECH's start caps pin defences at 0; the owner asks for these
     bool Buildable(CCircuitUnit@ u, CCircuitDef@ d)
     {
-        if (d is null || !u.circuitDef.CanBuild(d)) return false;
+        if (d is null || !d.IsBuildAllowed() || !u.circuitDef.CanBuild(d)) return false;
         if (d.maxThisUnit <= d.count) d.maxThisUnit = d.count + 1;
         return d.IsAvailable(ai.frame);
     }
@@ -256,7 +256,7 @@ namespace TechForward {
     {
         array<TechFactories::Cluster@> res;
         for (uint i = 0; i < TechFactories::clusters.length(); ++i)
-            if (TechFactories::clusters[i].tier == 1) res.insertLast(TechFactories::clusters[i]);
+            if (!TechFactories::clusters[i].ahead && TechFactories::clusters[i].tier == 1) res.insertLast(TechFactories::clusters[i]);
         return res;
     }
     array<int> padGroups;

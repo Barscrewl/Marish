@@ -12,9 +12,13 @@
 #include "../manager/layout.as"
 #include "../manager/eco_planner.as"
 #include "../manager/spam.as"
-#include "../manager/eco_role.as"
 #include "tech_forward.as"
 #include "tech_factories.as"
+#include "tech_harbour.as"
+#include "tech_weapons.as"
+#include "tech_fortifications.as"
+#include "tech_flank.as"
+#include "../manager/lanes.as"
 
 /******************************************************************************
 
@@ -58,6 +62,7 @@ namespace TechRules {
     const int CON_T1 = 2;
     const int CON_T2 = 4;
     const int TURRET = 8;
+    const int SEA_CON = 16;        // D-121: construction ships and subs (the harbour's; no land rule reaches them)
     const int MOBILE = COMMANDER | CON_T1 | CON_T2;
     const int CONSTRUCTORS = CON_T1 | CON_T2;
     const int ANY = MOBILE | TURRET;
@@ -96,6 +101,7 @@ namespace TechRules {
         @c.u = u;
         @c.d = u.circuitDef;
         if (!c.d.IsMobile()) c.who = TURRET;
+        else if (SeaConstructor::IsT1(c.d) || SeaConstructor::IsT2(c.d) || TechHarbour::IsHoverConstructor(c.d)) c.who = SEA_CON;   // D-121
         else if (UnitHelpers::IsCommander(c.d)) c.who = COMMANDER;
         else c.who = (UnitHelpers::GetConstructorTier(c.d) >= 2) ? CON_T2 : CON_T1;
         c.mi = Economy::GetMinMetalIncomeLast10s();
@@ -103,10 +109,10 @@ namespace TechRules {
         @c.eco = EcoPlanner::Read(u, c.mi, c.ei);
         c.openingDone = RoleTech::Opening::complete;
         c.intoT2 = TechBuild::IntoT2();
-        c.t1Labs = UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT1Labs());   // AIR: aircraft plants
-        c.t2Labs = UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT2Labs());
-        c.constructors = UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT1Cons())
-            + UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT2Cons());
+        c.t1Labs = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT1BotLabs());
+        c.t2Labs = TechFlank::NormalLabCount();
+        c.constructors = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT1BotConstructors())
+            + UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2BotConstructors());
         c.spamGate = Global::Spam::Enabled && c.mi >= Global::Spam::MinMetalIncome && c.ei >= Global::Spam::MinEnergyIncome;
         const EcoPlanner::State@ s = c.eco;
         c.energyTarget = EcoPlanner::TargetEnergy(s.mIncome);
@@ -141,12 +147,7 @@ namespace TechRules {
     bool OpeningPending(Ctx@ c)   { return !RoleTech::Opening::complete; }
     bool IntoT2(Ctx@ c)           { return c.intoT2; }
     bool NotIntoT2(Ctx@ c)        { return !c.intoT2; }
-    bool NoT1Lab(Ctx@ c)          { return c.t1Labs == 0 && aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::FACTORY), ai.GetCircuitDef(EcoRole::T1LabName(Global::AISettings::Side))) == 0; }
-    // manager/eco_role.as: rows about bot labs being eaten, land constructors and
-    // land front/spam factories are TECH's; AIR has its own plant row
-    bool TechRole(Ctx@ c)         { return !EcoRole::IsAir(); }
-    bool AirRole(Ctx@ c)          { return EcoRole::IsAir(); }
-    bool NukePlan(Ctx@ c)         { return TechPlan::plan == "nuke"; }
+    bool NoT1Lab(Ctx@ c)          { return c.t1Labs == 0 && aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::FACTORY), ai.GetCircuitDef(UnitHelpers::GetT1BotLabForSide(Global::AISettings::Side))) == 0; }
     bool NoLabAtAll(Ctx@ c)       { return c.t1Labs == 0 && c.t2Labs == 0 && !c.intoT2; }
     bool NoConstructors(Ctx@ c)   { return c.constructors == 0; }
     bool T2LabStands(Ctx@ c)      { return c.t2Labs > 0; }
@@ -187,7 +188,7 @@ namespace TechRules {
     bool NoAfusYet(Ctx@ c)        { return !TechBuild::IntoAfus(); }   // D-078: no advanced lab is ordered once the advanced fusion is under way
     bool NoDearOrderPending(Ctx@ c) { return !TechChain::DearOrderPending(); }   // D-084
     bool EnergyFloatsBank(Ctx@ c) { return TechChain::EnergyFloats(); }   // D-079: the bank-based float, the chain's definition
-    bool EnergyReclaimable(Ctx@ c){ const EcoPlanner::State@ s = c.eco; return TechBuild::ReactorStands() && ((s.winds + s.solars + s.advSolars) > 0 || (s.t1Convs > 0 && TechBuild::AirT1ConvertersRetired())); }   // D-077; D-101: a finished reactor, not a frame; AIR: its T1 converters too
+    bool EnergyReclaimable(Ctx@ c){ const EcoPlanner::State@ s = c.eco; return TechBuild::ReactorStands() && (s.winds + s.solars + s.advSolars) > 0; }   // D-077; D-101: a finished reactor, not a frame
     bool MetalAhead(Ctx@ c)       { return c.aheadM; }                 // D-075: income above spending, the bank rising
     bool StructureBuilding(Ctx@ c){ return c.building !is null; }      // D-075: a structure of ours is under construction
     bool ConverterSurplus(Ctx@ c) { return c.floatingE || c.surplus >= 2.0f * Global::RoleSettings::Tech::EcoConverterUse; }
@@ -221,9 +222,20 @@ namespace TechRules {
     }
     IUnitTask@ DoWaitShort(Ctx@ c)      { return TechBuild::Wait(5 * SECOND); }
     IUnitTask@ DoAirDedicated(Ctx@ c)   { return TechBuild::AirDedicated(c.u); }   // D-107
+    IUnitTask@ DoAirDefend(Ctx@ c)                                                  // D-123
+    {
+        IUnitTask@ t = TechWeapons::Work(c.u);   // D-126: a weapon cluster's slot before the old defence ring
+        return (t !is null) ? t : TechBuild::AirDefence(c.u);
+    }
+    IUnitTask@ DoWeaponsSuper(Ctx@ c)   { return TechWeapons::SuperTask(c.u); }    // D-126
+    IUnitTask@ DoWeaponsCluster(Ctx@ c) { return TechWeapons::Work(c.u); }         // D-126
+    IUnitTask@ DoFlankFactory(Ctx@ c) { return TechFlank::Work(c.u); }
     IUnitTask@ DoAirFlexible(Ctx@ c)    { return TechBuild::AirFlexible(c.u); }    // D-107
     IUnitTask@ DoBaseFactoryReclaim(Ctx@ c) { return TechFactories::ReclaimBaseFactory(c.u); }   // D-114
     IUnitTask@ DoFrontCluster(Ctx@ c)       { return TechFactories::OpenWork(c.u); }            // D-114
+    IUnitTask@ DoHarbourSea(Ctx@ c)     { return TechHarbour::SeaTask(c.u); }       // D-121
+    IUnitTask@ DoHarbourYard(Ctx@ c)    { return TechHarbour::LandTask(c.u); }      // D-121
+    IUnitTask@ DoHarbourFloat(Ctx@ c)   { return TechHarbour::CommanderFloat(c.u); } // D-121
     IUnitTask@ DoTurretSpam(Ctx@ c)     { return TechFactories::TurretFocus(c.u); }    // D-109, D-114: every front cluster's turrets
     IUnitTask@ DoFerryCargo(Ctx@ c)                                                 // D-110
     {
@@ -387,56 +399,10 @@ namespace TechRules {
             if (EcoPlanner::Affordable(opts[i], c.eco)) return ByKey(c, opts[i].key);
         return null;
     }
-    // AIR: more T2 aircraft plants as income allows (roles/air.as); its nanos
-    // are TECH's turret rows; nothing of TECH's strategic ladder
-    IUnitTask@ DoAirPlants(Ctx@ c)      { return RoleAir::Air_PlantsRow(c.u, c.mi); }
-    IUnitTask@ DoAirPorc(Ctx@ c)        { return RoleAir::Air_PorcTask(c.u); }
-    IUnitTask@ DoAirTurretPlant(Ctx@ c) { return RoleAir::Air_TurretAssistPlant(c.u); }
     IUnitTask@ DoLegacy(Ctx@ c)
     {
-        if (EcoRole::IsAir()) return null;
         if (c.who == COMMANDER) return RoleTech::Tech_Commander_AiMakeTask(c.u, null, c.mi);
         return TechBuild::Strategic(c.u, c.mi, c.ei);
-    }
-    // The nuke rush (plan "nuke", every TECH): after the chain's silo, another
-    // each time the last is finished - none under construction, none ordered -
-    // up to NukeLimit, from NukeSustainAfterSeconds at NukeSustainMinMetalIncome
-    // (the goldberg branch's late-game sustain, 23900e8). Each goes into the set
-    // of silos, wall to wall (Layout::PlaceSilo).
-    // A silo order that never gets a frame (played, Starwatcher 2026-09-29:
-    // silos 1-4 filled their set, the layout had no room for another, native's
-    // order at the crowded base centre died at once, and from 27:13 to the end
-    // it was re-ordered 1,484 times - every T2 constructor that asked was handed
-    // it, and the T1 constructors guarding the primary T2 one stood with it):
-    // after an order, none for NukeRetrySeconds. Native's fallback is anchored
-    // at our existing silos with a wider search, not the base centre.
-    int nukeNextRetryAt = -1;
-    IUnitTask@ DoNukeNext(Ctx@ c)
-    {
-        CCircuitDef@ d = ai.GetCircuitDef(TechChain::DefFor("silo"));
-        if (d is null || !d.IsAvailable(ai.frame) || !c.d.CanBuild(d)) return null;
-        const int unfinished = aiBuilderMgr.GetUnfinishedCount(d);
-        if (d.count >= 1) Layout::HoldSet(d);   // the next silo goes beside the last, not in a new set
-        if (d.count - unfinished < 1 || unfinished > 0 || Builder::IsNukeSiloBuildQueued()) return null;   // the chain's first, then one at a time
-        if (d.count >= Global::RoleSettings::Tech::NukeLimit) return null;
-        const int after = Global::RoleSettings::Tech::NukeSustainAfterSeconds;
-        if ((after > 0 && ai.frame < after * SECOND) || c.mi < Global::RoleSettings::Tech::NukeSustainMinMetalIncome) return null;
-        if (ai.frame < nukeNextRetryAt) return null;   // the last order is still due or died: not every ask
-        IUnitTask@ t = Layout::PlaceSilo(d, 300 * SECOND, c.u);
-        string where = "in the layout";
-        if (t is null) {
-            // no layout room: native, beside our silos (the base centre is the most crowded ground)
-            CCircuitUnit@ near = aiBuilderMgr.FindOwnNear(Layout::BaseCentre(), 4000.0f, d);
-            const AIFloat3 anchor = (near is null) ? Layout::BaseCentre() : near.GetPos(ai.frame);
-            @t = Builder::EnqueueNukeSilo(Global::AISettings::Side, anchor, SQUARE_SIZE * 64, 300 * SECOND);
-            where = "native, within 512 of (" + int(anchor.x) + ", " + int(anchor.z) + ")";
-        }
-        if (t !is null) {
-            nukeNextRetryAt = ai.frame + int(Global::RoleSettings::Tech::NukeRetrySeconds * SECOND);
-            GenericHelpers::LogUtil("[TECH][Nuke] silo " + (d.count + 1) + " of " + Global::RoleSettings::Tech::NukeLimit
-                + " ordered " + where + " (+" + int(c.mi) + " metal) by " + c.d.GetName() + " " + c.u.id, 1);
-        }
-        return t;
     }
     IUnitTask@ DoDefence(Ctx@ c)        { return TechBuild::Defence(c.u); }
     IUnitTask@ DoQueuedRepair(Ctx@ c)   { return TechBuild::QueuedOrder(c.u); }
@@ -469,37 +435,41 @@ namespace TechRules {
     }
 
     array<Rule@> table;
+    Rule@ airDefendRule = Rule("air.defend", CONSTRUCTORS, W0(), @DoAirDefend, "D-123: in place of a wait");   // D-123: the trace of a wait replaced
 
     void Init()
     {
         if (table.length() > 0) return;
-        table.insertLast(Rule("turret.spam",       TURRET,       W1(@TechRole), @DoTurretSpam,   "D-109: the two turrets directly behind a spam lab always work for that lab"));
+        table.insertLast(Rule("ferry.cargo",       MOBILE,       W0(), @DoFerryCargo,   "D-110/D-112/D-160: a gift belongs to the ferry before discretionary harbour or economy work"));
+        table.insertLast(Rule("harbour.sea",       SEA_CON,      W0(), @DoHarbourSea,   "D-121: construction ships and subs: the advanced shipyard, floating turrets, then the sea economy"));
+        table.insertLast(Rule("harbour.yard",      MOBILE,       W0(), @DoHarbourYard,  "D-121: an island TECH with its advanced fusions: the T1 shipyard offshore, once"));
+        table.insertLast(Rule("harbour.float",     COMMANDER,    W0(), @DoHarbourFloat, "D-121: an island TECH's commander: floating converters while energy floats (the land is for labs and fusions)"));
+        table.insertLast(Rule("turret.spam",       TURRET,       W0(), @DoTurretSpam,   "D-109: the two turrets directly behind a spam lab always work for that lab"));
         table.insertLast(Rule("turret.assist",     TURRET,       W0(), @DoTurretAssist, "reclaim in reach, then the economy under construction by the D-065 order"));
         table.insertLast(Rule("turret.any",        TURRET,       W0(), @DoTurretAny,    "any structure of ours under construction within reach"));
-        table.insertLast(Rule("air.turret.plant",  TURRET,       W1(@AirRole), @DoAirTurretPlant, "AIR: a producing T2 aircraft plant in reach: assist its production"));
         table.insertLast(Rule("turret.factory",    TURRET,       W1(@MetalFloodedLong), @DoTurretFactory, "D-105: the metal bank full and nothing to build in reach: assist a producing factory in reach (production is the sink)"));
         table.insertLast(Rule("turret.wait",       TURRET,       W0(), @DoWaitShort,    "5 s"));
-        table.insertLast(Rule("ferry.cargo",       MOBILE,       W0(), @DoFerryCargo,   "D-110/D-112: a gift (in flight or queued) keeps the ferry's hold or its park behind the base until the drop-off; nothing else"));
-        table.insertLast(Rule("land.recall",       CONSTRUCTORS, W1(@TechRole), @DoLandRecall,   "D-109: a tier whose air constructors went down: its land constructors drop a forward job for the eco rows"));
+        table.insertLast(Rule("land.recall",       CONSTRUCTORS, W0(), @DoLandRecall,   "D-109: a tier whose air constructors went down: its land constructors drop a forward job for the eco rows"));
+        table.insertLast(Rule("weapons.super",     CONSTRUCTORS, W0(), @DoWeaponsSuper, "D-126 (owner): a super cannon framed or startable: every air constructor builds it"));
         table.insertLast(Rule("keep.current",      MOBILE,       W0(), @DoKeepCurrent,  "the construction the builder is on, when native re-asks"));
         table.insertLast(Rule("air.dedicated",     CON_T2,       W0(), @DoAirDedicated, "D-107: the first two T2 air constructors: one only advanced energy converters, the other only advanced fusions, always"));
+        table.insertLast(Rule("flank.factory",     CONSTRUCTORS, W0(), @DoFlankFactory, "D-136: from +200 metal a separate T2 lab feeds an accessible specialist land flank"));
         table.insertLast(Rule("air.flex",          CON_T2,       W0(), @DoAirFlexible,  "D-107: the other T2 air constructors: advanced converters while energy overflows, the advanced fusion going up when the converters cannot stay on"));
-        table.insertLast(Rule("fwd.t2.defend",     CON_T2,       W3(@TechRole, @LandCon, @T2LandReleased), @DoDefendMexes, "D-109: the T2 air constructors are up: T2 land constructors defend the mex clusters, long-range AA then flak"));
-        table.insertLast(Rule("fwd.t1",            CON_T1,       W3(@TechRole, @LandCon, @T1LandReleased), @DoForwardT1,   "D-109: more than 5 T1 air constructors: T1 land constructors build the spam cluster forward (labs, their turrets, AA, pads)"));
+        table.insertLast(Rule("defence.fortify", CONSTRUCTORS, W0(), @DoDefence, "D-152: lane walls after base build power, or T2 resource protection, within the fortification budget"));
+        table.insertLast(Rule("weapons.cluster",   CONSTRUCTORS, W0(), @DoWeaponsCluster, "D-126: from +200 metal, within the weapon budget: the highest-priority weapon cluster's next slot (kill zone, air defence, artillery, long range, coast, the super cannon's escort)"));
+        table.insertLast(Rule("fwd.t2.defend",     CON_T2,       W2(@LandCon, @T2LandReleased), @DoDefendMexes, "D-109: the T2 air constructors are up: T2 land constructors defend the mex clusters, long-range AA then flak"));
+        table.insertLast(Rule("fwd.t1",            CON_T1,       W2(@LandCon, @T1LandReleased), @DoForwardT1,   "D-109: more than 5 T1 air constructors: T1 land constructors build the spam cluster forward (labs, their turrets, AA, pads)"));
         table.insertLast(Rule("opening.mex",       COMMANDER,    W1(@OpeningPending), @DoOpening,      "the nearest OpeningMexCap mexes within OpeningMexRadius"));
-        table.insertLast(Rule("lab.t1.reclaim",    MOBILE,       W2(@TechRole, @IntoT2), @DoReclaimT1Lab, "the advanced lab is under way: every builder in range reclaims the T1 lab"));
-        table.insertLast(Rule("lab.t2.reclaim",     MOBILE,       W2(@TechRole, @T2LabRetiring), @DoReclaimT2Lab, "D-078: the advanced lab is retiring (an advanced fusion is under construction, the bank has room): every builder reclaims it, turrets in range join"));
-        table.insertLast(Rule("lab.base.reclaim",   MOBILE,       W2(@TechRole, @BaseFactoryToGo), @DoBaseFactoryReclaim, "D-114: with 3 land factories on the map the base's land factories are retired and reclaimed; their ground goes back to the economy"));
-        table.insertLast(Rule("lab.front",          CONSTRUCTORS, W2(@TechRole, @FrontClusterOpen), @DoFrontCluster, "D-114: a front cluster's lost turret; an open T2 or T3 front factory cluster: its turrets, help on one going up, then its factory"));
+        table.insertLast(Rule("lab.t1.reclaim",    MOBILE,       W1(@IntoT2), @DoReclaimT1Lab, "the advanced lab is under way: every builder in range reclaims the T1 lab"));
+        table.insertLast(Rule("lab.t2.reclaim",     MOBILE,       W1(@T2LabRetiring), @DoReclaimT2Lab, "D-078: the advanced lab is retiring (an advanced fusion is under construction, the bank has room): every builder reclaims it, turrets in range join"));
+        table.insertLast(Rule("lab.base.reclaim",   MOBILE,       W1(@BaseFactoryToGo), @DoBaseFactoryReclaim, "D-114: with 3 land factories on the map the base's land factories are retired and reclaimed; their ground goes back to the economy"));
+        table.insertLast(Rule("lab.front",          CONSTRUCTORS, W1(@FrontClusterOpen), @DoFrontCluster, "D-114: a front cluster's lost turret; an open T2 or T3 front factory cluster: its turrets, help on one going up, then its factory"));
         table.insertLast(Rule("energy.reclaim",     MOBILE,       W2(@EnergyReclaimable, @NotStalling), @DoEnergyReclaim, "D-077: a fusion stands and energy income without the T1 sources covers the pull by ReclaimT1EnergyMargin: reclaim winds and solars nearest the base centre; advanced solars at ReclaimAdvSolarMargin; an advanced fusion reclaims all"));
         // D-105 (owner's rule): T1 constructors add build power before assisting a
         // T2 construction; the reclaim rows above stay first
         table.insertLast(Rule("power.t1",          CON_T1,       W2(@DearFrameUp, @TurretRoom), @DoT1Turret,     "D-105: a dear frame is up and the turret calculation has room: a T1 constructor adds a construction turret rather than assist"));
         table.insertLast(Rule("energy.convert.float", MOBILE,     W4(@EnergyFloatsBank, @NotStalling, @NoDearOrderPending, @NotMetalFull), @DoConverter,    "D-079: before the chain - energy floats (TechChain::EnergyFloats): a converter, whatever the chain is doing"));
         table.insertLast(Rule("power.turret",      MOBILE,       W4(@MetalAhead, @StructureBuilding, @NotStalling, @NoDearOrderPending), @DoPowerTurret, "D-075: metal income above spending while a structure is under construction: a turret, Layout::TurretsAllowed at a time (D-097), else assist the turret going up"));
-        table.insertLast(Rule("air.plants",        CONSTRUCTORS, W1(@AirRole), @DoAirPlants,  "AIR: another T2 aircraft plant as income stages allow (100, 200), placed by the layout; else a nano for a plant past the first (Air_PlantNanos)"));
-        table.insertLast(Rule("air.porc",          CONSTRUCTORS, W1(@AirRole), @DoAirPorc,    "AIR: native's queued porc orders (Cent's air-denial chain), a few builders at a time (Air_PorcTask)"));
-        table.insertLast(Rule("nuke.next",         CONSTRUCTORS, W2(@TechRole, @NukePlan), @DoNukeNext, "the nuke rush: another nuclear silo each time the last is finished (NukeSustainAfterSeconds, NukeSustainMinMetalIncome, NukeLimit), in the set of silos"));
         table.insertLast(Rule("chain.next",        MOBILE,       W1(@ChainActive), @DoChain,      "the rush chain (D-070): the first unmet target - assist its frame, wait for its order, or order it"));
         table.insertLast(Rule("lab.t1.opening",    MOBILE,       W3(@OpeningDone, @NotIntoT2, @NoT1Lab), @DoStartFactory, "the throwaway first lab at the commander; a constructor uses the pair's slot"));
         table.insertLast(Rule("lab.t1.recover",    COMMANDER,    W3(@OpeningDone, @NoConstructors, @NoLabAtAll), @DoStartFactory, "every constructor and every lab lost: the commander rebuilds a T1 lab"));
@@ -520,6 +490,7 @@ namespace TechRules {
         table.insertLast(Rule("order.repair",      CONSTRUCTORS, W0(), @DoQueuedRepair, "native's queued repairs of our own unfinished structures within ExpOrderRadius"));
         table.insertLast(Rule("assist.any",        MOBILE,       W0(), @DoAssistAny,    "the nearest structure under construction within the builder's assist radius"));
         table.insertLast(Rule("guard.factory",     CONSTRUCTORS, W0(), @DoGuardFactory, "guard the primary T1 lab"));
+        table.insertLast(Rule("air.defend",        CONSTRUCTORS, W0(), @DoAirDefend,    "D-123 (owner): an air constructor with nothing else to do builds defences: the mex clusters' AA, then a ring round the base toward the front"));
         table.insertLast(Rule("wait",              MOBILE,       W0(), @DoWait,         "3 s, then ask again"));
         GenericHelpers::LogUtil("[Rule] table of " + table.length() + " rules loaded", 1);
     }
@@ -527,6 +498,7 @@ namespace TechRules {
     // ---------------------------------------------------------------- evaluation and trace
 
     dictionary lastKeyByUnit;   // unit id -> last key, for the level-1 change trace
+    dictionary lastIdleAsks;    // D-123: air constructor -> asks in a row while idle
 
     IUnitTask@ Evaluate(CCircuitUnit@ u)
     {
@@ -541,74 +513,80 @@ namespace TechRules {
             string last; lastKeyByUnit.get(id, last);
             if (last != sig) { lastKeyByUnit.set(id, sig); GenericHelpers::LogUtil("[Rule][ask] " + c.d.GetName() + " " + u.id + " holds " + sig, 3); }
         }
+        // D-123: an air constructor asked again and again while idle is being handed
+        // a job it never takes up (played: chain.next and power.turret, 60 s and
+        // more idle): after AirIdleAsks such asks, defences
+        if (UnitHelpers::IsAirConstructor(c.d)) {
+            const string ik = "idle" + u.id;
+            int64 asks = 0;
+            if (!lastIdleAsks.get(ik, asks)) asks = 0;
+            const bool idleNow = (u.task is null) || int(u.task.GetType()) == int(Task::Type::IDLE);
+            asks = idleNow ? asks + 1 : 0;
+            lastIdleAsks.set(ik, asks);
+            if (asks >= Global::RoleSettings::Tech::AirIdleAsks) {
+                IUnitTask@ dt = TechBuild::AirDefence(u);
+                if (dt !is null) { lastIdleAsks.set(ik, int64(0)); Trace(c, airDefendRule); return dt; }
+            }
+        }
+        bool openingWorker = MetalEconomy::Active() && MetalEconomy::OpeningWorker(u);
         for (uint i = 0; i < table.length(); ++i) {
             Rule@ r = table[i];
+            if (MetalEconomy::Active()) {
+                // Keep lab reclaim/rebuild precedence, then protect the two
+                // dedicated opening workers before discretionary investment.
+                if (r.key == "power.t1") {
+                    openingWorker = false;
+                    IUnitTask@ dedicated = MetalEconomy::DedicatedTask(u);
+                    if (dedicated !is null) return dedicated;
+                    if (u.id == MetalEconomy::workers[2] && aiTerrainMgr.GetLayoutInt("metal.techTransition", 0) == 0
+                        && !c.eco.t2Lab && c.eco.t2LabQueued == 0) {
+                        IUnitTask@ transition = DoT2Lab(c);
+                        if (transition !is null) {
+                            aiTerrainMgr.SetLayoutInt("metal.techTransition", 1);
+                            return transition;
+                        }
+                    }
+                }
+                if (openingWorker && r.key != "ferry.cargo" && r.key != "keep.current"
+                    && r.key != "lab.t1.reclaim" && r.key != "lab.t2.reclaim" && r.key != "lab.base.reclaim") continue;
+                if (r.key == "mex.expand" && c.openingDone && (c.who & MOBILE) != 0) {
+                    IUnitTask@ field = MetalEconomy::EconomyTask(u);
+                    if (field !is null) return field;
+                }
+                if (MetalEconomy::SkipTechRule(r.key)) continue;
+            }
             if ((r.who & c.who) == 0) continue;
             bool ok = true;
             for (uint k = 0; k < r.when.length() && ok; ++k) ok = r.when[k](c);
             if (!ok) continue;
             IUnitTask@ t = r.act(c);
             if (t is null) continue;
+            // D-123 (owner: an air constructor never does nothing): whichever row
+            // answered with a wait (played: the rush chain's "order out", 60 s
+            // idle), defences come first; the wait is dropped
+            if (UnitHelpers::IsAirConstructor(c.d)) {
+                IBuilderTask@ bt = cast<IBuilderTask>(t);
+                if (bt !is null && Task::BuildType(bt.GetBuildType()) == Task::BuildType::WAIT) {
+                    IUnitTask@ dt = TechBuild::AirDefence(c.u);
+                    if (dt !is null) {
+                        aiBuilderMgr.AbortTask(t);
+                        Trace(c, airDefendRule);
+                        return dt;
+                    }
+                }
+            }
             Trace(c, r);
             return t;
         }
         return null;
     }
 
-    // Census, level 1 every CensusSeconds (TechBuild::Tick): what every builder
-    // and every construction turret was last given, and the turret block's
-    // counts. The per-ask trace repeats a key only at level 3, so a builder that
-    // keeps getting the same row, keep.current or wait is otherwise silent
-    // (Starwatcher 2026-09-29: AIR's turrets and ten constructors went quiet
-    // for three minutes and the log could not say why).
-    int censusFrame = -100000;
-    void Census()
-    {
-        if (ai.frame - censusFrame < int(Global::RoleSettings::Tech::CensusSeconds * SECOND)) return;
-        censusFrame = ai.frame;
-        dictionary mob, tur;
-        int nMob = 0, nTur = 0;
-        array<string>@ keys = lastKeyByUnit.getKeys();
-        for (uint i = 0; keys !is null && i < keys.length(); ++i) {
-            if (keys[i].findFirst("ask") == 0) continue;
-            CCircuitUnit@ u = ai.GetTeamUnit(parseInt(keys[i]));
-            if (u is null || u.circuitDef is null) { lastKeyByUnit.delete(keys[i]); continue; }
-            string k; lastKeyByUnit.get(keys[i], k);
-            dictionary@ d = u.circuitDef.IsMobile() ? @mob : @tur;
-            int n = 0; if (d.exists(k)) d.get(k, n);
-            d.set(k, n + 1);
-            if (u.circuitDef.IsMobile()) ++nMob; else ++nTur;
-        }
-        const string side = Global::AISettings::Side;
-        CCircuitDef@ nano = ai.GetCircuitDef(UnitHelpers::GetT1NanoNameForSide(side));
-        const int unfinished = (nano is null) ? 0 : aiBuilderMgr.GetUnfinishedCount(nano);
-        const int standing = (nano is null) ? 0 : nano.count - unfinished;
-        const int queued = (nano is null) ? 0 : aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::NANO), nano);
-        string why;
-        const int allowed = Layout::TurretsAllowed(why);
-        const float bp = aiBuilderMgr.GetBuildPowerNear(Layout::BaseCentre(), Global::RoleSettings::Tech::EcoBuildPowerRadius);
-        GenericHelpers::LogUtil("[Rule][census] " + nMob + " builders: " + _CensusLine(mob) + " | " + nTur + " turrets: " + _CensusLine(tur)
-            + " | turrets " + standing + " standing, " + unfinished + " frames, " + queued + " orders unstarted; in flight "
-            + Layout::TurretsInFlight() + " of " + allowed + " allowed" + (Layout::TurretsCapped() ? " (capped)" : "")
-            + " | build power near " + int(bp) + " | M +" + int(Economy::GetMinMetalIncomeLast10s()) + " bank " + int(aiEconomyMgr.metal.current)
-            + "/" + int(aiEconomyMgr.metal.storage) + " | E +" + int(Economy::GetMinEnergyIncomeLast10s()) + " bank " + int(aiEconomyMgr.energy.current)
-            + "/" + int(aiEconomyMgr.energy.storage) + (aiEconomyMgr.isEnergyStalling ? " stalling" : ""), 1);
-    }
-    string _CensusLine(dictionary@ d)
-    {
-        array<string>@ keys = d.getKeys();
-        if (keys is null || keys.length() == 0) return "-";
-        keys.sortAsc();
-        string s = "";
-        for (uint i = 0; i < keys.length(); ++i) {
-            int n = 0; d.get(keys[i], n);
-            s += (i > 0 ? ", " : "") + keys[i] + " " + n;
-        }
-        return s;
-    }
-
     void Trace(Ctx@ c, const Rule@ r)
     {
+        if (MetalEconomy::Active() && MetalEconomy::OpeningWorker(c.u)
+            && (r.key == "weapons.cluster" || r.key == "weapons.super" || r.key == "defence.fortify"
+                || r.key == "flank.factory" || r.key == "fwd.t1" || r.key == "lab.front"))
+            Invariants::Violation("INV-113", "" + c.u.id, "dedicated metal opening worker diverted to " + r.key);
         const string id = "" + c.u.id;
         string last;
         lastKeyByUnit.get(id, last);

@@ -73,9 +73,8 @@ namespace PorcHelpers {
 	// same chain. Both are T2 statics reached from the porcupine chain and
 	// nowhere else; the superweapon block only lists anti-nukes and silos.
 	//
-	// The launchers occupy chain positions 19 and 28 (16 and 25 before the T2
-	// flak and jammer entries), which need a cumulative ~27k and ~50k of porc
-	// budget at one defence point. A cluster never gets
+	// The launchers occupy chain positions 16 and 25, which need a cumulative
+	// ~24k and ~48k of porc budget at one defence point. A cluster never gets
 	// near that: maxCost is amountFactor (32-48) x metal income, so position 16
 	// wants an income around 600. In practice these entries are unreachable and
 	// the class is never built at all. Position 7 - the Juno - is the last
@@ -88,14 +87,14 @@ namespace PorcHelpers {
 	};
 
 	// Armada Paralyzer (EMP Missile Launcher, 1600M), Cortex Catalyst (Tactical
-	// Missile Launcher, 1200M). Different damage types, one role: a stockpiled
-	// ranged strike on a static target, which is what a defensive economic role
-	// can use and a Juno - whose only targets are radar, jammers, mines and scout
-	// spam - is not. Legion has no entry: its Perdition has no working fire DLL,
-	// so it is out of every porc chain and Legion SUPPORT keeps its Juno.
+	// Missile Launcher, 1200M), Legion Perdition (Long Range Napalm Launcher,
+	// 1250M). Different damage types, one role: a stockpiled ranged strike on a
+	// static target, which is what a defensive economic role can use and a Juno
+	// - whose only targets are radar, jammers, mines and scout spam - is not.
 	dictionary TacticalLaunchers = {
 		{"armada", "armemp"},
-		{"cortex", "cortron"}
+		{"cortex", "cortron"},
+		{"legion", "legperdition"}
 	};
 
 	// A side's entry from one of the tables above, or "" when the side is not

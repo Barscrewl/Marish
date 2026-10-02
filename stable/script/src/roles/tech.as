@@ -79,6 +79,7 @@ namespace RoleTech
 
 		int MexCap()
 		{
+			if (MetalEconomy::Active()) return MetalEconomy::OpeningCap();
 			return (Global::Map::Config.TechOpeningMexCap > 0)
 				? Global::Map::Config.TechOpeningMexCap
 				: Global::RoleSettings::Tech::OpeningMexCap;   // 0 = every spot inside the radius
@@ -86,7 +87,7 @@ namespace RoleTech
 
 		void Init()
 		{
-			const int labs = UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT1Labs());   // AIR: aircraft plants (manager/eco_role.as)
+			const int labs = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT1BotLabs());
 			complete = labs > 0;
 			startFrame = ai.frame;
 			claimed = 0;
@@ -130,8 +131,9 @@ namespace RoleTech
 		// the hold whatever the mex count.
 		void Tick()
 		{
-			if (complete || !EcoRole::Enabled()) return;
-			if (ai.frame - startFrame > Global::RoleSettings::Tech::OpeningMaxSeconds * SECOND)
+			if (complete || !Global::RoleSettings::Tech::ExperimentalBuild) return;
+			const int deadline = MetalEconomy::Active() ? MetalEconomy::OpeningDeadlineSeconds : Global::RoleSettings::Tech::OpeningMaxSeconds;
+			if (ai.frame - startFrame > deadline * SECOND)
 			{
 				Finish("deadline");
 				return;
@@ -186,6 +188,7 @@ namespace RoleTech
 			// is still pending (one may be assigned to another builder).
 			if (aiEconomyMgr.GetMexTaskCountWithin(Global::Map::StartPos, MexRadius()) > 0)
 				return aiBuilderMgr.Enqueue(TaskB::Wait(SECOND));
+			if (MetalEconomy::Active()) return aiBuilderMgr.Enqueue(TaskB::Wait(SECOND));
 			Finish("every reachable spot inside the radius is taken and no mex order is pending");
 			return null;
 		}
@@ -198,6 +201,7 @@ namespace RoleTech
 	******************************************************************************/
 	void Tech_Init()
 	{
+        TechFortifications::Reset();
 
 		// Apply TECH role settings
 		aiTerrainMgr.SetAllyZoneRange(Global::RoleSettings::Tech::AllyRange);
@@ -540,7 +544,9 @@ namespace RoleTech
 	void Tech_MilitaryAiUnitAdded(CCircuitUnit @unit, Unit::UseAs usage)
 	{
 		Invariants::OnUnitAdded(unit);   // D-076: INV-001
-		Team::Donation::OnCombatBotBuilt(unit);
+        // D-158: keep the amphibious wave together; constructor donations are separate.
+        if (!AmphibiousOps::Active() || unit is null || AmphibiousOps::Kind(unit.circuitDef)<0)
+            Team::Donation::OnCombatBotBuilt(unit);
 	}
 
 	void Tech_MilitaryAiTaskRemoved(IUnitTask @task, bool done)
@@ -591,6 +597,11 @@ namespace RoleTech
 		Opening::Tick();
 		TechBuild::Tick();
 		TechChain::Tick();
+		Lanes::Tick();         // D-127: lanes between both teams' starts, drawn after the intro
+		TechFlank::Tick();     // D-136: dedicated accessible-flank production
+		TechFactories::PlanAhead();
+		TechFortifications::Tick();
+		TechWeapons::Tick();   // D-126: weapon clusters: analysis, discovery, budget, the super cannon
 		Invariants::Tick();   // D-076: the role's promises, checked once a second
 		Tech_IncomeBuilderLimits(metalIncome);
 		// The native plan owns geometry and slot state; this refreshes restored
@@ -913,13 +924,20 @@ namespace RoleTech
 		const CCircuitDef @facDef = (u is null ? null : u.circuitDef);
 		if (facDef is null)
 		{
-			return aiFactoryMgr.DefaultMakeTask(u);
+			return AmphibiousOps::DefaultFactoryTask(u);
 		}
 
 		// D-119: construction turrets are the native factory manager's assistants,
 		// asked here, not by the builder rules: a front cluster's turret works for
 		// its own factory (D-109, D-114, D-117: rule turret.spam never reached
 		// them; it only saw turrets a reclaim pull had moved to the builder side)
+		// D-121: an island TECH's shipyards (the harbour)
+		if (UnitHelpers::IsT1Shipyard(facDef.GetName()) || UnitHelpers::IsT2Shipyard(facDef.GetName())
+			|| (TechHarbour::Enabled() && UnitHelpers::IsT1HoverPlant(facDef.GetName())))
+		{
+			IUnitTask@ yt = TechHarbour::YardTask(u);
+			if (yt !is null) return yt;
+		}
 		CCircuitDef@ clusterNano = TechFactories::Nano();
 		if (clusterNano !is null && facDef.GetName() == clusterNano.GetName() && TechFactories::ClusterOfTurret(u) !is null)
 		{
@@ -962,6 +980,8 @@ namespace RoleTech
 		if (UnitHelpers::IsGantryLab(facDef.GetName()))
 		{
 			GenericHelpers::LogUtil("[TECH][Factory] Gantry detected ('" + facDef.GetName() + "')", 3);
+            IUnitTask@ amphib = AmphibiousOps::Produce(u, botLabGate);
+            if (amphib !is null) return amphib;
 			// If economy is very strong, queue a batch of signature experimentals
 			if (metalIncome > 200.0f)
 			{
@@ -970,7 +990,7 @@ namespace RoleTech
 					return tSig;
 			}
 			// Fallback: Let default choose heavy/super units to build
-			return aiFactoryMgr.DefaultMakeTask(u);
+			return AmphibiousOps::DefaultFactoryTask(u);
 		}
 
 		// Check T1 constructor threshold
@@ -1196,6 +1216,12 @@ namespace RoleTech
 				}
 			}
 		}
+        IUnitTask@ amphib = AmphibiousOps::Produce(u, botLabGate);
+        if (amphib !is null) return amphib;
+        // D-121: an island TECH's land labs make no combat units once the harbour
+		// runs (they cannot leave the island); constructors above still come
+		if (TechHarbour::HoldsLandCombat(facDef.GetName()))
+			return aiFactoryMgr.Enqueue(TaskS::Wait(false, 10 * SECOND));
 		GenericHelpers::LogUtil("[TECH][Factory] Checking bot lab for scout/fast bot enqueue", 4);
 		// float metalIncome = Global::Economy::GetMetalIncome();
 		// After builder production priorities, if this is a T1 bot lab and eco is strong, enqueue a block of scouts
@@ -1253,6 +1279,9 @@ namespace RoleTech
 				}
 
 				GenericHelpers::LogUtil("[TECH][Factory] Eco>=gate: enqueue 10 '" + unitName + "' from T2 bot lab (gate=" + botLabGate + ")", 3);
+                // The shared wave producer above owns its bounded queue; do not add a legacy ten-unit batch.
+                if (AmphibiousOps::Active() && AmphibiousOps::Kind(ai.GetCircuitDef(unitName))>=0)
+                    return aiFactoryMgr.Enqueue(TaskS::Wait(false, 5 * SECOND));
 				IUnitTask @last2 = Tech_EnqueueUnitBatch(unitName, 10, pos);
 				if (last2 !is null)
 					return last2;
@@ -1291,7 +1320,7 @@ namespace RoleTech
 		if (UnitHelpers::IsT2BotLab(facDef.GetName()) && metalIncome < botLabGate)
 			return aiFactoryMgr.Enqueue(TaskS::Wait(false, 5 * SECOND));
 		GenericHelpers::LogUtil("[TECH][Factory] No custom tasks applicable; using DefaultMakeTask for factory '" + facDef.GetName() + "'", 4);
-		return aiFactoryMgr.DefaultMakeTask(u);
+		return AmphibiousOps::DefaultFactoryTask(u);
 	}
 
 	/**************************************************************************
@@ -1430,6 +1459,12 @@ namespace RoleTech
 
 	IUnitTask @Tech_MilitaryAiMakeTask(CCircuitUnit @u)
 	{
+		// D-121: an island TECH's fleet runs its yard's route to the enemy
+		if (u !is null && u.circuitDef !is null && TechHarbour::IsHarbourUnit(u.circuitDef))
+		{
+			IUnitTask @fleet = TechHarbour::FleetTask(u);
+			if (fleet !is null) return fleet;
+		}
 		float metalIncome = Economy::GetMinMetalIncomeLast10s();
 
 		// Check if this is a nuclear silo and we haven't targeted the farthest tech spot yet
@@ -1867,6 +1902,7 @@ namespace RoleTech
 			GenericHelpers::LogUtil("[TECH][Limits] Re-applying merged map+role unit limits (economy update)", 4);
 			UnitHelpers::ApplyUnitLimits(Global::Map::MergedUnitLimits);
 		}
+		TechHarbour::ReapplyCaps();   // D-121: the harbour's own units stay open
 	}
 
 	/******************************************************************************
@@ -2052,7 +2088,7 @@ namespace RoleTech
 			if (Builder::primaryT2BotConstructor !is null && !(u is Builder::primaryT2BotConstructor))
 			{
 				GenericHelpers::LogUtil("[TECH][Float] T1 constructor " + u.id + " assists the T2 constructor (metal "
-					+ int(bank) + ")", 2);   // level 2: every ask (22,356 lines in one game)
+					+ int(bank) + ")", 1);
 				return GuardHelpers::AssignWorkerGuard(u, Builder::primaryT2BotConstructor, Task::Priority::HIGH, true, 60 * SECOND);
 			}
 			return null;   // nothing a T1 constructor can spend it on; normal ladder, capped nanos

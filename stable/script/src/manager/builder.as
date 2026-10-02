@@ -17,8 +17,6 @@
 #include "ferry.as"
 #include "layout.as"
 #include "sea_assist.as"
-#include "build_power.as"
-#include "builder_watchdog.as"
 
 namespace Builder {
 	// CCircuitUnit is registered as asOBJ_NOCOUNT (see InitScript.cpp).
@@ -1757,12 +1755,7 @@ namespace Builder {
 		return t;
 	}
 
-	// prio / expireWhenAbandoned: optional. With the default timeout of 0 an AFUS task
-	// nobody picks up never expires, and while it stands IsAdvancedFusionBuildQueued()
-	// refuses every later one; a caller can ask for it to expire after timeoutFrames
-	// unassigned. Every caller today uses the defaults.
-	IUnitTask@ EnqueueAFUS(const string &in unitSide, const AIFloat3 &in anchor, float squareSize, int timeoutFrames,
-			Task::Priority prio = Task::Priority::NORMAL, bool expireWhenAbandoned = false)
+	IUnitTask@ EnqueueAFUS(const string &in unitSide, const AIFloat3 &in anchor, float squareSize, int timeoutFrames)
 	{
 		// Never start if any Advanced Fusion is already queued
 		if (IsAdvancedFusionBuildQueued()) {
@@ -1779,8 +1772,7 @@ namespace Builder {
 		GenericHelpers::LogUtil("[BUILDER] Enqueue AFUS at (" + anchor.x + "," + anchor.z + ") repr=" + (afus is null ? "<null>" : afus.GetName()), 2);
 
 		IUnitTask@ t = aiBuilderMgr.Enqueue(
-			TaskB::Common(Task::BuildType::ENERGY, prio, afus, anchor, /*shake*/ SQUARE_SIZE * 32, /*active*/ true,
-				/*timeout*/ expireWhenAbandoned ? AiMax(timeoutFrames, 0) : 0)
+			TaskB::Common(Task::BuildType::ENERGY, Task::Priority::NORMAL, afus, anchor, /*shake*/ SQUARE_SIZE * 32, /*active*/ true, /*timeout*/ 0)
 			//TaskB::Factory(Task::Priority::NOW, afus, anchor, afus, squareSize, false, true, timeoutFrames)
 		);
 		GenericHelpers::LogUtil("[BUILDER] Enqueue AFUS result=" + (t is null ? "null" : "ok"), 2);
@@ -1847,9 +1839,7 @@ namespace Builder {
 		return t;
 	}
 
-	// expireWhenAbandoned: see EnqueueAFUS.
-	IUnitTask@ EnqueueFUS(const string &in unitSide, const AIFloat3 &in anchor, float squareSize, int timeoutFrames,
-			Task::Priority prio = Task::Priority::NORMAL, bool expireWhenAbandoned = false)
+	IUnitTask@ EnqueueFUS(const string &in unitSide, const AIFloat3 &in anchor, float squareSize, int timeoutFrames, Task::Priority prio = Task::Priority::NORMAL)
 	{
 		// Never start if any Fusion is already queued
 		if (IsFusionBuildQueued()) {
@@ -1866,8 +1856,7 @@ namespace Builder {
 		GenericHelpers::LogUtil("[BUILDER] Enqueue FUS at (" + anchor.x + "," + anchor.z + ") repr=" + (fus is null ? "<null>" : fus.GetName()), 2);
 
 		IUnitTask@ t = aiBuilderMgr.Enqueue(
-			TaskB::Common(Task::BuildType::ENERGY, prio, fus, anchor, /*shake*/ SQUARE_SIZE * 32, /*active*/ true,
-				/*timeout*/ expireWhenAbandoned ? AiMax(timeoutFrames, 0) : 0)
+			TaskB::Common(Task::BuildType::ENERGY, prio, fus, anchor, /*shake*/ SQUARE_SIZE * 32, /*active*/ true, /*timeout*/ 0)
 			//TaskB::Factory(Task::Priority::NOW, fus, anchor, fus, squareSize, false, true, timeoutFrames)
 		);
 		GenericHelpers::LogUtil("[BUILDER] Enqueue FUS result=" + (t is null ? "null" : "ok"), 2);
@@ -2165,7 +2154,9 @@ namespace Builder {
 		}
 
 		RoleConfig@ cfg = (Global::profileController is null) ? null : Global::profileController.RoleCfg;
-		if (cfg !is null && cfg.BuilderAiMakeTaskHandler !is null) {
+		if (MetalEconomy::Active() && Global::AISettings::Role != AiRole::AIR && Global::AISettings::Role != AiRole::TECH
+			&& !UnitHelpers::IsCommander(u.circuitDef) && u.circuitDef.IsMobile()) @t = MetalEconomy::EconomyTask(u);
+		if (t is null && cfg !is null && cfg.BuilderAiMakeTaskHandler !is null) {
 			@t = cfg.BuilderAiMakeTaskHandler(u);
 		}
 		// If no role-specific task or handler returned null, fallback to default
@@ -2188,6 +2179,7 @@ namespace Builder {
 
 	void AiTaskAdded(IUnitTask@ task)
 	{
+		if (Global::AISettings::Role == AiRole::AIR && Global::RoleSettings::Air::ExperimentalBuild) AirBuild::Added(task);
 		GenericHelpers::LogUtil("[BUILDER] AiTaskAdded called", 4);
 		// Mex ownership and upgrade state are role-independent: every role needs
 		// them to rank an upgrade against the energy ladder, so the bookkeeping
@@ -2350,8 +2342,7 @@ namespace Builder {
 
 	void AiTaskRemoved(IUnitTask@ task, bool done)
 	{
-		_TakeHandle(@abortQueue, task);       // ended on its own, or by FlushAborts: nothing left to abort
-		BuildPower::OnTaskRemoved(task, done);   // turrets queued on capped metal (manager/build_power.as)
+		MetalEconomy::Removed(task, done);
 		{
 			IBuilderTask@ mexTask = cast<IBuilderTask>(task);
 			if (mexTask !is null) {
@@ -2550,7 +2541,6 @@ namespace Builder {
 		if (ctorTier == 1 || uname == "legnavyconship") {
 			Team::RegisterT1Constructor(unit);   // orphan-rescue donor pool
 		}
-		if (ctorTier == 2 && cdef !is null && cdef.IsMobile() && !UnitHelpers::IsCommander(cdef)) BuilderWatchdog::Register(unit);   // stalled T2 constructors (manager/builder_watchdog.as)
 		int ctorCat = 0; // 1=bot, 2=veh, 3=air, 4=sea, 5=hover
 
 		// TODO: Consider moving constructor category/tier detection into UnitHelpers
@@ -3292,64 +3282,7 @@ namespace Builder {
 
 	void AiSave(OStream& ostream)
 	{
-
-	}
-
-	/******************************************************************************
-
-	DEFERRED ABORT
-
-	Never Abort() a task from inside AiMakeTask or anything it calls. The engine
-	calls AiMakeTask while it assigns or re-evaluates that builder
-	(IBuilderTask::Reevaluate hides the builder, asks, then touches its current
-	task again), and the default task it offers can be that very task. Aborting
-	it there frees the task the engine is still using: an access violation in
-	SkirmishAI.dll, same address and stack in three sessions on 2026-09-26, each
-	right after a script abort inside AiMakeTask (gantry re-placement, and TECH's
-	placement guard on Salt Reef, f=71804).
-
-	AbortLater queues the task instead, and FlushAborts (Main::AiUpdate, every
-	30 frames, outside any task callback) aborts it. Until then it may be handed
-	out again; callers check IsAbortQueued and give a short wait. A queued task
-	that ends on its own is dropped in AiTaskRemoved, so no handle outlives its
-	task. Used by AIR (retired-structure filter, commander wind task).
-
-	******************************************************************************/
-	array<IUnitTask@> abortQueue;
-
-	// Remove `t` from `list` if present; true when it was there.
-	bool _TakeHandle(array<IUnitTask@>@ list, IUnitTask@ t)
-	{
-		if (t is null) return false;
-		for (uint i = 0; i < list.length(); ++i) {
-			if (list[i] is t) { list.removeAt(i); return true; }
-		}
-		return false;
-	}
-
-	bool IsAbortQueued(IUnitTask@ t)
-	{
-		if (t is null) return false;
-		for (uint i = 0; i < abortQueue.length(); ++i) {
-			if (abortQueue[i] is t) return true;
-		}
-		return false;
-	}
-
-	void AbortLater(IUnitTask@ t)
-	{
-		if (t is null || IsAbortQueued(t)) return;
-		abortQueue.insertLast(t);
-	}
-
-	// Main::AiUpdate.
-	void FlushAborts()
-	{
-		while (abortQueue.length() > 0) {
-			IUnitTask@ t = abortQueue[abortQueue.length() - 1];
-			abortQueue.removeLast();
-			if (t !is null) t.Abort();
-		}
+	
 	}
 
 }  // namespace Builder

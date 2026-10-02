@@ -8,9 +8,9 @@
 	},
 	"superweapon": {
 		"unit": {
-			"legion": ["leglupara",         "leglrpc",  "legstarfall",      "legabm", "legsilo"]
+			"legion": ["leglupara",         "legperdition",         "leglrpc",  "legstarfall",      "legabm", "legsilo"]
 		},
-		"weight":     [ 0.25,      0.25,       0.06,      0.15,     0.15],
+		"weight":     [ 0.25,          0.14,      0.25,       0.06,      0.15,     0.15],
 
 		"condition": [30, 600]  // [<Minimum income>, <maximum seconds to build>]
 	},

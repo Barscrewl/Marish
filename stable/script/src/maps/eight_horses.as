@@ -75,7 +75,7 @@ namespace EightHorses {
 		dictionary hoverSeaLeg; hoverSeaLeg.set("legfhp",4);  hoverSeaLeg.set("leghp",4);  hoverSeaLeg.set("legsy",4);
 
 		dictionary hoverSeaRole; hoverSeaRole.set("armada", @hoverSeaArm); hoverSeaRole.set("cortex", @hoverSeaCor); hoverSeaRole.set("legion", @hoverSeaLeg);
-		root.set("TACTICAL", @hoverSeaRole);
+		root.set("HOVER_SEA", @hoverSeaRole);
 
 		// TECH role
 		dictionary techArm; techArm.set("armlab",4);

@@ -17,6 +17,9 @@
 namespace Invariants {
     dictionary lastSaid;   // id|key -> frame last logged; one line a minute per subject
 
+    bool inv50Done = false;   // D-120
+    bool inv51Done = false;   // D-121
+    dictionary inv53Idle;     // D-123: air constructor id -> samples in a row it did nothing
     void Violation(const string &in id, const string &in key, const string &in msg)
     {
         const string k = id + "|" + key;
@@ -33,15 +36,20 @@ namespace Invariants {
     void OnUnitAdded(CCircuitUnit@ u)
     {
         if (u is null || u.circuitDef is null || !u.circuitDef.IsMobile()) return;
-        if (Lifecycle::RetiringNear(u.GetPos(ai.frame), Global::RoleSettings::Tech::InvariantFactoryRadius))
+        if (u.GetProducerId() >= 0 && Lifecycle::IsRetiringId(u.GetProducerId()))
             Violation("INV-001", "" + u.id, "a retiring factory produced " + u.circuitDef.GetName() + " " + u.id);
         // INV-010: no mobile combat unit under the plan's income gate (D-080)
         const string name = u.circuitDef.GetName();
         const bool builder = UnitHelpers::IsCommander(u.circuitDef) || UnitHelpers::GetConstructorTier(u.circuitDef) > 0 || UnitHelpers::IsAirConstructor(u.circuitDef)
             || UnitHelpers::GetAllRezBots().find(name) >= 0 || UnitHelpers::GetAllFastAssistBots().find(name) >= 0   // reclaimers and assist bots are build power, not combat
-            || u.circuitDef.IsRoleAny(Unit::Role::TRANS.mask);   // D-093: the ferry's transport is logistics (played: armatlas and corvalk flagged)
+            || u.circuitDef.IsRoleAny(Unit::Role::TRANS.mask)   // D-093: the ferry's transport is logistics (played: armatlas and corvalk flagged)
+            || TechHarbour::IsHarbourUnit(u.circuitDef);   // D-121 (owner): the harbour's sea units are built whatever the income
         const float mi = Economy::GetMinMetalIncomeLast10s();
-        if (!builder && mi < TechPlan::CombatGate())
+        // D-160: Telchines use the separate coastal budget, admitted at enqueue
+        // time. Completion may occur after income falls; ordinary combat keeps
+        // its existing gate and Marauders are not exempted.
+        const bool coastal = AmphibiousOps::Active() && AmphibiousOps::Kind(u.circuitDef)==0;
+        if (!builder && !coastal && mi < TechPlan::CombatGate())
             Violation("INV-010", u.circuitDef.GetName(), "combat unit " + u.circuitDef.GetName() + " " + u.id + " produced at +" + int(mi) + " metal under the gate " + int(TechPlan::CombatGate()));
     }
 
@@ -126,7 +134,7 @@ namespace Invariants {
         // after an advanced fusion does (the owner's rule, D-077).
         const string side = Global::AISettings::Side;
         CCircuitDef@ afus = ai.GetCircuitDef(UnitHelpers::GetAdvFusionNameForSide(side));
-        if (afus !is null && afus.count - aiBuilderMgr.GetUnfinishedCount(afus) > 0) {
+        if (!MetalEconomy::Active() && afus !is null && afus.count - aiBuilderMgr.GetUnfinishedCount(afus) > 0) {
             if (afusSince < 0) afusSince = ai.frame;
             else if (ai.frame - afusSince >= int(Global::RoleSettings::Tech::InvariantReclaimSeconds) * SECOND) {
                 int left = 0;
@@ -141,7 +149,7 @@ namespace Invariants {
         // INV-009: no energy structure is ordered while energy floats (the
         // owner's rule, D-079): a new energy frame appearing while it floats.
         {
-            const bool floats = TechChain::EnergyFullSeconds() >= Global::RoleSettings::Tech::InvariantFloatOrderSeconds;   // long enough that the order was made while floating
+            const bool floats = !MetalEconomy::Active() && TechChain::EnergyFullSeconds() >= Global::RoleSettings::Tech::InvariantFloatOrderSeconds;   // metal fields fund production directly; no converter rung
             array<string> energy = { UnitHelpers::GetWindNameForSide(side), UnitHelpers::GetSolarNameForSide(side), UnitHelpers::GetAdvSolarNameForSide(side),
                                      UnitHelpers::GetFusionNameForSide(side), UnitHelpers::GetAdvFusionNameForSide(side) };
             for (uint i = 0; i < energy.length(); ++i) {
@@ -195,12 +203,13 @@ namespace Invariants {
                     GenericHelpers::LogUtil("[Layout] advanced lab " + t2.id + ": nearest construction turret " + ((d < 0) ? "none" : ("" + d + " elmos"))
                         + ((d >= 0 && d <= int(Global::RoleSettings::Tech::LayoutLabFlushElmos)) ? " (flush)" : " (not flush)"), 1);
                 }
-                if (ai.frame - t2LabSince >= int(Global::RoleSettings::Tech::InvariantLabReachSeconds) * SECOND && d > int(Global::RoleSettings::Tech::LayoutLabFlushElmos))
+                if (!Layout::fallback && ai.frame - t2LabSince >= int(Global::RoleSettings::Tech::InvariantLabReachSeconds) * SECOND && d > int(Global::RoleSettings::Tech::LayoutLabFlushElmos))   // D-121: flush is the planned layout's rule
                     Violation("INV-017", "" + t2.id, "the advanced lab's nearest construction turret is " + d + " elmos away, not flush (" + int(Global::RoleSettings::Tech::LayoutLabFlushElmos) + ")");
                 // INV-018 (D-096): the advanced lab faces the front and nothing of ours
                 // stands in its exit lane, so what it makes walks out toward the enemy
                 const int labF = aiTerrainMgr.GetBuildingFacing(t2);
-                // D-098: the facing it was ordered with (the front then); never away from the front now
+                // D-160: compare with the front when ordered. A completed lab
+                // cannot rotate when the observed enemy front changes.
                 const int planned = Layout::LabPlannedFacing();
                 const int frontF = (planned >= 0) ? planned : Layout::LabFacing();
                 const int inExit = aiTerrainMgr.CountStructuresInExit(t2);
@@ -210,7 +219,7 @@ namespace Invariants {
                         + inExit + " structures in its exit lane", 1);
                 }
                 if (ai.frame - t2LabSince >= int(Global::RoleSettings::Tech::InvariantLabReachSeconds) * SECOND
-                    && (labF != frontF || labF == (Layout::LabFacing() + 2) % 4 || inExit > 0))
+                    && (labF != frontF || inExit > 0))
                     Violation("INV-018", "" + t2.id, "the advanced lab faces " + labF + " (the front " + frontF + ") with " + inExit + " structures in its exit lane");
             }
         }
@@ -238,7 +247,7 @@ namespace Invariants {
             CCircuitDef@ fd = ai.GetCircuitDef(UnitHelpers::GetFusionNameForSide(Global::AISettings::Side));
             const int frames = (fd is null) ? 0 : aiBuilderMgr.GetUnfinishedCount(fd);
             // not while the metal floats (the fusion then goes ahead on purpose, D-100)
-            if (frames > fusionFramesLast && Global::RoleSettings::Tech::ChainMohoRadius > 0.0f && !TechBuild::MetalFullLong()) {
+            if (!aiEconomyMgr.IsMetalMap() && frames > fusionFramesLast && Global::RoleSettings::Tech::ChainMohoRadius > 0.0f && !TechBuild::MetalFullLong()) {
                 const AIFloat3 t1 = Economy::MexTracker::GetNearestNonUpgradedMexInRange(Global::Map::StartPos, Global::Map::StartPos,
                     Global::RoleSettings::Tech::ChainMohoRadius);
                 if (t1.x >= 0.0f)
@@ -321,6 +330,7 @@ namespace Invariants {
                 factoriesSeen.set(keys[i], ai.frame);
                 if (!Layout::TurretsStand()) continue;
                 if (TechFactories::IsClusterLab(fac)) continue;   // D-114: at its own turret block (INV-038, INV-045)
+                if (TechFlank::Owns(fac)) continue;   // D-136: standalone reachable flank site, not an economy turret-box tenant
                 const AIFloat3 fp = fac.GetPos(ai.frame);
                 const int ff = aiTerrainMgr.GetBuildingFacing(fac);
                 int gap = aiTerrainMgr.EdgeGapToGroup(fac.circuitDef, fp, ff, Layout::nanoGroup);
@@ -473,7 +483,7 @@ namespace Invariants {
         // FrontClusterOpenSeconds of being planned
         for (uint i = 0; i < TechFactories::clusters.length(); ++i) {
             TechFactories::Cluster@ s = TechFactories::clusters[i];
-            if (s.tier < 2 || s.labRes < 0 || s.plannedFrame < 0 || TechFactories::LabAt(s) !is null) continue;
+            if (s.ahead || s.tier < 2 || s.labRes < 0 || s.plannedFrame < 0 || TechFactories::LabAt(s) !is null) continue;
             if (ai.frame - s.plannedFrame >= Global::RoleSettings::Tech::FrontClusterOpenSeconds * SECOND && ai.frame - s.invOpenLog >= 120 * SECOND) {
                 s.invOpenLog = ai.frame;
                 Violation("INV-046", "front", "front cluster " + (i + 1) + " (" + s.defName + ") planned " + int((ai.frame - s.plannedFrame) / SECOND)
@@ -513,6 +523,52 @@ namespace Invariants {
                     }
                 }
             }
+        }
+
+        // INV-053 (D-123): no T2 air constructor waits (or idles) at three samples in
+        // a row, 30 s apart (played: every air constructor stood still once the
+        // layout was full at 225 advanced converters)
+        if (ai.frame % (30 * SECOND) < SECOND) {
+            array<string>@ keys = TechBuild::airConsSeen.getKeys();
+            for (uint i = 0; keys !is null && i < keys.length(); ++i) {
+                CCircuitUnit@ a = ai.GetTeamUnit(parseInt(keys[i]));
+                if (a is null) { inv53Idle.delete(keys[i]); continue; }
+                if (Team::Ferry::IsGift(a.id)) { inv53Idle.delete(keys[i]); continue; }   // a gift waits for its transport by design (D-112)
+                bool idle = (a.task is null) || int(a.task.GetType()) == int(Task::Type::IDLE);
+                if (!idle) {
+                    IBuilderTask@ bt = cast<IBuilderTask>(a.task);
+                    idle = (bt !is null && Task::BuildType(bt.GetBuildType()) == Task::BuildType::WAIT);
+                }
+                int64 n = 0;
+                if (!inv53Idle.get(keys[i], n)) n = 0;
+                n = idle ? n + 1 : 0;
+                inv53Idle.set(keys[i], n);
+                if (n == 3) {
+                    string last = "";
+                    TechRules::lastKeyByUnit.get(keys[i], last);
+                    Violation("INV-053", keys[i], "air constructor " + keys[i] + " has done nothing for 60 s (task type "
+                        + ((a.task is null) ? -1 : int(a.task.GetType())) + ", last rule " + last + ")");
+                }
+            }
+        }
+
+        // INV-051 (D-121): once the harbour begins, an advanced shipyard stands or
+        // is framed within HarbourYardSeconds (the owner's priority)
+        if (!inv51Done && TechHarbour::activeLatched && ai.frame - TechHarbour::activeFrame >= Global::RoleSettings::Tech::HarbourYardSeconds * SECOND) {
+            inv51Done = true;
+            CCircuitDef@ ay = ai.GetCircuitDef(UnitHelpers::GetT2ShipyardForSide(Global::AISettings::Side));
+            if (ay !is null && ay.count == 0 && aiBuilderMgr.GetUnfinishedCount(ay) == 0)
+                Violation("INV-051", "yard", "no advanced shipyard " + Global::RoleSettings::Tech::HarbourYardSeconds + " s after the harbour began");
+        }
+
+        // INV-050 (D-120): a factory stands (or is framed) by FirstFactorySeconds.
+        // Played: on Tundra Continents the planned layout did not fit, every site
+        // was refused, and TECH had no factory for the whole game
+        if (!inv50Done && ai.frame >= Global::RoleSettings::Tech::FirstFactorySeconds * SECOND) {
+            inv50Done = true;
+            if (Factory::allFactories.getSize() == 0 && !TechBuild::T2Begun())   // a framed advanced lab counts (the T1 lab is its throwaway, D-066)
+                Violation("INV-050", "factory", "no factory " + Global::RoleSettings::Tech::FirstFactorySeconds + " s into the game (layout "
+                    + (Layout::fallback ? "fallback: no planned pair" : (Layout::planned ? "planned" : "not planned")) + ")");
         }
 
         // INV-044 (D-114): with FrontReclaimAtCount land factories on the map, no

@@ -147,11 +147,6 @@
 			"type": ["rectangle", "def_low"],
 			"not_ignore": ["factory", "mex", "geo", "terra"]
 		},
-		"silo": {
-			// nuclear silos stand wall to wall in their layout set (Layout::PlaceSilo): no yard
-			"type": ["rectangle", "special"],
-			"ignore": ["mex", "def_low", "engy_mid", "engy_high", "nano", "special"]
-		},
 		"_default_": {
 			"type": ["rectangle", "unknown"],
 			"yard": [6, 6],
@@ -186,7 +181,6 @@
 		"juno": ["armjuno", "corjuno", "legjuno"],
 		"caretaker": ["armnanotc", "armnanotcplat", "cornanotc", "cornanotcplat", "legnanotc", "legnanotcplat"],
 		"small": ["armrad", "corrad", "armfrad", "corfrad", "legrad"],
-		"silo": ["armsilo", "corsilo", "legsilo"],
 		"wall": ["armdrag", "cordrag", "legdrag"]
 	}
 }

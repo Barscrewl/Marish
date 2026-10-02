@@ -10,7 +10,6 @@
 #include "builder.as"
 #include "layout.as"
 #include "economy.as"
-#include "eco_role.as"
 
 /******************************************************************************
 
@@ -60,12 +59,17 @@ Range is part of every choice: an option the turret box cannot hold within
 a turret's reach is not offered, and what is chosen is pinned to the box
 cells nearest a turret (Layout::Place). Nothing here spirals.
 
-Only TECH runs it (Tech::EcoPlannerEnabled), from its constructor ladders.
+TECH uses the default context (Tech::EcoPlannerEnabled). Experimental AIR
+opts into an AIR context after sustained +50 metal, sharing the chooser while
+keeping AIR reservations, execution, milestones and aircraft demand separate.
 
 ******************************************************************************/
 namespace EcoPlanner {
 
     class State {
+        bool air = false; // default preserves TECH policy and geometry
+        float energyGoal = 0.0f; // optional role objective floor
+
         float windMin;
         float windMax;
         float windCur;
@@ -93,6 +97,9 @@ namespace EcoPlanner {
         int advConvsQueued;
         int fusions;
         int afus;
+        bool fusionUp = false;
+        bool afusStarted = false;
+        bool conversionAllowed = true;
         int estors;
         int mstors;
         int estorsQueued;
@@ -179,9 +186,10 @@ namespace EcoPlanner {
 
     // ---------------------------------------------------------------- state
 
-    State@ Read(CCircuitUnit@ u, float metalIncome, float energyIncome)
+    State@ Read(CCircuitUnit@ u, float metalIncome, float energyIncome, bool air = false)
     {
         State@ s = State();
+        s.air = air;
         s.windMin = ai.GetWindMin();
         s.windMax = ai.GetWindMax();
         s.windCur = ai.GetWindCur();
@@ -194,12 +202,11 @@ namespace EcoPlanner {
         s.mCur = aiEconomyMgr.metal.current;
         s.mStor = aiEconomyMgr.metal.storage;
         s.metalMap = ai.GetMetalSpotCount() >= Global::RoleSettings::Tech::EcoMetalMapSpots;
-        // AIR: air constructors and aircraft plants (manager/eco_role.as)
-        s.t1Cons = UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT1Cons());
-        s.t2Cons = UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT2Cons());
-        s.t2Lab = UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT2Labs()) > 0;
+        s.t1Cons = UnitDefHelpers::SumUnitDefCounts(air ? UnitHelpers::GetAllT1AirConstructors() : UnitHelpers::GetAllT1BotConstructors());
+        s.t2Cons = UnitDefHelpers::SumUnitDefCounts(air ? UnitHelpers::GetAllT2AirConstructors() : UnitHelpers::GetAllT2BotConstructors());
+        s.t2Lab = air || TechFlank::NormalLabCount() > 0; // AIR owns its separate aircraft-lab gate
         {
-            CCircuitDef@ t2lab = ai.GetCircuitDef(EcoRole::T2LabName(Global::AISettings::Side));
+            CCircuitDef@ t2lab = ai.GetCircuitDef(UnitHelpers::GetT2BotLabForSide(Global::AISettings::Side));
             s.t2LabQueued = (t2lab is null) ? 0 : aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::FACTORY), t2lab);
         }
         const string side = Global::AISettings::Side;
@@ -212,6 +219,11 @@ namespace EcoPlanner {
         s.advConvsQueued = Queued(UnitHelpers::GetAdvEnergyConverterNameForSide(side), Task::BuildType::CONVERT);
         s.fusions = Count(UnitHelpers::GetFusionNameForSide(side));
         s.afus = Count(UnitHelpers::GetAdvFusionNameForSide(side));
+        if (air) {
+            s.conversionAllowed = !ProductionMath::MetalFloating(s.mCur, s.mStor);
+            s.fusionUp = AirEconomy::HasReactor();
+            s.afusStarted = s.afus > 0 || Queued(UnitHelpers::GetAdvFusionNameForSide(side), Task::BuildType::ENERGY) > 0;
+        }
         s.estors = Count(UnitHelpers::GetEnergyStorageNameForSide(side));
         s.mstors = Count(UnitHelpers::GetMetalStorageNameForSide(side));
         s.estorsQueued = Queued(UnitHelpers::GetEnergyStorageNameForSide(side), Task::BuildType::STORE);
@@ -222,14 +234,15 @@ namespace EcoPlanner {
             s.nanosBuilding = (nanoDef is null) ? 0 : aiBuilderMgr.GetUnfinishedCount(nanoDef);
         }
         s.builderIsCommander = (u !is null) && UnitHelpers::IsCommander(u.circuitDef);
-        s.turretSlot = Layout::CanPlaceTurret();
+        s.turretSlot = air ? AirEconomy::t1 + AirEconomy::t2 > 0 : Layout::CanPlaceTurret();
         // Turrets only: the commander's 300 and the constructors' 90s pass
         // through; played, they hid the shortage and no turret was ever built.
-        s.buildPowerNear = aiBuilderMgr.GetStaticBuildPowerNear(Layout::BaseCentre(), Global::RoleSettings::Tech::EcoBuildPowerRadius);
+        s.buildPowerNear = aiBuilderMgr.GetStaticBuildPowerNear(air ? Global::Map::StartPos : Layout::BaseCentre(),
+            air ? Global::RoleSettings::Air::HomeEconomyRadius : Global::RoleSettings::Tech::EcoBuildPowerRadius);
         s.builderIsT2 = (u !is null && u.circuitDef !is null) ? (UnitHelpers::GetConstructorTier(u.circuitDef) >= 2) : false;
         s.mexUpPos = AIFloat3(-1.0f, 0.0f, -1.0f);
         s.mexUpsQueued = 0;
-        if (s.builderIsT2) {
+        if (s.builderIsT2 && !air) {
             CCircuitDef@ t2mex = ai.GetCircuitDef(UnitHelpers::GetT2MexNameForSide(side));
             if (t2mex !is null && u.circuitDef.CanBuild(t2mex)) {
                 s.mexUpsQueued = aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::MEXUP), t2mex);
@@ -262,7 +275,7 @@ namespace EcoPlanner {
         CCircuitDef@ d = ai.GetCircuitDef(name);
         if (d is null || !d.IsAvailable(ai.frame)) return false;
         if (s.builderDef !is null && !s.builderDef.CanBuild(d)) return false;
-        return Layout::CanPlace(d);
+        return s.air || Layout::CanPlace(d);
     }
 
     int Count(const string &in name)
@@ -284,9 +297,11 @@ namespace EcoPlanner {
         // Only what the asking constructor can build: a commander has no
         // advanced solar, a T1 constructor no fusion (CR-006).
         if (s.builderDef !is null && !s.builderDef.CanBuild(d)) return null;
-        if (Global::energyAllowed !is null && !Global::energyAllowed(name)) return null;   // D-077: no T1 energy in the fusion era
+        if (s.air) {
+            if (!AirMath::EnergyEraAllows(key == "wind" || key == "solar", key == "advsolar", s.fusionUp, s.afusStarted)) return null;
+        } else if (Global::energyAllowed !is null && !Global::energyAllowed(name)) return null;   // D-077: no T1 energy in the fusion era
         // Only what the turret box holds within a turret's reach (D-063).
-        if (!Layout::CanPlace(d)) return null;
+        if (!s.air && !Layout::CanPlace(d)) return null;
         Option@ o = Option();
         o.key = key;
         @o.def = d;
@@ -348,7 +363,7 @@ namespace EcoPlanner {
         // upgraded; played: energy.short ordered the fusion with 3 of 8 upgraded,
         // the upgrades' own drain making energy short): while upgrades are
         // pending the rows answer with the other energy, the chain orders the fusion
-        const bool mohos = TechChain::MohosPending();
+        const bool mohos = s.air ? !AirEconomy::MexesReady() : TechChain::MohosPending();
         const string rsn = mohos ? (reason + "; mex upgrades pending, no fusion") : reason;
         if (mohos) {
             for (int i = int(opts.length()) - 1; i >= 0; --i)
@@ -377,12 +392,13 @@ namespace EcoPlanner {
     // income floor, else T1 while the T1 ceiling allows.
     string PickConverter(const State@ s, float surplus, string &out why)
     {
+        if (!s.conversionAllowed) return "";
         const string side = Global::AISettings::Side;
         // D-079: while energy floats (the chain's bank-based test) converters go
         // ConverterParallel at a time and the surplus is read as at least half
         // the income, the pull being inflated by whatever is under construction
         // (played: one T2 converter in three and a half minutes at a full bank)
-        const bool floats = TechChain::EnergyFloats();
+        const bool floats = s.air ? s.eStor > 0.0f && s.eCur >= s.eStor * Global::RoleSettings::Tech::EcoConvertEnergyPercent : TechChain::EnergyFloats();
         const int par = floats ? Global::RoleSettings::Tech::ConverterParallel : 1;
         if (floats && surplus < s.eIncome * 0.5f) surplus = s.eIncome * 0.5f;
         Option@ adv = Make("advconv", UnitHelpers::GetAdvEnergyConverterNameForSide(side), s, true);
@@ -394,7 +410,7 @@ namespace EcoPlanner {
             return adv.key;
         }
         Option@ t1 = Make("t1conv", UnitHelpers::GetEnergyConverterNameForSide(side), s, false);
-        if (t1 !is null && s.t1ConvsQueued < par && !TechBuild::AirT1ConvertersRetired()   // AIR: retired T1 converters are not rebuilt
+        if (t1 !is null && s.t1ConvsQueued < par
             && (!s.builderIsT2 || s.mIncome < Global::RoleSettings::Tech::MinimumMetalIncomeForAdvConverter)
             && surplus >= t1.energyUse
             && s.mIncome < Global::RoleSettings::Tech::BuildT1ConvertersUntilMetalIncome) {
@@ -411,8 +427,14 @@ namespace EcoPlanner {
     string PickT2Lab(const State@ s, string &out why)
     {
         if (s.t2Lab || s.t2LabQueued > 0 || s.builderDef is null) return "";
-        CCircuitDef@ lab = ai.GetCircuitDef(EcoRole::T2LabName(Global::AISettings::Side));
+        CCircuitDef@ lab = ai.GetCircuitDef(UnitHelpers::GetT2BotLabForSide(Global::AISettings::Side));
         if (lab is null || !lab.IsAvailable(ai.frame) || !s.builderDef.CanBuild(lab)) return "";
+        if (MetalEconomy::Active()) {
+            MetalEconomy::Read();
+            if (MetalEconomy::workers[2] < 0) return "";
+            why = "metal field: third constructor initiates T2";
+            return "t2lab";
+        }
         if (s.mIncome < Global::RoleSettings::Tech::MinimumMetalIncomeForT2Lab
             || s.eIncome < Global::RoleSettings::Tech::MinimumEnergyIncomeForT2Lab) {
             if (ai.frame - lastT2GateLog > 60 * SECOND) {
@@ -446,7 +468,7 @@ namespace EcoPlanner {
     // starting another - build power is focused, not spread.
     string PickTurret(const State@ s, bool floatingM, string &out why)
     {
-        if (Layout::TurretsCapped()) {   // D-097: the calculation, not a fixed 1
+        if (!s.air && Layout::TurretsCapped()) {   // D-097: the calculation, not a fixed 1
             if (s.nanosBuilding > 0 && !s.builderIsCommander && s.builderDef !is null && s.builderDef.IsMobile()) {
                 why = "a turret is under construction; assist it";
                 return "assistnano";
@@ -470,7 +492,7 @@ namespace EcoPlanner {
     // Returns the key of the structure to build next, "" for none; `why` says why.
     string Decide(const State@ s, string &out why)
     {
-        const float target = TargetEnergy(s.mIncome);
+        const float target = AiMax(TargetEnergy(s.mIncome), s.energyGoal);
         const float deficit = target - s.eIncome;
         const bool draining = (s.eStor > 0.0f) && (s.eCur < Global::RoleSettings::Tech::EcoEnergyLowPercent * s.eStor) && (s.ePull > s.eIncome);
         const bool floatingE = (s.eStor > 0.0f) && (s.eCur >= Global::RoleSettings::Tech::EcoConvertEnergyPercent * s.eStor);
@@ -601,8 +623,10 @@ namespace EcoPlanner {
     // caller continues its ladder and never spirals for it (D-063).
     IUnitTask@ Enqueue(const string &in key, CCircuitUnit@ u)
     {
+        if (MetalEconomy::Active() && (key == "t1conv" || key == "advconv")) return null;
         if (key == "nano") return Layout::NanoTask(u, Task::Priority::HIGH);
         if (key == "mexup") {
+            if (MetalEconomy::Active()) return aiEconomyMgr.EnqueueFieldUpgrade(u, Global::Map::StartPos, MetalEconomy::HomeRadius);
             CCircuitDef@ t2mex = ai.GetCircuitDef(UnitHelpers::GetT2MexNameForSide(Global::AISettings::Side));
             AIFloat3 at = Economy::MexTracker::GetNearestNonUpgradedMexInRange(u.GetPos(ai.frame), Global::Map::StartPos,
                 Global::RoleSettings::MexUpgradeRadius);
@@ -641,10 +665,11 @@ namespace EcoPlanner {
     // reactor under construction instead" rule, then Execute.
     string Next(CCircuitUnit@ u, float metalIncome, float energyIncome)
     {
+        if (MetalEconomy::Active()) return ""; // one field controller owns economy selection
         // With the experimental system on, the rule table (roles/tech_rules.as)
         // calls the Pick* pieces itself and this entry answers nothing, so the
         // legacy rungs it still reuses cannot run the planner a second time.
-        if (EcoRole::Enabled() || !Global::RoleSettings::Tech::EcoPlannerEnabled || u is null) return "";
+        if (Global::RoleSettings::Tech::ExperimentalBuild || !Global::RoleSettings::Tech::EcoPlannerEnabled || u is null) return "";
         State@ s = Read(u, metalIncome, energyIncome);
         string why;
         const string key = Decide(s, why);

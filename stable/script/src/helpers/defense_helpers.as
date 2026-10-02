@@ -61,7 +61,7 @@ namespace DefenseHelpers {
     }
 
     bool ShouldBuildT2MediumTurret(const string &in side) {
-        // TODO: Logic for building T2 Medium Turrets (e.g., armguard, corpun).
+        // TODO: Logic for building T2 Medium Turrets (e.g., armpb, corvipe).
         // Example: to fortify key defensive positions.
         return false;
     }

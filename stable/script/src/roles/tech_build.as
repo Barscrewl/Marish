@@ -13,7 +13,6 @@
 #include "../manager/factory.as"
 #include "../manager/layout.as"
 #include "../manager/eco_planner.as"
-#include "../manager/eco_role.as"
 
 /******************************************************************************
 
@@ -171,7 +170,7 @@ namespace TechBuild {
 
     bool IntoT2()
     {
-        CCircuitDef@ t2 = ai.GetCircuitDef(EcoRole::T2LabName(Global::AISettings::Side));   // AIR: the T2 aircraft plant
+        CCircuitDef@ t2 = ai.GetCircuitDef(UnitHelpers::GetT2BotLabForSide(Global::AISettings::Side));
         if (t2 is null) return false;
         return t2.count > 0 || aiBuilderMgr.GetUnfinishedCount(t2) > 0
             || aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::FACTORY), t2) > 0;
@@ -183,7 +182,7 @@ namespace TechBuild {
     // an advanced lab that never had a frame, and TECH was left with no lab)
     bool T2Begun()
     {
-        CCircuitDef@ t2 = ai.GetCircuitDef(EcoRole::T2LabName(Global::AISettings::Side));
+        CCircuitDef@ t2 = ai.GetCircuitDef(UnitHelpers::GetT2BotLabForSide(Global::AISettings::Side));
         if (t2 is null) return false;
         return t2.count > 0 || aiBuilderMgr.GetUnfinishedCount(t2) > 0;
     }
@@ -193,7 +192,7 @@ namespace TechBuild {
         if (!RoleTech::Opening::complete || IntoT2()) return null;
         if (!T1LabAllowed()) return null;   // D-102 (played: the chain's lab step reordered the T1 lab once the advanced lab was reclaimed)
         const string side = Global::AISettings::Side;
-        CCircuitDef@ lab = ai.GetCircuitDef(EcoRole::T1LabName(side));   // AIR: the T1 aircraft plant
+        CCircuitDef@ lab = ai.GetCircuitDef(UnitHelpers::GetT1BotLabForSide(side));
         if (lab is null || !u.circuitDef.CanBuild(lab)) return null;
         if (lab.count > 0 || aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::FACTORY), lab) > 0) return null;
         // D-101 (owner's rule): only with no construction turret standing may the
@@ -208,13 +207,14 @@ namespace TechBuild {
                 return t;
             }
         }
-        // AIR keeps its T1 plant for the game: it goes on the pair's planned
-        // slot (its nano block behind it), not wherever the commander stands
-        if (EcoRole::ReclaimsLabs() && UnitHelpers::IsCommander(u.circuitDef) && Layout::HasComplex()) {
+        // D-120: with no planned pair (Layout::fallback: cramped ground) the lab
+        // goes here too: the slot path below needs a planned slot and failed on
+        // every try (played: Tundra Continents, no lab in 30 minutes)
+        if (UnitHelpers::IsCommander(u.circuitDef) && (Layout::HasComplex() || Layout::fallback)) {
             const AIFloat3 at = u.GetPos(ai.frame);
-            const int facing = Layout::facing;
             const float step = SQUARE_SIZE * 2;
-            const int rings = int(Global::RoleSettings::Tech::ExpFirstLabRadius / step);
+            // D-120: cramped ground: the nearest footprint may be further out
+            const int rings = int((Layout::fallback ? Global::RoleSettings::Tech::CrampedFirstLabRadius : Global::RoleSettings::Tech::ExpFirstLabRadius) / step);
             // Never under the commander itself: a factory ordered on top of its
             // builder has its command dropped by the engine on every try (the
             // builder is in the way), which looked like a glitching commander.
@@ -223,9 +223,11 @@ namespace TechBuild {
             const float clear = float(lab.GetFootprintX() > lab.GetFootprintZ() ? lab.GetFootprintX() : lab.GetFootprintZ()) * 0.5f * step
                 + Global::RoleSettings::Tech::ExpFirstLabClearance;
             const int firstRing = int(clear / step) + 1;
+            const int tries = Layout::fallback ? 4 : 1;   // D-120: no planned facing: any
             for (int r = firstRing; r <= rings; ++r) {
                 const int n = 8 * r;
-                for (int k = 0; k < n; ++k) {
+                for (int k = 0; k < n; ++k) for (int fi = 0; fi < tries; ++fi) {
+                    const int facing = Layout::fallback ? (Layout::facing + fi) % 4 : Layout::facing;
                     const float a = 6.2831853f * float(k) / float(n);
                     AIFloat3 p = AIFloat3(at.x + cos(a) * float(r) * step, 0.0f, at.z + sin(a) * float(r) * step);
                     if (!aiTerrainMgr.CanReserveBuilding(lab, p, facing)) continue;
@@ -236,15 +238,16 @@ namespace TechBuild {
                     IUnitTask@ t = aiBuilderMgr.Enqueue(TaskB::Factory(Task::Priority::NOW, lab, p, null, 0.0f, false, true, 300 * SECOND));
                     if (t is null) { aiTerrainMgr.ReleaseReservation(id); return null; }
                     if (!AiPinReservation(t, id)) GenericHelpers::LogUtil("[TECH][Build] could not pin the first lab to slot " + id, 1);
+                    if (Layout::fallback) Layout::ReserveCrampedLabSlot(p, u);   // D-121
                     GenericHelpers::LogUtil("[TECH][Build] first lab at the commander: (" + int(p.x) + ", " + int(p.z) + "), "
-                        + int(sqrt(MapHelpers::SqDist(p, at))) + " from it; the pair's slot stays planned", 1);
+                        + int(sqrt(MapHelpers::SqDist(p, at))) + " from it, facing " + facing + (Layout::fallback ? " (no planned pair, D-120)" : "; the pair's slot stays planned"), 1);
                     return t;
                 }
             }
             GenericHelpers::LogUtil("[TECH][Build] no footprint for the first lab within " + int(Global::RoleSettings::Tech::ExpFirstLabRadius)
                 + " of the commander; the pair's slot is used", 1);
         }
-        IUnitTask@ t = EcoRole::EnqueueT1Lab(side, Global::Map::StartPos, 0.0f, 300 * SECOND, Task::Priority::NOW);
+        IUnitTask@ t = Builder::EnqueueT1BotLab(side, Global::Map::StartPos, 0.0f, 300 * SECOND, Task::Priority::NOW);
         if (t !is null) GenericHelpers::LogUtil("[TECH][Build] start factory ordered on the reserved slot", 1);
         return t;
     }
@@ -303,7 +306,7 @@ namespace TechBuild {
     }
     int T1Cons()
     {
-        return UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT1Cons());
+        return UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT1BotConstructors());
     }
     // D-102: the T2 phase has begun at least once (the advanced lab reclaimed later
     // does not reopen the opening)
@@ -316,9 +319,9 @@ namespace TechBuild {
     bool T1LabAllowed()
     {
         if (!WasIntoT2()) return true;
-        const int cons = T1Cons() + UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT2Cons());
+        const int cons = T1Cons() + UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2BotConstructors());
         if (cons == 0) return true;
-        if (UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT2Labs()) == 0) return false;
+        if (TechFlank::NormalLabCount() == 0) return false;
         return T1Cons() < Global::RoleSettings::Tech::LabRebuildMinT1Cons || EcoOnline();
     }
     // D-102 (owner's rule): the lab native asks for when our last factory is gone
@@ -335,7 +338,7 @@ namespace TechBuild {
             return "";
         }
         CCircuitDef@ t2 = ai.GetCircuitDef(UnitHelpers::GetT2BotLabForSide(side));
-        if (t2 !is null && t2.IsAvailable(ai.frame) && UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2BotLabs()) == 0) {
+        if (t2 !is null && t2.IsAvailable(ai.frame) && TechFlank::NormalLabCount() == 0) {
             GenericHelpers::LogUtil("[TECH][Build] last factory gone: the advanced lab first (D-102)", 1);
             return t2.GetName();
         }
@@ -353,33 +356,6 @@ namespace TechBuild {
     }
     // D-108: every T2 air constructor seen, so a freed role is handed on at once
     dictionary airConsSeen;
-    // AIR (manager/eco_role.as): every T2 constructor is an air constructor, so
-    // the first Air::ChainT2Constructors of them are what TECH's T2 bot
-    // constructors are - the chain's mohos, then the fusion, then the advanced
-    // fusion, and the mex upgrades - and never hold a dedicated role; only those
-    // beyond them do (played, All That Glitters 2026-09-28: AIR's first two T2
-    // air constructors took the advanced fusion and converter roles, no T1 mex
-    // was upgraded and the advanced fusion went up at +26 metal). A chain
-    // constructor lost is replaced by the next T2 air constructor that asks.
-    dictionary airChainCons;
-    bool IsAirChainCon(CCircuitUnit@ u)
-    {
-        if (!EcoRole::IsAir() || !IsT2AirCon(u)) return false;
-        const string key = "" + u.id;
-        if (airChainCons.exists(key)) return true;
-        if (u.id == airConvId || u.id == airAfusId) return false;   // a dedicated builder keeps its role
-        int alive = 0;
-        array<string>@ keys = airChainCons.getKeys();
-        for (uint i = 0; keys !is null && i < keys.length(); ++i) {
-            if (ai.GetTeamUnit(parseInt(keys[i])) is null) airChainCons.delete(keys[i]);
-            else ++alive;
-        }
-        if (alive >= Global::RoleSettings::Air::ChainT2Constructors) return false;
-        airChainCons.set(key, ai.frame);
-        GenericHelpers::LogUtil("[AIR][Eco] " + u.circuitDef.GetName() + " " + u.id + " is chain constructor " + (alive + 1) + "/"
-            + Global::RoleSettings::Air::ChainT2Constructors + ": mohos, fusion, advanced fusion, as TECH's T2 constructors", 1);
-        return true;
-    }
     // D-108: a role whose builder is gone goes at once to another T2 air
     // constructor of ours that holds no role
     // D-108: a builder handed a role drops a job of another kind at once
@@ -428,7 +404,6 @@ namespace TechBuild {
     int AirConRole(CCircuitUnit@ u)
     {
         if (!IsT2AirCon(u)) return 0;
-        if (IsAirChainCon(u)) return 0;   // AIR: never seen as a candidate for a role
         airConsSeen.set("" + u.id, ai.frame);
         RefillAirRoles();
         if (u.id == airConvId) return 1;
@@ -501,13 +476,33 @@ namespace TechBuild {
                 : (!u.circuitDef.CanBuild(d) ? "cannot build it" : "no site in the layout"));
             GenericHelpers::LogUtil("[TECH][Air] dedicated " + u.id + " waits for " + name + ": " + why + " (D-108)", 1);
         }
+        // D-123 (owner: an air constructor never does nothing): with no site for its
+        // structure (played: the layout full at 225 advanced converters, both
+        // dedicated builders waited for the rest of the game) it builds defences
+        // meanwhile; the role is kept and taken up again the moment a site frees
+        {
+            CCircuitDef@ d = ai.GetCircuitDef(name);
+            if (d !is null && d.IsAvailable(ai.frame) && u.circuitDef.CanBuild(d)) {
+                IUnitTask@ dt = AirDefence(u);
+                if (dt !is null) return dt;
+            }
+        }
         return Wait(3 * SECOND);
+    }
+
+    // D-152: idle air builders share the reserved wall/weapon plans. The old
+    // expanding spiral consumed future economy and factory ground.
+    IUnitTask@ AirDefence(CCircuitUnit@ u)
+    {
+        if (u is null || u.circuitDef is null || !UnitHelpers::IsAirConstructor(u.circuitDef)) return null;
+        IUnitTask@ t = TechFortifications::Work(u);
+        return t !is null ? t : TechWeapons::Work(u);
     }
     // the rest of the T2 air constructors: converters while energy overflows; the
     // advanced fusion going up the moment the converters cannot stay on
     IUnitTask@ AirFlexible(CCircuitUnit@ u)
     {
-        if (!IsT2AirCon(u) || IsAirChainCon(u) || AirConRole(u) != 0) return null;
+        if (!IsT2AirCon(u) || AirConRole(u) != 0) return null;
         const string side = Global::AISettings::Side;
         if (ConvertersStarve()) return AssistNearestOf(u, UnitHelpers::GetAdvFusionNameForSide(side));
         if (TechChain::EnergyFloats()) return BuildByLayout(u, UnitHelpers::GetAdvEnergyConverterNameForSide(side), Task::BuildType::CONVERT);
@@ -549,7 +544,7 @@ namespace TechBuild {
         // opening's metal, not overflow (played: 420 metal given away at 15 s;
         // the opening's own flag was already set)
         if (!firstLabStood) {
-            CCircuitDef@ l1 = ai.GetCircuitDef(EcoRole::T1LabName(Global::AISettings::Side));
+            CCircuitDef@ l1 = ai.GetCircuitDef(UnitHelpers::GetT1BotLabForSide(Global::AISettings::Side));
             if (l1 !is null && l1.count > aiBuilderMgr.GetUnfinishedCount(l1)) firstLabStood = true;
         }
         if (!firstLabStood && !WasIntoT2()) return;
@@ -595,10 +590,6 @@ namespace TechBuild {
     {
         TrackMetal();   // D-075
         ShareOverflow();   // D-106
-        TechRules::Census();   // level 1, every CensusSeconds: what each builder and turret is on
-        // AIR keeps its plants and has no land constructors to send forward:
-        // no lab retirement, no forward or spam work (manager/eco_role.as)
-        if (!EcoRole::ReclaimsLabs()) return;
         TechForward::Tick();   // D-109
         // D-076: the T1 lab retires the moment the advanced lab is under way.
         // One state, read by every actor: production stops (Lifecycle::Retire
@@ -728,31 +719,9 @@ namespace TechBuild {
     // income is the bottleneck. The commander never expands after the opening.
     int lastNoSpotLog = -100000;
 
-    // A spot that swallows the expansion (played, Starwatcher 2026-09-29: from
-    // 10:43 to 22:00 all 13 of AIR's T1 constructors were sent 2,173 times to
-    // one spot, about 215 orders a minute, and the chain's moho step sat at 2/5
-    // for twelve minutes): a mex under a T2 upgrade leaves its spot looking open,
-    // the income dip the upgrade causes turns this row on for every builder, and
-    // the T1 mex ordered on the spot and the upgrade block each other. Two
-    // guards, TECH's and AIR's alike: a spot under upgrade (MexTracker) is never
-    // expanded to - the order is withdrawn and expansion rests
-    // ExpandUpgradePauseSeconds; and the same spot ordered ExpandLoopOrders times
-    // inside a minute without a mex rests it ExpandLoopPauseSeconds, whatever
-    // the cause (an ally's spot, an unreachable one).
-    int expandPauseUntil = -1;
-    dictionary expandSpotFirst;   // spot key -> frame of its first order in the current minute
-    dictionary expandSpotCount;   // spot key -> orders since then
-    void PauseExpansion(IUnitTask@ t, int seconds, const string &in why)
-    {
-        Builder::AbortLater(t);   // never abort inside AiMakeTask
-        expandPauseUntil = ai.frame + seconds * SECOND;
-        GenericHelpers::LogUtil("[TECH][Build] mex expansion rests " + seconds + " s: " + why, 1);
-    }
-
     IUnitTask@ ExpandMex(CCircuitUnit@ u, float metalIncome)
     {
         if (metalIncome >= Global::RoleSettings::Tech::EcoMexExpandUntilIncome) return null;
-        if (ai.frame < expandPauseUntil) return null;
         // Cap 0: every spot inside the radius is considered, nearest the
         // builder first, until an open one is found. Played with cap 1 the
         // call looked at the single nearest spot, found it taken, and the base
@@ -763,25 +732,6 @@ namespace TechBuild {
             IBuilderTask@ order = cast<IBuilderTask>(t);
             AIFloat3 at = u.GetPos(ai.frame);
             if (order !is null) at = order.GetBuildPos();
-            if (Economy::MexTracker::AnyUpgradeInProgressNear(at, 64.0f)) {
-                PauseExpansion(t, int(Global::RoleSettings::Tech::ExpandUpgradePauseSeconds),
-                    "the nearest open spot (" + int(at.x) + ", " + int(at.z) + ") is our mex under a T2 upgrade");
-                return null;
-            }
-            const string key = int(at.x / 32.0f) + "," + int(at.z / 32.0f);
-            int first = -1, n = 0;
-            if (expandSpotFirst.exists(key)) expandSpotFirst.get(key, first);
-            if (expandSpotCount.exists(key)) expandSpotCount.get(key, n);
-            if (first < 0 || ai.frame - first > 60 * SECOND) { first = ai.frame; n = 0; }
-            ++n;
-            expandSpotFirst.set(key, first);
-            expandSpotCount.set(key, n);
-            if (n >= Global::RoleSettings::Tech::ExpandLoopOrders) {
-                expandSpotFirst.delete(key); expandSpotCount.delete(key);
-                PauseExpansion(t, int(Global::RoleSettings::Tech::ExpandLoopPauseSeconds),
-                    "spot (" + int(at.x) + ", " + int(at.z) + ") ordered " + n + " times in a minute and no mex stands");
-                return null;
-            }
             GenericHelpers::LogUtil("[TECH][Build] " + u.circuitDef.GetName() + " " + u.id + " expands to a mex at ("
                 + int(at.x) + ", " + int(at.z) + ") at +" + int(metalIncome) + " metal", 1);
         } else if (ai.frame - lastNoSpotLog > 60 * SECOND) {
@@ -820,26 +770,9 @@ namespace TechBuild {
     // factories, packed by native nearest that anchor outside the planned
     // zones. Nothing more: TECH is a back-line role and the rest is the
     // team's.
-    array<int> defenceOrders = { 0, 0 };   // D-075: orders per def; native refusing the site ExpDefenceMaxOrders times ends the rung
     IUnitTask@ Defence(CCircuitUnit@ u)
     {
-        if (aiBuilderMgr.GetStaticBuildPowerNear(Layout::BaseCentre(), Global::RoleSettings::Tech::EcoBuildPowerRadius) <= 0.0f)
-            return null;   // the first turret first
-        const string side = Global::AISettings::Side;
-        array<string> names = { UnitHelpers::GetStaticLLTNameForSide(side), UnitHelpers::GetStaticAALightNameForSide(side) };
-        array<int> wanted = { Global::RoleSettings::Tech::ExpDefenceLLT, Global::RoleSettings::Tech::ExpDefenceAA };
-        for (uint i = 0; i < names.length(); ++i) {
-            CCircuitDef@ def = ai.GetCircuitDef(names[i]);
-            if (def is null || !def.IsAvailable(ai.frame) || !u.circuitDef.CanBuild(def)) continue;
-            if (def.count + aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::DEFENCE), def) >= wanted[i]) continue;
-            if (defenceOrders[i] >= Global::RoleSettings::Tech::ExpDefenceMaxOrders) continue;
-            AIFloat3 anchor = Layout::factoryCentre;
-            if (anchor.x < 0.0f) anchor = Global::Map::StartPos;
-            IUnitTask@ t = aiBuilderMgr.Enqueue(TaskB::Common(Task::BuildType::DEFENCE, Task::Priority::NORMAL, def, anchor, Global::RoleSettings::Tech::ExpDefenceRadius, true, 120 * SECOND));
-            if (t !is null) { defenceOrders[i]++; GenericHelpers::LogUtil("[TECH][Build] base defence: " + names[i] + " near the factories (order " + defenceOrders[i] + " of " + Global::RoleSettings::Tech::ExpDefenceMaxOrders + ")", 1); }
-            return t;
-        }
-        return null;
+        return TechFortifications::Work(u);
     }
 
     // D-077 (owner's rule): winds and solars are reclaimed once a fusion
@@ -876,23 +809,6 @@ namespace TechBuild {
         const string side = Global::AISettings::Side;
         return FinishedOf(UnitHelpers::GetFusionNameForSide(side)) + FinishedOf(UnitHelpers::GetAdvFusionNameForSide(side)) > 0;
     }
-    // AIR: its T1 energy converters are reclaimed once
-    // Air::RetireT1ConvertersAtAdvConverters advanced converters stand finished,
-    // or an advanced fusion does, and never built again (EcoPlanner::PickConverter);
-    // AIR's eco retirement before TECH's economy. TECH never reclaims its T1
-    // converters (it builds them only under BuildT1ConvertersUntilMetalIncome).
-    bool airT1ConvRetired = false;
-    bool AirT1ConvertersRetired()
-    {
-        if (!EcoRole::IsAir()) return false;
-        if (airT1ConvRetired) return true;
-        const string side = Global::AISettings::Side;
-        const int adv = FinishedOf(UnitHelpers::GetAdvEnergyConverterNameForSide(side));
-        if (adv < Global::RoleSettings::Air::RetireT1ConvertersAtAdvConverters && FinishedOf(UnitHelpers::GetAdvFusionNameForSide(side)) < 1) return false;
-        airT1ConvRetired = true;
-        GenericHelpers::LogUtil("[AIR][Eco] T1 energy converters retired: " + adv + " advanced converter(s) stand; reclaimed from now on, never built again", 1);
-        return true;
-    }
     IUnitTask@ ReclaimEnergy(CCircuitUnit@ u, const EcoPlanner::State@ s)
     {
         if (u is null || s is null) return null;
@@ -902,23 +818,14 @@ namespace TechBuild {
         const float t1Make = s.winds * wind + s.solars * 20.0f;
         const float advMake = s.advSolars * 75.0f;
         const float pull = s.ePull;
-        // AIR (manager/eco_role.as): its pull is mostly aircraft production, which
-        // takes whatever energy there is (played, Salt Reef 2026-09-28: a pull of
-        // 1,684 at +1,768, where TECH's was 115 to 771), so with its fusion
-        // standing the winds stayed until the advanced fusion - three minutes with
-        // the energy bank above EcoConvertEnergyPercent the whole time. For AIR the
-        // bank is read, not the pull (as D-079 does for the chain): a bank that
-        // floats is energy the T1 sources are not needed for. TECH is unchanged.
-        const bool airFloat = EcoRole::IsAir() && s.eStor > 0.0f && s.eCur >= Global::RoleSettings::Tech::EcoConvertEnergyPercent * s.eStor;
-        const bool t1Ok = afusUp || airFloat || (s.eIncome - t1Make >= pull * Global::RoleSettings::Tech::ReclaimT1EnergyMargin);
-        const bool advOk = afusUp || airFloat || (s.eIncome - t1Make - advMake >= pull * Global::RoleSettings::Tech::ReclaimAdvSolarMargin);
+        const bool t1Ok = ProductionMath::LowTierEnergyReclaim(afusUp, s.eIncome, t1Make, pull, Global::RoleSettings::Tech::ReclaimT1EnergyMargin);
+        const bool advOk = ProductionMath::LowTierEnergyReclaim(afusUp, s.eIncome - t1Make, advMake, pull, Global::RoleSettings::Tech::ReclaimAdvSolarMargin);
         if (ReclaimsInFlight() >= Global::RoleSettings::Tech::ReclaimEnergyConcurrent) return null;
         const string side = Global::AISettings::Side;
         array<string> names;
         if (t1Ok && s.winds > 0) names.insertLast(UnitHelpers::GetWindNameForSide(side));
         if (t1Ok && s.solars > 0) names.insertLast(UnitHelpers::GetSolarNameForSide(side));
         if (advOk && s.advSolars > 0) names.insertLast(UnitHelpers::GetAdvSolarNameForSide(side));
-        if (s.t1Convs > 0 && AirT1ConvertersRetired()) names.insertLast(UnitHelpers::GetEnergyConverterNameForSide(side));
         for (uint i = 0; i < names.length(); ++i) {
             CCircuitDef@ d = ai.GetCircuitDef(names[i]);
             if (d is null) continue;
@@ -935,8 +842,7 @@ namespace TechBuild {
             if (!reclaimInFlight.exists(key)) {
                 reclaimInFlight.set(key, int64(ai.frame));
                 GenericHelpers::LogUtil("[TECH][Reclaim] " + names[i] + " " + target.id + ": energy +" + int(s.eIncome) + " without " + int(t1Make)
-                    + " T1 and " + int(advMake) + " adv-solar covers a pull of " + int(pull) + (afusUp ? " (advanced fusion stands)" : " (fusion stands)")
-                    + ((airFloat && !afusUp) ? ", AIR: energy bank " + int(s.eCur) + " of " + int(s.eStor) + " floats" : "") + "; by " + u.circuitDef.GetName() + " " + u.id, 1);
+                    + " T1 and " + int(advMake) + " adv-solar covers a pull of " + int(pull) + (afusUp ? " (advanced fusion stands)" : " (fusion stands)") + "; by " + u.circuitDef.GetName() + " " + u.id, 1);
             }
             return t;
         }
@@ -966,7 +872,7 @@ namespace TechBuild {
 
     IUnitTask@ GuardFactory(CCircuitUnit@ u)
     {
-        CCircuitUnit@ fac = EcoRole::PrimaryT1Lab();
+        CCircuitUnit@ fac = Factory::primaryT1BotLab;
         if (fac is null || fac is u || Lifecycle::IsRetiring(fac)) return null;   // D-076: nobody guards a retiring lab
         if (TechFactories::IsSpamLab(fac)) return null;   // D-119: a spam lab is never assisted (its two turrets only)
         return GuardHelpers::AssignWorkerGuard(u, fac, Task::Priority::LOW, true, 20 * SECOND);

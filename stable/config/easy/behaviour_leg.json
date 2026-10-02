@@ -163,6 +163,7 @@
 				"role": ["static"]
 			},
 			"legcluster": {
+				"build": false, // never construct T1 static artillery
 				"role": ["static"],
 				"on": false,
 				"limit": 3
@@ -605,6 +606,7 @@
 				"attribute": ["melee"]
 			},
 			"legsrail": {
+				"standoff": 0.90, // retain railgun range, including on specialist routes
 				"role": ["anti_heavy"]
 			},
 			"leghrk": {
@@ -699,8 +701,7 @@
 				"role": ["heavy"]
 			},
 			"legamcluster": {
-				"role": ["artillery"],
-				"attribute": ["siege"]
+				"role": ["artillery"]
 			},
 			"legavroc": {
 				"role": ["artillery"]
@@ -785,7 +786,7 @@
 				"power": 1.0
 			},
 			"legnavyfrigate": {
-				"role": ["assault", "naval"],
+				"role": ["assault", "air"],
 				"threat": {"air": 0.0, "surf": 0.0, "water": 0.0, "default": 0.0},
 				"power": 1.0
 			},

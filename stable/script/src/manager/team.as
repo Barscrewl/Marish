@@ -151,6 +151,7 @@ namespace Team {
         if (Ferry::HandleMessage(msg, fromTeamId)) return;
         if (Donation::HandleMessage(msg, fromTeamId)) return;
         if (SeaAssist::HandleMessage(msg, fromTeamId)) return;
+        if (AmphibiousBeaches::HandleMessage(msg, fromTeamId)) return;
         HandleOrphanMessage(msg, fromTeamId);
     }
 

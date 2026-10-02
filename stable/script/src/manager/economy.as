@@ -149,11 +149,20 @@ namespace Economy {
 	const int _WINDOW_10S_FRAMES = 10 * SECOND;
 	_SlidingMinQueue _metalMin10s;
 	_SlidingMinQueue _energyMin10s;
+	int _incomeFirstSample = -1, _incomeLastSample = -1;
 
 	void _UpdateSlidingMinima(int frameIdx, float metalIncome, float energyIncome)
 	{
+		if (_incomeFirstSample < 0 || frameIdx < _incomeLastSample || frameIdx - _incomeLastSample > 2 * SECOND)
+			_incomeFirstSample = frameIdx;
+		_incomeLastSample = frameIdx;
 		_metalMin10s.push(frameIdx, metalIncome, _WINDOW_10S_FRAMES);
 		_energyMin10s.push(frameIdx, energyIncome, _WINDOW_10S_FRAMES);
+	}
+	bool IncomeWindowReady()
+	{
+		return _incomeFirstSample >= 0 && ai.frame - _incomeFirstSample >= _WINDOW_10S_FRAMES
+			&& ai.frame - _incomeLastSample <= 2 * SECOND;
 	}
 
 	// Public getters: minimum income over the last 10 seconds (frame-based window)

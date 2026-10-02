@@ -1,0 +1,88 @@
+// Mono-space font required
+// D-127: lanes between both teams' start positions (manager/lanes.as,
+// doc/roles/tech-lanes.md). Every value overrides the default of the same name
+// in global.as (Global::RoleSettings::Tech, noted beside each). A profile
+// folder may carry its own lanes.json.
+{
+"lanes": {
+    "amph_enabled": true,
+    "amph_max_waves": 6,
+    "amph_telchine_wave": 6,
+    "amph_marauder_wave": 4,
+    "amph_min_wave": 3,
+    "amph_assemble_seconds": 90,
+    "amph_secure_seconds": 18,
+    "amph_raid_seconds": 5,
+    "amph_retry_seconds": 20,
+    "amph_stall_seconds": 180,
+    "amph_quorum": 0.8,
+    "amph_gather_radius": 240,
+    "amph_secure_radius": 1000,
+    "amph_land_cost": 2.5,
+    "amph_water_cost": 1.0,
+    "amph_threat_weight": 8.0,
+    "amph_max_water_threat": 0.0,
+    "amph_min_metal": 200,
+    "amph_telchine_min_metal": 80,
+    "amph_telchine_reserve_metal": 300,
+    "amph_telchine_metal_share": 0.15,
+    "amph_telchine_energy_share": 0.2,
+    "amph_telchine_limit": 18,
+    "amph_telchine_water_cost": 6.0,
+    "amph_shore_spacing": 192,
+    "amph_attack_spacing": 96,
+    "amph_guard_size": 3,
+    "amph_guard_groups": 2,
+    "amph_landing_inland": 128,
+    "amph_landing_half_width": 160,
+    "amph_staging_detour": 1.35,
+    "background": true,              // native worker; false retains synchronous profiling mode
+    "stagger_seconds": 2,            // spread initial/panel requests by team, no polling flood
+	"flank_enabled": true,
+	"flank_min_metal": 200,
+	"flank_site_radius": 1200,
+	"flank_unit_armada": "armsptk",
+	"flank_unit_cortex": "cortermite",
+	"flank_unit_legion": "legsrail",
+	"enabled": true,                  // LanesEnabled (TECH under the experimental build only)
+	"alternatives": 3,                // LaneAlternatives: paths a class, each avoiding the last
+    "specialist_min_span": 1024,     // minimum progress on one connected mountain component
+    "specialist_span_fraction": 0.45, // fraction of endpoint separation crossed on that mountain
+	"specialist_bias": 3.0,           // cliff exploration: cost of ordinary-bot terrain for all-terrain alternatives
+	"high_ground_rise": 128,          // high-ground components above the player's start, in elmos
+	"high_ground_detour": 4.0,        // maximum travel/threat cost relative to the shortest all-terrain route
+	"high_ground_routes": 3,          // additional through-routes over major high-ground components
+	"cliff_approach_class": 1,        // 0=tank, 1=bot access before a crawler descent; -1 disables
+	"cliff_descent_drop": 256,        // minimum drop from staging point to an ordinary-bot-passable landing
+	"cliff_descent_run": 1600,        // maximum path distance to that landing
+	"cliff_descent_progress": 0.9,    // retain the high traverse until near the enemy end
+	"mountain_grade_weight": 8.0,    // quadratic ascent/descent grade penalty before the final drop
+	"mountain_peak_tolerance": 256,  // elevation band below highest reachable point; 0 forces the maximum
+	"mountain_surface_weight": 12.0, // penalize sideways cliff-face travel using engine surface slope
+	"mountain_height_weight": 4.0,   // prefer sustained upper shelves between the cliff crossings
+	"cliff_preference": 8.0,         // favour steep walker-only endpoint legs; 0 retains the former approach
+	"cliff_quality_tolerance": 0.1,  // compare travel cost within 10% of the steepest eligible descent
+	"cliff_height_fraction": 0.5,    // enter each cliff leg in the upper half of reachable height above its base
+	"teaching_choke_width": 900,      // elmos: ground corridors below this receive a contain/scout lesson
+	"merge_radius": 450,              // LaneMergeRadius: a path mostly this close to a lane joins it
+	"threat_weight": 1.0,             // LaneThreatWeight: enemy threat (AA for air lanes) on a recalculation
+	"recalc_seconds": 180,            // LaneRecalcSeconds: recalculated at least this often
+	"recalc_shift": 1000,             // LaneRecalcShift: or when the front moves this far
+	"recalc_min_seconds": 60,         // LaneRecalcMinSeconds: but at most this often
+	"draw": true,                     // LaneDraw: drawn on the map after the intro
+	"draw_seconds": 30,               // LaneDrawSeconds: owner: shown 30 s, then erased
+	"draw_fallback_seconds": 300,      // LaneDrawFallbackSeconds: an AI that does not draw the intro starts here
+	"symbol_spacing": 1400,           // LaneSymbolSpacing: a class symbol this often along a lane
+	"symbol_size": 260,               // LaneSymbolSize
+	"label_size": 240,                // LaneLabelSize: the class name's cap height
+	"pond_max_map_share": 0.025,      // advisory: a small connected ship-water component
+	"water_min_cells": 16,            // ignore tiny depth-grid fragments (64-elmo cells)
+	"water_territory_ratio": 0.8,      // shore nearer one side by this ratio; middle stays neutral
+	"water_site_radius": 6400,        // advisory candidates within this distance of our starts
+	"geo_battery_coverage": 0.6,      // conservative forward terrain visibility fraction
+	"beach_max_grade": 0.3,           // landing-shore grade over 160 elmos
+	"beach_min_length": 384,          // minimum continuous beach frontage
+	"island_min_cells": 3,            // 64-elmo dry cells, disconnected from starts
+	"pond_min_tidal": 10              // E/s required before suggesting pond tidal generation
+}
+}

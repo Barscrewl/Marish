@@ -152,32 +152,24 @@ namespace Porc {
     }
 
     // Set the native knobs for this visit, run the native placement, then the caretaker.
-    // forceFull: a role's handler asks for the whole order at this cluster whatever
-    // the phase (FRONT's base clusters, roles/front.as); the budget rules still apply.
-    // withNano: the caretaker per cluster (_TryNanoWithPorc); off for AIR on TECH's
-    // economy, whose builders cannot adopt a native turret order (roles/air.as).
-    void MakeDefence(int cluster, const AIFloat3 &in pos, bool forceFull = false, bool withNano = true)
+    void MakeDefence(int cluster, const AIFloat3 &in pos)
     {
         float budgetMod = 1.0f;
         string reason;
         const float metalIncome = Economy::GetMinMetalIncomeLast10s();
         const float energyIncome = Economy::GetMinEnergyIncomeLast10s();
         const bool energyStalling = aiEconomyMgr.isEnergyStalling;
-        int mode = DecideMode(ai.frame, metalIncome, energyIncome, energyStalling,
-                              aiMilitaryMgr.armyCost, EnemySurfaceArmyCostPerPlayer(),
-                              aiEconomyMgr.metal.current, aiEconomyMgr.metal.storage,
-                              aiEconomyMgr.energy.current, aiEconomyMgr.energy.storage,
-                              budgetMod, reason);
-        if (forceFull && mode != MODE_FULL) {
-            mode = MODE_FULL;
-            reason += ", FULL asked by the role";
-        }
+        const int mode = DecideMode(ai.frame, metalIncome, energyIncome, energyStalling,
+                                    aiMilitaryMgr.armyCost, EnemySurfaceArmyCostPerPlayer(),
+                                    aiEconomyMgr.metal.current, aiEconomyMgr.metal.storage,
+                                    aiEconomyMgr.energy.current, aiEconomyMgr.energy.storage,
+                                    budgetMod, reason);
         aiMilitaryMgr.porcMode = mode;
         aiMilitaryMgr.porcBudgetMod = budgetMod;
         GenericHelpers::LogUtil("[Porc] cluster=" + cluster + " mode=" + ModeName(mode) + " budgetMod=" + budgetMod
             + " mi=" + metalIncome + " ei=" + energyIncome + " (" + reason + ")", 3);
         aiMilitaryMgr.DefaultMakeDefence(cluster, pos);
-        if (withNano) _TryNanoWithPorc(cluster, pos, mode, metalIncome, energyIncome, energyStalling);
+        _TryNanoWithPorc(cluster, pos, mode, metalIncome, energyIncome, energyStalling);
     }
 }  // namespace Porc
 }  // namespace Military

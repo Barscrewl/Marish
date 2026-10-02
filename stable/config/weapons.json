@@ -1,0 +1,87 @@
+// Mono-space font required
+// D-126: TECH's weapon clusters (roles/tech_weapons.as, doc/roles/tech-weapon-clusters.md).
+// Every value here overrides the default of the same name in global.as
+// (Global::RoleSettings::Tech, noted beside each). A profile folder may carry
+// its own weapons.json to override this one. Incomes are metal per second.
+{
+"weapons": {
+	"fortification": {"share": 0.05, "work_radius": 2200, "concurrent": 2, "base_exclusion_radius": 1200}, // AIR/TECH: no walls around allied starts
+	"celebration": {"enabled": true, "letter_height": 220}, // once per Ragnarok/Calamity/Starfall, after its first actual shot
+	"enabled": true,                  // WeaponClustersEnabled
+	"start_metal_income": 200,        // WeaponStartMetalIncome: owner: no weapon cluster before +200 metal
+
+	"budget": {
+		"share": 0.25,                // WeaponBudgetShare: of metal income, into weapon clusters
+		"share_attacked": 0.40,       // WeaponBudgetShareAttacked: while the base area is fought over
+		"window_seconds": 60,         // WeaponBudgetWindowSeconds: the most budget saved up
+		"attacked_heat": 30,          // WeaponAttackedHeat: combat heat near the base that counts as under attack
+		"base_radius": 2500,          // WeaponBaseRadius
+		"max_concurrent": 4           // WeaponMaxConcurrent: orders out at once (the super cannon's escort apart)
+	},
+
+	// the metal income each cluster kind waits for
+	"gates": {
+		"kill_zone": 200,             // WeaponKillMinIncome
+		"air_defence": 200,           // WeaponAirMinIncome
+		"coast": 250,                 // WeaponCoastMinIncome
+		"artillery": 300,             // WeaponArtyMinIncome
+		"long_range": 350             // WeaponLrpcMinIncome
+	},
+
+	"max": {
+		"kill_zone": 4,               // WeaponMaxKill
+		"air_defence": 4,             // WeaponMaxAir
+		"coast": 4,                   // WeaponMaxCoast
+		"artillery": 3,               // WeaponMaxArty
+		"long_range": 3,              // WeaponMaxLrpc
+		"super": 1                    // WeaponMaxSuper
+	},
+
+	"cluster": {
+		"nanos": 4,                   // WeaponNanoPerCluster: owner: at least 4 construction turrets
+		"work_radius": 8000,          // WeaponWorkRadius: land constructors take cluster work within this
+		"critical_spacing": 1280,     // WeaponCriticalSpacing: nuke AoE between critical structures
+		"air_spacing": 260            // WeaponAirSpacing: AA pieces apart
+	},
+
+	// owner (W9): Ragnarok, Calamity, Starfall
+	"super": {
+		"min_metal_income": 500,      // SuperMinMetalIncome: at least +500 to start
+		"ideal_metal_income": 1000,   // SuperIdealMetalIncome: ideally over +1000
+		"min_need": 1.5,              // SuperMinNeed: the need it takes between the two
+		"energy_spare_factor": 1.0,   // SuperEnergySpareFactor: spare energy income x the sustained draw
+		"storage_min": 2,             // SuperStorageMin: advanced energy storages at least
+		"storage_margin": 1.1,        // SuperStorageMargin: storage holds a full shot x this (a Starfall salvo is 360,000)
+		"flak": 6,                    // SuperFlakCount: dense forward flak
+		"long_range_aa": 2,           // SuperLongRangeAACount
+		"deflectors": 2,              // SuperDeflectorCount
+		"anti_nukes": 1,              // SuperAntiNukeCount (2 once an enemy silo is seen)
+		"nanos": 8,                   // SuperNanoCount
+		"radars": 2,                  // SuperRadarCount
+		"band_min": 0.2,              // SuperBandMin: of the cannon's range back from the active combat zone
+		"band_max": 0.4,              // SuperBandMax
+		"escort_radius": 900,         // SuperEscortRadius
+		"escort_seconds": 300         // SuperEscortSeconds: INV-058's grace
+	},
+
+	"long_range": {
+		"band_min": 0.2,              // WeaponLrpcBandMin
+		"band_max": 0.4               // WeaponLrpcBandMax
+	},
+
+	"analysis": {
+		"replan_seconds": 60,         // WeaponReplanSeconds: sites found again and re-ranked
+		"analyse_seconds": 600,       // WeaponAnalyseSeconds: routes and beaches recomputed
+		"route_alternatives": 3,      // WeaponRouteAlternatives
+		"choke_half_width": 480,      // WeaponChokeHalfWidth
+		"choke_merge": 900,           // WeaponChokeMerge
+		"kill_share_min": 0.2,        // WeaponKillShareMin: kill zones between these shares of a route
+		"kill_share_max": 0.6,        // WeaponKillShareMax
+		"combat_min_heat": 5,         // WeaponCombatMinHeat: an active combat zone
+		"combat_half_life": 180,      // WeaponCombatHalfLife
+		"air_half_life": 300,         // WeaponAirHalfLife
+		"coast_radius": 3500,         // WeaponCoastRadius
+		"enemy_coast_radius": 2500    // WeaponEnemyCoastRadius
+	}
+}
+}

@@ -73,7 +73,10 @@ namespace Ferry {
     // CFerryTask::EState. Mirrored rather than registered as an enum: only the
     // two terminal values matter to policy.
     const int StateIdle = 0;
+    const int StateUnloading = 4;
     const int StateDone = 5;
+    int unloadingSince = -1;      // INV-052 (D-122)
+    bool unloadFlagged = false;
     const int StateFailed = 6;
 
     // ---- AIR side
@@ -85,6 +88,17 @@ namespace Ferry {
     int  buildingId = -1;          // transport we are flying to TECH
     bool announced = false;
     bool buildingHoldApplied = false;
+    array<int> waitingTeams;
+    array<AIFloat3> waitingPositions;
+
+    void StartNextRequest()
+    {
+        if (requestPending || buildingId >= 0 || waitingTeams.length() == 0) return;
+        requestTeam = waitingTeams[0]; requestPos = waitingPositions[0];
+        waitingTeams.removeAt(0); waitingPositions.removeAt(0);
+        requestPending = true; announced = false; orderedFrame = -1;
+        GenericHelpers::LogUtil("[Ferry] AIR: serving team " + requestTeam + " queued=" + waitingTeams.length(), 1);
+    }
 
     // ---- requester side (TECH by default; any role may ask)
     int  lastRequestFrame = -1;    // cooldown anchor; -1 = never asked
@@ -263,6 +277,16 @@ namespace Ferry {
         // else for the rest of the game. Re-armed only if the order produced
         // nothing within OrderTimeoutSeconds (factory died, def disabled).
         if (orderedFrame >= 0) {
+            CCircuitDef@ pendingDef = ai.GetCircuitDef(TransportForSide(Global::AISettings::Side));
+            // A slow funded frame is still the same obligation. Never duplicate it on a timer.
+            if (pendingDef !is null) {
+                if (aiFactoryMgr.GetPendingRecruitCount(pendingDef) > 0) return null;
+                array<Id>@ own = ai.GetOwnedUnitIds();
+                for (uint i = 0; i < own.length(); ++i) {
+                    CCircuitUnit@ frame = ai.GetTeamUnit(own[i]);
+                    if (frame !is null && frame.circuitDef is pendingDef && frame.GetBuildProgress() < 1.0f) return null;
+                }
+            }
             if ((ai.frame - orderedFrame) < int(Global::Ferry::OrderTimeoutSeconds) * SECOND) {
                 return null;
             }
@@ -289,10 +313,14 @@ namespace Ferry {
             AiSendMessage(MSG + "|ack", requestTeam);
         }
         _OpenSlot(name);
-        orderedFrame = ai.frame;
-        GenericHelpers::LogUtil("[Ferry] AIR: ordered one " + name + " for team " + requestTeam, 1);
-        return aiFactoryMgr.Enqueue(TaskS::Recruit(Task::RecruitType::BUILDPOWER, Task::Priority::NOW,
+        if (!factory.circuitDef.CanBuild(d) || Lifecycle::IsRetiring(factory)) return null;
+        IUnitTask@ order = aiFactoryMgr.Enqueue(TaskS::Recruit(Task::RecruitType::BUILDPOWER, Task::Priority::NOW,
                 d, factory.GetPos(ai.frame), 64.f));
+        if (order !is null) {
+            orderedFrame = ai.frame;
+            GenericHelpers::LogUtil("[Ferry] AIR: ordered one " + name + " for team " + requestTeam, 1);
+        }
+        return order;
     }
 
     // Military::AiUnitAdded. Two cases: AIR's new transport, and the one TECH
@@ -380,8 +408,11 @@ namespace Ferry {
     }
 
     // The transport is free: start the oldest queued run.
+    int safeRetryFrame = -1;
+    int awaitTransportSince = -1;
     void _StartNext()
     {
+        if (ai.frame < safeRetryFrame) return;
         while (queuedCargo.length() > 0) {
             const int id = queuedCargo[0];
             const int to = queuedRecipient[0];
@@ -424,9 +455,18 @@ namespace Ferry {
         if (!IsEnabled()) return _Refuse("ferry disabled");
         if (cargo is null || recipient < 0) return _Refuse("no cargo or no recipient");
         CCircuitUnit@ t = Transport();
-        if (t is null) return _Refuse("no transport owned (transportId=" + transportId + ")");
         CFerryTask@ task = TaskOf(t);
-        if (task is null) return _Refuse("transport " + t.id + " has no CFerryTask yet");
+        if (task is null) {
+            if (t is null && Team::Roster::WithRole(AiRole::AIR).length() == 0)
+                return _Refuse("no allied AIR transport provider");
+            if (queuedCargo.find(cargo.id) < 0) {
+                queuedCargo.insertLast(cargo.id); queuedRecipient.insertLast(recipient);
+            }
+            if (awaitTransportSince < 0) awaitTransportSince = ai.frame;
+            RequestTransport("constructor awaiting first-mex delivery");
+            GenericHelpers::LogUtil("[Ferry] TECH: queued " + cargo.id + " until its transport arrives", 1);
+            return true; // ferry.cargo owns the gift while AIR fulfills the request
+        }
         if (cargoId >= 0) {
             // A run is in flight: queue behind it rather than walk. "If an air
             // transport is available always deliver it" - it is, just busy.
@@ -444,21 +484,35 @@ namespace Ferry {
         }
         // D-110 (played: no unload ever took at a teammate's start, their busiest
         // ground): the drop is FerryDropPullback short of it, toward our base
-        AIFloat3 drop = dropPos;
-        {
+        Team::Roster::Entry@ ally = Team::Roster::Get(recipient);
+        const bool mexAnchor = ally !is null && ally.firstMex.x >= 0.0f;
+        AIFloat3 drop = mexAnchor ? ally.firstMex : dropPos;
+        if (!mexAnchor) {
             const float dx = Global::Map::StartPos.x - dropPos.x, dz = Global::Map::StartPos.z - dropPos.z;
             const float len = sqrt(dx * dx + dz * dz);
             const float pull = Global::Ferry::DropPullback;
             if (len > 2.0f * pull) drop = AIFloat3(dropPos.x + dx / len * pull, dropPos.y, dropPos.z + dz / len * pull);
         }
-        if (!task.SetCargo(cargo.id, drop)) return _Refuse("CFerryTask refused SetCargo (state " + task.GetState() + ")");
+        const AIFloat3 safe = aiTerrainMgr.FindSafeDropSpot(cargo, drop, Global::Ferry::SafeDropRadius,
+            Global::Ferry::DropSurfaceThreat, Global::Ferry::DropAirThreat);
+        if (safe.x < 0.0f) {
+            safeRetryFrame = ai.frame + 10 * SECOND;
+            GenericHelpers::LogUtil("[Ferry] waiting for safe ground near recipient " + recipient + " first mex/start", 1);
+            if (queuedCargo.find(cargo.id) < 0) { queuedCargo.insertLast(cargo.id); queuedRecipient.insertLast(recipient); }
+            return true; // retain cargo for a later safe delivery
+        }
+        drop = safe;
+        if (aiBattle.SurfThreat(drop) > Global::Ferry::DropSurfaceThreat || aiBattle.AirThreat(drop) > Global::Ferry::DropAirThreat)
+            Invariants::Violation("INV-086", "" + cargo.id, "ferry selected an unsafe landing point");
+        if (!task.SetCargo(cargo.id, drop, Global::Ferry::DropSurfaceThreat, Global::Ferry::DropAirThreat)) return _Refuse("CFerryTask refused SetCargo (state " + task.GetState() + ")");
         cargoId = cargo.id;
         cargoRecipient = recipient;
         runStart = ai.frame;
         runDrop = drop;
         { int64 n = 0; runAttempts.get("" + cargo.id, n); runAttempts.set("" + cargo.id, n + 1); }   // int64: the dictionary's integer type
         GenericHelpers::LogUtil("[Ferry] TECH: carrying " + cargo.id + " to team " + recipient
-            + " at (" + int(dropPos.x) + "," + int(dropPos.z) + ")", 1);
+            + " at (" + int(drop.x) + "," + int(drop.z) + ") anchor=" + (mexAnchor ? "first-mex" : "start")
+            + " distance=" + int(sqrt(MapHelpers::SqDist(drop, mexAnchor ? ally.firstMex : dropPos))), 1);
         WidgetLink::Send("ferry", "carry|" + cargo.id + "|" + recipient);
         return true;
     }
@@ -522,6 +576,13 @@ namespace Ferry {
         if (!IsEnabled()) return;
         if (!capsApplied) _CapAll();
 
+        if (Global::AISettings::Role == AiRole::AIR) {
+            for (uint i = 0; i < waitingTeams.length(); ++i) {
+                if (waitingTeams[i] == requestTeam || waitingTeams.find(waitingTeams[i]) != int(i))
+                    Invariants::Violation("INV-075", "" + waitingTeams[i], "duplicate AIR transport obligation");
+            }
+        }
+
         _AutoRequest();
 
         // Holds first: they almost never take at OnUnitAdded (see _ApplyHold).
@@ -553,9 +614,23 @@ namespace Ferry {
                 GenericHelpers::LogUtil("[Ferry] AIR: transport " + gaveId
                     + " arrived and transferred to team " + requestTeam, 1);
                 WidgetLink::Send("ferry", "gave|" + gaveId + "|" + requestTeam);
+                StartNextRequest();
             }
         }
 
+        // A new gift may precede the income-triggered transport request. Keep it
+        // for the arriving carrier, with a bounded fallback if AIR cannot help.
+        if (cargoId < 0 && queuedCargo.length() > 0) {
+            if (TaskOf(Transport()) !is null) {
+                awaitTransportSince = -1;
+                _StartNext();
+            } else {
+                if (awaitTransportSince < 0) awaitTransportSince = ai.frame;
+                if (ai.frame - awaitTransportSince >= Global::Ferry::AwaitTransportSeconds * SECOND) {
+                    _WalkQueue("transport arrival time-out"); awaitTransportSince = -1;
+                } else RequestTransport("queued constructor delivery");
+            }
+        } else if (queuedCargo.length() == 0) awaitTransportSince = -1;
         // TECH: poll the run.
         if (cargoId >= 0) {
             CFerryTask@ task = TaskOf(Transport());
@@ -564,6 +639,16 @@ namespace Ferry {
                 return;
             }
             const int st = task.GetState();
+            // INV-052 (D-122): a run unloads within FerryUnloadSeconds (played: the
+            // cargo out at 7 s, the run done at 90+ s, the transport idle)
+            if (st == StateUnloading) {
+                if (unloadingSince < 0) unloadingSince = ai.frame;
+                else if (!unloadFlagged && ai.frame - unloadingSince > Global::Ferry::FerryUnloadSeconds * SECOND) {
+                    unloadFlagged = true;
+                    Invariants::Violation("INV-052", "" + cargoId, "ferry run for cargo " + cargoId + " unloading for "
+                        + int((ai.frame - unloadingSince) / SECOND) + " s");
+                }
+            } else { unloadingSince = -1; unloadFlagged = false; }
             if (st == StateDone) {
                 _Finish(true);
             } else if (st == StateFailed) {
@@ -583,26 +668,21 @@ namespace Ferry {
 
         if (p[1] == "req") {
             if (Global::AISettings::Role != AiRole::AIR) return true;
-            if (requestPending || buildingId >= 0) {
-                // Serving someone already. Dropped, not queued: the requester
-                // re-asks after its cooldown, by which time this one is done.
-                GenericHelpers::LogUtil("[Ferry] AIR: request from team " + fromTeamId
-                    + " dropped; already serving team " + requestTeam, 2);
-                return true;
-            }
-            requestTeam = fromTeamId;
-            requestPos = Global::Map::StartPos;
+            array<Id>@ allies = ai.GetTeamIds();
+            if (fromTeamId == ai.teamId || allies.find(fromTeamId) < 0) return true;
+            if ((requestPending && requestTeam == fromTeamId) || waitingTeams.find(fromTeamId) >= 0) return true;
+            AIFloat3 wantedPos = Global::Map::StartPos;
             if (p.length() >= 4) {
-                requestPos = AIFloat3(parseFloat(p[2]), 0.f, parseFloat(p[3]));
+                wantedPos = AIFloat3(parseFloat(p[2]), 0.f, parseFloat(p[3]));
             }
             // Prefer the roster's own position when we have it: the sender's
             // message may predate a start-position correction.
             Team::Roster::Entry@ e = Team::Roster::Get(fromTeamId);
-            if (e !is null) requestPos = e.startPos;
-            requestPending = true;
-            announced = false;
-            GenericHelpers::LogUtil("[Ferry] AIR: request from team " + fromTeamId
-                + " at (" + int(requestPos.x) + "," + int(requestPos.z) + ")", 1);
+            if (e !is null) wantedPos = e.startPos;
+            if (!(wantedPos.x >= 0.0f && wantedPos.x <= float(AiTerrainWidth()) && wantedPos.z >= 0.0f && wantedPos.z <= float(AiTerrainHeight()))) return true;
+            waitingTeams.insertLast(fromTeamId); waitingPositions.insertLast(wantedPos);
+            GenericHelpers::LogUtil("[Ferry] AIR: queued request from team " + fromTeamId, 1);
+            StartNextRequest();
             return true;
         }
         if (p[1] == "ack") {

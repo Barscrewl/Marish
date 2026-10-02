@@ -1,0 +1,13 @@
+{
+"economy": {
+    "metal_map": {
+        "enabled": true,
+        "maps": ["Oort_Cloud_V2", "Asteroid_Mines_V2.1", "Cloud9_V2", "Iron_Isle_V1", "Nine_Metal_Islands_V1", "SpeedMetal BAR V2"],
+        "candidate_budget": 96,
+        "cell_budget": 16384,
+        "minimum_yield_fraction": 0.8,
+        "legacy_energy_ratio": 25.0,
+        "home_radius": 2400.0
+    }
+}
+}

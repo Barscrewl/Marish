@@ -79,8 +79,20 @@ namespace Main {
 		ApplyProfileSettings();
 	}
 
+    void AiSuperWeaponFired(CCircuitUnit@ unit, const AIFloat3& in aim)
+    {
+        ArtilleryPolicy::Fired(unit, aim);
+    }
+    void AiUnitDestroyed(CCircuitUnit@ unit)
+    {
+        ArtilleryPolicy::Removed(unit);
+    }
+
 	void AiUpdate()  // SlowUpdate, every 30 frames with initial offset of skirmishAIId
 	{
+		ArtilleryPolicy::Check();
+        Lanes::Poll(); // complete async surveys for every role before consumers run
+        AmphibiousOps::Tick();
 		Commands::DrawTick();   // the widget's map drawing, paced under the server's flood guard
 		// Refresh the cached enemy threat/cost layers the role quotas read.
 		Military::UpdateEnemyThreatCache();
@@ -90,12 +102,7 @@ namespace Main {
 			Global::profileController.MainUpdate();
 		}
 		Team::Roster::Update();  // announce ourselves to allied BARb instances until the roster is complete
-		Builder::FlushAborts();  // tasks refused inside AiMakeTask: aborted here, outside any task callback
 		Spam::Update();          // economy-gated spam: activation, focus rotation
-		BomberStock::Update();   // T2 bombers: parked until the wave size, then launched together
-		BuilderWatchdog::Update();   // stalled T2 constructors: parked a moment, then a new task
-		BuildPower::Update();    // metal capping from income or trade: construction turrets at the factories
-		NavalWaves::Update();    // frigates and destroyers: held, then launched together at the threshold
 		Team::Ferry::Update();   // transport ferry: hand-over on arrival, run polling
 		Team::SeaAssist::Update();  // SEA seeds a TACTICAL ally with a construction ship
 		Team::Donation::Update();   // a teammate without T2 asks TECH for a constructor

@@ -45,6 +45,7 @@ namespace Roster {
         string side;
         string startFactory;
         AIFloat3 startPos;
+        AIFloat3 firstMex = AIFloat3(-1.0f, 0.0f, -1.0f);
         bool landLocked = false;
         int spotIndex = -1;        // index into Global::Map::Config.StartSpots, -1 when none
         bool isLeader = false;
@@ -55,6 +56,33 @@ namespace Roster {
     int firstBroadcastFrame = -1;
     int lastBroadcastFrame = -1;
 
+    AIFloat3 firstMex(-1.0f, 0.0f, -1.0f);
+    void ObserveMex()
+    {
+        if (firstMex.x >= 0.0f) {
+            aiTerrainMgr.SetLayoutInt("roster.mex.x", int(firstMex.x));
+            aiTerrainMgr.SetLayoutInt("roster.mex.z", int(firstMex.z));
+            return;
+        }
+        const int x = aiTerrainMgr.GetLayoutInt("roster.mex.x", -1);
+        if (x >= 0) {
+            firstMex = AIFloat3(float(x), 0.0f, float(aiTerrainMgr.GetLayoutInt("roster.mex.z", -1)));
+            return;
+        }
+        array<Id>@ ids = ai.GetOwnedUnitIds();
+        CCircuitUnit@ chosen = null;
+        for (uint i = 0; i < ids.length(); ++i) {
+            CCircuitUnit@ u = ai.GetTeamUnit(ids[i]);
+            if (u is null || u.circuitDef.GetExtractsMetal() <= 0.0f || u.GetBuildProgress() < 1.0f) continue;
+            if (chosen is null || u.id < chosen.id) @chosen = u;
+        }
+        if (chosen is null) return;
+        firstMex = chosen.GetPos(ai.frame);
+        aiTerrainMgr.SetLayoutInt("roster.mex.x", int(firstMex.x));
+        aiTerrainMgr.SetLayoutInt("roster.mex.z", int(firstMex.z));
+        GenericHelpers::LogUtil("[Team][Roster] first mex " + chosen.id + " at " + int(firstMex.x) + "," + int(firstMex.z), 1);
+        Reannounce();
+    }
     string RoleName(AiRole r)
     {
         switch (r) {
@@ -104,7 +132,8 @@ namespace Roster {
             + "|" + int(pos.z)
             + "|" + (Global::Map::LandLocked ? 1 : 0)
             + "|" + OwnSpotIndex()
-            + "|" + ((ai.teamId == ai.GetLeadTeamId()) ? 1 : 0);
+            + "|" + ((ai.teamId == ai.GetLeadTeamId()) ? 1 : 0)
+            + "|" + int(firstMex.x) + "|" + int(firstMex.z);
     }
 
     // Returns null when the message is not a roster line of a supported version.
@@ -123,6 +152,11 @@ namespace Roster {
         e.landLocked = (parseInt(parts[9]) != 0);
         e.spotIndex = int(parseInt(parts[10]));
         e.isLeader = (parseInt(parts[11]) != 0);
+        if (parts.length() >= 14) {
+            const int x = int(parseInt(parts[12])), z = int(parseInt(parts[13]));
+            if (x >= 0 && z >= 0 && x < AiTerrainWidth() && z < AiTerrainHeight())
+                e.firstMex = AIFloat3(float(x), 0.0f, float(z));
+        }
         e.receivedFrame = ai.frame;
         return e;
     }
@@ -152,6 +186,7 @@ namespace Roster {
     void Update()
     {
         if (!IsReady()) return;
+        ObserveMex();
         if (AllyTeamIds().length() == 0) return;              // no allied BARb to talk to
         if (lastBroadcastFrame >= 0 && IsComplete()) return;  // everyone answered
         if (firstBroadcastFrame >= 0 && (ai.frame - firstBroadcastFrame) >= GiveUpFrames) return;
@@ -183,6 +218,11 @@ namespace Roster {
     {
         Entry@ e = Decode(msg);
         if (e is null) return false;
+        if (e.teamId != fromTeamId || AllyTeamIds().find(fromTeamId) < 0) return true;
+        Entry@ prior = Get(fromTeamId);
+        if (e.firstMex.x < 0.0f && prior !is null) e.firstMex = prior.firstMex;
+        if (e.firstMex.x >= 0.0f && (prior is null || prior.firstMex.x < 0.0f))
+            GenericHelpers::LogUtil("[Team][Roster] team " + fromTeamId + " first mex at " + int(e.firstMex.x) + "," + int(e.firstMex.z), 1);
         const string key = "" + e.teamId;
         const bool isNew = !entries.exists(key);
         entries.set(key, @e);

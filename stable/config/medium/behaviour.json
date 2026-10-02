@@ -1,5 +1,7 @@
 // Mono-space font required
 {
+"nuclear": {"structures_only": true, "repeat_seconds": 300, "repeat_radius": 0},
+"pulse": {"enabled": true, "priority": ["jammer_advanced", "jammer_static", "radar_advanced", "radar_static", "jammer_mobile", "radar_mobile"], "scatter": true, "pending_seconds": 45, "coverage_seconds": 90, "scatter_step": 384, "scatter_depth": 192},
 "quota": {
 	"scout": 1,  // max scouts out of units with attribute "scout"
 	"raid": [9.0, 300.0],  // [<min>, <avg>] power of raider squad
@@ -37,6 +39,7 @@
 },
 
 "behaviour": {
+	"legcluster": {"build": false}, // construction veto also applies without the Legion profile fragment
 //	"<UnitDef>": {
 		// "role": [<main>, <enemy>, <enemy>, ...]
 		// <main> is the role to make desicions of when to build it and what task to assign
@@ -147,6 +150,7 @@
 		"role": ["static"]
 	},
 	"armguard": {
+		"build": false, // never construct T1 static artillery
 		"role": ["static"],
 		"attribute": ["artillery"],
 		"threat": 0.3
@@ -204,6 +208,7 @@
 		"role": ["static"]
 	},
 	"corpun": {
+		"build": false, // never construct T1 static artillery
 		"role": ["static"],
 		"attribute": ["artillery"],
 		"threat": 0.3

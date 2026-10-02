@@ -10,52 +10,16 @@
 #include "../manager/factory_production.as"
 // T2 bomber waves
 #include "../manager/air_waves.as"
-// The economy: TECH's experimental build system on the aircraft plants
-// (manager/eco_role.as; see ECONOMY below)
-#include "../manager/eco_role.as"
-#include "../manager/layout.as"
-#include "tech.as"
+#include "air_rules.as"
+#include "../manager/air_production.as"
 
-/******************************************************************************
-
-ECONOMY
-
-AIR's economy is TECH's experimental build system (D-066), run on the aircraft
-plants: the opening mexes, the rush chain to the advanced fusion (mexes, T1
-aircraft plant, energy, the advanced aircraft plant, T2 mex upgrades, fusion,
-turrets, advanced fusion), the planned base (the factory pair and the turret
-box: every economy structure packed within a turret's reach, D-060/D-063),
-the eco planner's energy, converter, storage and turret rows, the block of
-construction turrets in the turret box (the chain's nano step, power.t1,
-power.turret, turret.build: D-075/D-097/D-105), energy reclaim once a reactor
-stands (D-077), and after the chain the metal-income ladder (mex upgrades,
-advanced fusions) to +200 and +500. Every builder asks roles/tech_rules.as
-(TechBuild::MakeTask); never null.
-
-What differs from TECH (manager/eco_role.as):
-  - the labs are the T1 and T2 aircraft plants, and neither is ever reclaimed
-    to fund the economy
-  - TECH's land rows (forward constructors, front factory clusters, spam labs)
-    do not run
-  - every T2 constructor is an air constructor: the first
-    Air::ChainT2Constructors are the chain's (what TECH's T2 bot constructors
-    are: mohos first, then the fusion, then the advanced fusion); only those
-    the plan adds beyond them (from +200) take the dedicated converter /
-    advanced fusion roles (D-107)
-  - row air.plants: another T2 aircraft plant at each income stage (100, 200,
-    ADVANCED AIRCRAFT PLANT CAP), placed by the layout (Air_T2Plants)
-  - BuildPower (manager/build_power.as) is off: its native turret and gantry
-    orders are never taken by the table, and its queued turrets held the
-    layout's turret count full
-  - METAL-STARVED MODE still holds porc to the preventive structure and the
-    plants to wave bombers
-
-The switch is Global::RoleSettings::Air::ExperimentalEco.
-
-******************************************************************************/
 namespace RoleAir {
+    IUnitTask@ g_airStrategicFocusTask = null;
+    int g_airStrategicFocusLeaderId = -1;
+    bool g_airBuildFocusReleased = false;
     bool g_airGunshipOpenerDone = false;
     int g_airStrikeOpenerQueuedCount = 0;
+    IUnitTask@ g_airCommanderWindTask = null;
 
     bool Air_IsEconomyHealthy()
     {
@@ -67,6 +31,171 @@ namespace RoleAir {
         return Air_IsEconomyHealthy()
             && metalIncome >= Global::RoleSettings::Air::T1CombatProductionMetalIncome
             && energyIncome >= Global::RoleSettings::Air::T1CombatProductionEnergyIncome;
+    }
+
+    string Air_GetWindNameForSide(const string &in side)
+    {
+        if (side == "armada") return "armwin";
+        if (side == "cortex") return "corwin";
+        if (side == "legion") return "legwin";
+        return "";
+    }
+
+    bool Air_ShouldPreferWind(const string &in side)
+    {
+        const string windName = Air_GetWindNameForSide(side);
+        CCircuitDef@ windDef = (windName == "" ? null : ai.GetCircuitDef(windName));
+        if (windDef is null || !windDef.IsAvailable(ai.frame)) return false;
+
+        const float expectedWindEnergy = aiEconomyMgr.GetEnergyMake(windDef);
+        const int windCount = windDef.count;
+        return expectedWindEnergy > Global::RoleSettings::Air::GoodWindMinimumEnergy
+            && windCount >= 0
+            && windCount < Global::RoleSettings::Air::CommanderWindTargetCount
+            && Economy::GetMinEnergyIncomeLast10s() < Global::RoleSettings::Air::CommanderWindEnergyIncomeTarget;
+    }
+
+    bool Air_HasCommanderWindOpportunity(const string &in side)
+    {
+        return Builder::commander !is null
+            && !aiEconomyMgr.isEnergyFull
+            && aiEconomyMgr.metal.current >= Global::RoleSettings::Air::CommanderWindMinimumMetalCurrent
+            && Air_ShouldPreferWind(side);
+    }
+
+    IUnitTask@ Air_TryCommanderWind(CCircuitUnit@ commander)
+    {
+        if (commander is null || commander.circuitDef is null) return null;
+        if (g_airCommanderWindTask !is null) return g_airCommanderWindTask;
+
+        const string side = UnitHelpers::GetSideForUnitName(commander.circuitDef.GetName());
+        if (!Air_HasCommanderWindOpportunity(side)) return null;
+
+        const string windName = Air_GetWindNameForSide(side);
+        CCircuitDef@ windDef = ai.GetCircuitDef(windName);
+        if (windDef is null) return null;
+
+        IUnitTask@ task = aiBuilderMgr.Enqueue(
+            TaskB::Common(
+                Task::BuildType::ENERGY,
+                Task::Priority::NORMAL,
+                windDef,
+                commander.GetPos(ai.frame),
+                SQUARE_SIZE * 32,
+                true,
+                30 * SECOND
+            )
+        );
+        if (task !is null) {
+            @g_airCommanderWindTask = @task;
+            GenericHelpers::LogUtil(
+                "[AIR] Commander enqueued wind generator '" + windName +
+                "' expectedEnergy=" + aiEconomyMgr.GetEnergyMake(windDef),
+                2
+            );
+        }
+        return task;
+    }
+
+    bool Air_IsBuildFocusActive()
+    {
+        if (g_airBuildFocusReleased) return false;
+
+        const bool deadlinePassed =
+            ai.frame > Global::RoleSettings::Air::BuildFocusDeadlineSeconds * SECOND;
+        const bool incomeEstablished =
+            Economy::GetMinMetalIncomeLast10s() >= Global::RoleSettings::Air::BuildFocusMetalIncome
+            && Economy::GetMinEnergyIncomeLast10s() >= Global::RoleSettings::Air::BuildFocusEnergyIncome;
+        if (deadlinePassed || (Air_IsEconomyHealthy() && incomeEstablished)) {
+            g_airBuildFocusReleased = true;
+            GenericHelpers::LogUtil("[AIR] Early build-power focus released", 2);
+            return false;
+        }
+        return true;
+    }
+
+    bool Air_IsConstructionTask(IUnitTask@ task)
+    {
+        IBuilderTask@ builderTask = cast<IBuilderTask>(task);
+        if (builderTask is null) return false;
+        return Builder::_IsConstructionBuildType(Task::BuildType(builderTask.GetBuildType()));
+    }
+
+    IUnitTask@ Air_SetStrategicFocus(CCircuitUnit@ leader, IUnitTask@ task)
+    {
+        if (leader !is null && Air_IsConstructionTask(task)) {
+            @g_airStrategicFocusTask = @task;
+            g_airStrategicFocusLeaderId = leader.id;
+        }
+        return task;
+    }
+
+    bool Air_HasTrackedTask(CCircuitUnit@ builder)
+    {
+        Builder::BuilderTaskTrack@ track = Builder::GetTrackForBuilder(builder);
+        return track !is null && track.task !is null;
+    }
+
+    CCircuitUnit@ Air_GetAssignedT1Leader(CCircuitUnit@ builder)
+    {
+        if (builder is null) return null;
+        const string key = "" + builder.id;
+        CCircuitUnit@ ignored = null;
+        if (Builder::primaryT1AirConstructor !is null
+            && Builder::primaryT1AirConstructorGuards.get(key, @ignored)) {
+            return Builder::primaryT1AirConstructor;
+        }
+        @ignored = null;
+        if (Builder::secondaryT1AirConstructor !is null
+            && Builder::secondaryT1AirConstructorGuards.get(key, @ignored)) {
+            return Builder::secondaryT1AirConstructor;
+        }
+        return null;
+    }
+
+    IUnitTask@ Air_AssignFocusedFollower(CCircuitUnit@ builder)
+    {
+        IUnitTask@ assistTask = null;
+        CCircuitUnit@ primary = Builder::primaryT1AirConstructor;
+        if (g_airStrategicFocusTask !is null && primary !is null
+            && primary.id == g_airStrategicFocusLeaderId) {
+            @assistTask = GuardHelpers::AssignWorkerGuard(
+                builder,
+                primary,
+                Task::Priority::HIGH,
+                true,
+                Global::RoleSettings::Air::BuildFocusAssistTimeoutSeconds * SECOND
+            );
+            if (assistTask !is null) return assistTask;
+        }
+
+        CCircuitUnit@ secondary = Builder::secondaryT1AirConstructor;
+        if (secondary !is null && Air_HasTrackedTask(secondary)) {
+            @assistTask = GuardHelpers::AssignWorkerGuard(
+                builder,
+                secondary,
+                Task::Priority::HIGH,
+                true,
+                Global::RoleSettings::Air::BuildFocusAssistTimeoutSeconds * SECOND
+            );
+            if (assistTask !is null) return assistTask;
+        }
+
+        CCircuitUnit@ assignedLeader = Air_GetAssignedT1Leader(builder);
+        if (assignedLeader !is null && Air_HasTrackedTask(assignedLeader)) {
+            @assistTask = GuardHelpers::AssignWorkerGuard(
+                builder,
+                assignedLeader,
+                Task::Priority::HIGH,
+                true,
+                Global::RoleSettings::Air::BuildFocusAssistTimeoutSeconds * SECOND
+            );
+            if (assistTask !is null) return assistTask;
+        }
+
+        return aiBuilderMgr.Enqueue(
+            TaskB::Wait(Global::RoleSettings::Air::BuildFocusIdleWaitSeconds * SECOND)
+        );
     }
 
     /******************************************************************************
@@ -183,12 +312,12 @@ namespace RoleAir {
     ******************************************************************************/
     void Air_Init() {
         GenericHelpers::LogUtil("Air role initialization logic executed", 2);
+        @g_airStrategicFocusTask = null;
+        g_airStrategicFocusLeaderId = -1;
+        g_airBuildFocusReleased = false;
         g_airGunshipOpenerDone = false;
         g_airStrikeOpenerQueuedCount = 0;
-        g_airLastScoutFrame = -1;
-        g_airT2ProductionTurn = 0;
-        g_airPlantNanoTasks.resize(0);
-        g_airPorcBuilders.deleteAll();
+        @g_airCommanderWindTask = null;
 
         // Apply AIR role settings
         aiTerrainMgr.SetAllyZoneRange(Global::RoleSettings::Air::AllyRange);
@@ -199,7 +328,7 @@ namespace RoleAir {
         Global::Porc::LateGameMetalIncome = Global::RoleSettings::Air::PorcLateGameMetalIncome;
         Global::Porc::LateGameEnergyIncome = Global::RoleSettings::Air::PorcLateGameEnergyIncome;
         Global::Porc::LateBudgetMod = Global::RoleSettings::Air::PorcLateBudgetMod;
-        aiMilitaryMgr.porcAllyAA = Global::RoleSettings::Air::PorcAlliedClustersAA ? 1 : 0;
+        aiMilitaryMgr.porcAllyAA = !Global::RoleSettings::Air::ExperimentalBuild && Global::RoleSettings::Air::PorcAlliedClustersAA ? 1 : 0;
         // Change scout cap (unit count)
         aiMilitaryMgr.quota.scout = Global::RoleSettings::Air::MilitaryScoutCap;
 
@@ -207,8 +336,8 @@ namespace RoleAir {
         aiMilitaryMgr.quota.attack = Global::RoleSettings::Air::MilitaryAttackThreshold;
 
         // Change raid thresholds (power)
-        aiMilitaryMgr.quota.raid.min = Global::RoleSettings::Air::MilitaryRaidMinPower;
-        aiMilitaryMgr.quota.raid.avg = Global::RoleSettings::Air::MilitaryRaidAvgPower;
+        aiMilitaryMgr.quota.raid.min = Global::RoleSettings::Air::MilitaryRaidMinPower; 
+        aiMilitaryMgr.quota.raid.avg = Global::RoleSettings::Air::MilitaryRaidAvgPower; 
 
         GenericHelpers::LogUtil("[Air][Quota] scout=" + aiMilitaryMgr.quota.scout +
             " attack=" + aiMilitaryMgr.quota.attack +
@@ -216,31 +345,7 @@ namespace RoleAir {
             " raid.avg=" + aiMilitaryMgr.quota.raid.avg, 3);
 
         Air_ApplyStartLimits();
-        Air_CloseBastionGate();
-        Air_CapT1Strike();
-        Air_InitT2PlantCap();
         AirWaves::Init();
-
-        // The economy (see ECONOMY): TECH's experimental build system, switched
-        // on for this instance the way Tech_Init does it. The layout plan
-        // follows from setup (Air_LayoutPlan) once the caps and porc are in.
-        if (EcoRole::Enabled()) {
-            Layout::Enable(Global::RoleSettings::Tech::LayoutEnabled);
-            aiEconomyMgr.assistNanoEnabled = false;   // the planner owns turrets (D-063)
-            aiEconomyMgr.reclEnergyEff = 0.0f;        // the energy.reclaim row owns energy reclaim (D-077)
-            aiBuilderMgr.experimentalBuild = true;
-            aiBuilderMgr.experimentalDirectRange = Global::RoleSettings::Tech::ExperimentalBuildDirectRange;
-            aiBuilderMgr.experimentalSearchRadius = Global::RoleSettings::Tech::ExperimentalSearchRadius;
-            RoleTech::Opening::Init();
-            TechChain::Init();   // D-070: the rush chain to the advanced fusion
-            TechPlan::Init();    // the metal ladder after it
-            @Global::energyAllowed = @TechBuild::EnergyAllowed;   // D-077: no T1 energy in the fusion era
-            GenericHelpers::LogUtil("[AIR][Eco] TECH's experimental build system on the aircraft plants: direct range "
-                + int(aiBuilderMgr.experimentalDirectRange) + ", search radius " + int(aiBuilderMgr.experimentalSearchRadius), 1);
-        } else {
-            aiBuilderMgr.experimentalBuild = false;
-            GenericHelpers::LogUtil("[AIR][Eco] experimental economy off: native builder defaults", 1);
-        }
 
         // Initialize dynamic factory production system for AIR role when enabled
         if (Global::RoleSettings::Air::UseDynamicFactoryProduction) {
@@ -288,184 +393,16 @@ namespace RoleAir {
 
     /******************************************************************************
 
-    BASTION GATE
-
-    The T1 land defences above are capped at 0, and native DefaultMakeDefence
-    skips an unavailable def without counting its cost; it also skips anti-air
-    (legrl, leglupara) while the enemy has no air. On a Legion porc visit the
-    land chain [leglht, legrl, leghive, leghive, legmg, leghive, leglupara,
-    legjuno, legbastion, ...] therefore reaches legbastion (index 12 of the
-    porcupine list in build_chain_leg.json) right after legjuno, and its
-    defence hub adds three caretakers, a jammer and a shield. Keep it capped at 0
-    until the native average metal income reaches BastionMinAvgMetalIncome, then
-    restore the cap it had. One-way: a later dip does not close it again.
-
-    ******************************************************************************/
-    const string AIR_GATED_BASTION = "legbastion";
-    bool g_airBastionReleased = false;
-    int g_airBastionCap = 0;
-
-    void Air_CloseBastionGate() {
-        g_airBastionReleased = false;
-        CCircuitDef@ d = ai.GetCircuitDef(AIR_GATED_BASTION);
-        if (d is null) {
-            g_airBastionReleased = true;
-            return;
-        }
-        g_airBastionCap = d.maxThisUnit;
-        d.maxThisUnit = 0;
-        GenericHelpers::LogUtil("[AIR][Bastion] " + AIR_GATED_BASTION + " capped at 0 until avg metal income >= "
-            + Global::RoleSettings::Air::BastionMinAvgMetalIncome + " (restores cap " + g_airBastionCap + ")", 2);
-    }
-
-    /******************************************************************************
-
-    T1 STRIKE CAP
-
-    Past the strike opener, native DefaultMakeTask picks T1 bombers and gunships
-    from the plant's factory.json weights (20% each on armap/corap), and those
-    weights are shared with every role. AIR caps each of these defs at
-    T1StrikeCapBeforeT2 alive until Factory::primaryT2AirPlant is set - it is set
-    when the plant is finished, not when it is started - then restores the caps
-    they had. DefaultMakeTask skips an unavailable def, so the weight falls to
-    the rest of the list (fighters, constructors). One-way.
-
-    Metal storages ride on the same latch at cap 0 (Barb4 caps them for AIR
-    outright): native UpdateStorageTasks queues one at HIGH priority whenever
-    metal is full, which for AIR is exactly when it is banking for the T2 plant.
-    Energy storage is untouched.
-
-    ******************************************************************************/
-    const array<string> AIR_T1_STRIKE_DEFS = { "armthund", "armkam", "corshad", "corbw", "legmos", "legcib", "legkam" };
-    const array<string> AIR_METAL_STORAGE_DEFS = { "armmstor", "cormstor", "legmstor", "armuwadvms", "coruwadvms",
-        "legamstor", "leguwmstore", "leganavalmstor" };
-    dictionary g_airT1StrikeCaps;   // def name -> cap to restore
-    bool g_airT1StrikeCapped = false;
-
-    void _Air_CapDefs(const array<string> &in names, int cap) {
-        for (uint i = 0; i < names.length(); ++i) {
-            CCircuitDef@ d = ai.GetCircuitDef(names[i]);
-            if (d is null) continue;
-            g_airT1StrikeCaps.set(names[i], d.maxThisUnit);
-            if (d.maxThisUnit > cap) d.maxThisUnit = cap;
-        }
-    }
-
-    void Air_CapT1Strike() {
-        g_airT1StrikeCaps.deleteAll();
-        const int cap = Global::RoleSettings::Air::T1StrikeCapBeforeT2;
-        _Air_CapDefs(AIR_T1_STRIKE_DEFS, cap);
-        _Air_CapDefs(AIR_METAL_STORAGE_DEFS, 0);
-        g_airT1StrikeCapped = true;
-        GenericHelpers::LogUtil("[AIR][T1Strike] T1 bombers/gunships capped at " + cap
-            + " each, metal storages at 0, until the first T2 aircraft plant is finished", 2);
-    }
-
-    void Air_UpdateT1StrikeCap() {
-        if (!g_airT1StrikeCapped || Factory::primaryT2AirPlant is null) return;
-        g_airT1StrikeCapped = false;
-        array<string>@ names = g_airT1StrikeCaps.getKeys();
-        for (uint i = 0; i < names.length(); ++i) {
-            int orig = 0;
-            CCircuitDef@ d = ai.GetCircuitDef(names[i]);
-            if (d is null || !g_airT1StrikeCaps.get(names[i], orig)) continue;
-            d.maxThisUnit = orig;
-        }
-        GenericHelpers::LogUtil("[AIR][T1Strike] T2 aircraft plant finished: T1 bomber/gunship and metal storage caps restored", 1);
-    }
-
-    void Air_UpdateBastionGate() {
-        if (g_airBastionReleased) return;
-        const float avgMetalIncome = aiEconomyMgr.metal.income;
-        if (avgMetalIncome < Global::RoleSettings::Air::BastionMinAvgMetalIncome) return;
-        g_airBastionReleased = true;
-        CCircuitDef@ d = ai.GetCircuitDef(AIR_GATED_BASTION);
-        if (d is null) return;
-        d.maxThisUnit = g_airBastionCap;
-        GenericHelpers::LogUtil("[AIR][Bastion] avg metal income " + avgMetalIncome + " >= "
-            + Global::RoleSettings::Air::BastionMinAvgMetalIncome + ": " + AIR_GATED_BASTION
-            + " released (cap " + g_airBastionCap + ")", 1);
-    }
-
-    /******************************************************************************
-
     MAIN HOOKS
 
     ******************************************************************************/
 
-    /******************************************************************************
-
-    METAL-STARVED MODE
-
-    At low bonuses AIR's metal bank sat empty while its T2 plant built escorts and
-    heavy air, native fallback production filled in with fighters (factory.json
-    weights them 37-90% at low income), and the shared porc policy's pressure
-    rule - which compares the enemy's surface army with ours, and AIR has little -
-    put every cluster on the FULL porcupine order. Below EcoPriorityEnterPercent
-    of metal storage, until back above EcoPriorityExitPercent, porc is held to
-    the preventive structure per cluster (Air_AiMakeDefence), the T2 plants to
-    wave bombers and constructors (no escorts, scouts, heavy air or fallback
-    fighters), and no further T2 plant is ordered (Air_T2Plants). The
-    economy itself (TECH's rule table) is not held back.
-
-    ******************************************************************************/
-    bool g_airMetalStarved = false;
-
-    bool Air_IsMetalStarved()
-    {
-        return Global::RoleSettings::Air::EcoPriorityEnabled && g_airMetalStarved;
-    }
-
-    void Air_UpdateEcoPriority()
-    {
-        const float storage = aiEconomyMgr.metal.storage;
-        if (storage <= 0.0f) return;
-        const float pct = aiEconomyMgr.metal.current / storage;
-        const bool was = g_airMetalStarved;
-        if (!g_airMetalStarved && pct < Global::RoleSettings::Air::EcoPriorityEnterPercent) g_airMetalStarved = true;
-        else if (g_airMetalStarved && pct > Global::RoleSettings::Air::EcoPriorityExitPercent) g_airMetalStarved = false;
-        if (was != g_airMetalStarved && Global::RoleSettings::Air::EcoPriorityEnabled) {
-            GenericHelpers::LogUtil("[AIR][EcoPriority] metal bank " + int(pct * 100.0f) + "% of " + int(storage)
-                + (g_airMetalStarved ? ": starved - T2 plants to wave bombers and constructors, porc PREVENT"
-                                     : ": recovered - normal production"), 1);
-        }
-    }
-
-    // Porc while starved: the preventive structure per cluster and nothing more.
-    // Otherwise the shared policy (Military::Porc).
-    void Air_AiMakeDefence(int cluster, const AIFloat3& in pos)
-    {
-        // Same opening gate as the handler-less path in Military::AiMakeDefence.
-        if (!((ai.frame > 10 * MINUTE) || (aiEconomyMgr.metal.income > 10.f) || (aiEnemyMgr.mobileThreat > 0.f))) return;
-        if (!Air_IsMetalStarved()) {
-            // no caretaker on TECH's economy: an orphaned native turret order (see
-            // PORC ON TECH'S ECONOMY) held Layout's turret count full
-            Military::Porc::MakeDefence(cluster, pos, false, !EcoRole::Enabled());
-            return;
-        }
-        aiMilitaryMgr.porcMode = Military::Porc::MODE_PREVENT;
-        aiMilitaryMgr.porcBudgetMod = 1.0f;
-        GenericHelpers::LogUtil("[Porc] cluster=" + cluster + " mode=PREVENT (AIR metal-starved)", 3);
-        aiMilitaryMgr.DefaultMakeDefence(cluster, pos);
-    }
-
-    // A factory with nothing it may build while starved waits and asks again,
-    // instead of the native fallback (fighters at low income).
-    IUnitTask@ Air_StarvedFactoryWait(const string &in fname)
-    {
-        GenericHelpers::LogUtil("[AIR][EcoPriority] " + fname + " idles: metal-starved", 3);
-        return aiFactoryMgr.Enqueue(TaskS::Wait(false, Global::RoleSettings::Air::EcoPriorityFactoryWaitSeconds * SECOND));
-    }
-
     void Air_MainUpdate() {
-        Air_UpdateEcoPriority();
+        if (AirEconomy::Active()) { AirBuild::Tick(); AirEconomy::Tick(); AirProduction::Tick(); AirLayout::Draw(); Lanes::Tick(); }
         // Periodically update dynamic military quotas once the configured delay has passed
         if (ai.frame >= AIR_DYNAMIC_QUOTA_DELAY_FRAMES) {
             Air_UpdateDynamicMilitaryQuotas();
         }
-        Air_UpdateBastionGate();
-        Air_UpdateT1StrikeCap();
-        Air_UpdateT2PlantCap();
         // T2 bomber waves: launch when the hold reaches the target, size the next wave
         AirWaves::Update();
         //LogUtil("Air update logic executed", 5);
@@ -475,29 +412,9 @@ namespace RoleAir {
 
     ECONOMY HOOKS
 
-    The experimental system's per-update work, as Tech_EconomyUpdate runs it:
-    the opening's deadline, the bank trackers and the overflow share
-    (TechBuild::Tick), the chain's energy tracker and caps (TechChain::Tick),
-    and the layout's restored state (Layout::Update). TECH's invariants
-    (manager/invariants.as) are TECH's promises and are not checked here.
-
     ******************************************************************************/
 
     void Air_EconomyUpdate() {
-        if (!EcoRole::Enabled()) return;
-        const float metalIncome = Economy::GetMinMetalIncomeLast10s();
-        RoleTech::Opening::Tick();
-        TechBuild::Tick();
-        TechChain::Tick();
-        Layout::Update(metalIncome, Factory::primaryT2AirPlant !is null,
-            UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2AirConstructors()));
-    }
-
-    // Setup (LayoutHelpers::ApplyForRole): the factory pair (the T1 and T2
-    // aircraft plants) and the turret box behind it, as for TECH.
-    void Air_LayoutPlan(const string &in side)
-    {
-        Layout::Plan(side);
     }
 
     /******************************************************************************
@@ -513,70 +430,6 @@ namespace RoleAir {
         if (side == "cortex") return "corbw";
         if (side == "legion") return "legkam";
         return "";
-    }
-
-    /******************************************************************************
-
-    AIR SCOUTS
-
-    One scout early (MinAirScoutCount, first 5 minutes, while none is alive),
-    then one every ScoutIntervalSeconds for the rest of the game, skipped while
-    MaxAliveAirScouts are still flying. The factory.json weight for the scout
-    planes is 0 past tier 0, so without this AIR stops scouting after the opener.
-
-    Before the first T2 aircraft plant is finished, Armada and Cortex build their
-    T1 scout plane (armpeep Blink / corfink Fink) at the T1 plant; after it, every
-    side builds its T2 radar plane (armawac / corawac / legwhisper) at the T2
-    plant. Legion's T1 plant has no scout plane - legfig is an anti_air fighter
-    and would never scout - so Legion has no air scout before T2.
-
-    ******************************************************************************/
-    int g_airLastScoutFrame = -1;
-    int g_airT2ProductionTurn = 0;   // T2 plant production decisions past constructors and scouts
-
-    // Once a T2 aircraft plant is finished every side scouts with its T2 radar
-    // plane from it; before that Armada and Cortex use their T1 scout plane.
-    string Air_ScoutNameFor(const string &in side, bool fromT2Plant)
-    {
-        if (fromT2Plant) {
-            if (side == "armada") return "armawac";
-            if (side == "cortex") return "corawac";
-            if (side == "legion") return "legwhisper";
-            return "";
-        }
-        if (Factory::primaryT2AirPlant !is null) return "";
-        if (side == "armada") return "armpeep";
-        if (side == "cortex") return "corfink";
-        return "";
-    }
-
-    IUnitTask@ Air_TryAirScout(const string &in side, const AIFloat3 &in pos, bool fromT2Plant)
-    {
-        const string name = Air_ScoutNameFor(side, fromT2Plant);
-        if (name == "") return null;
-        CCircuitDef@ d = ai.GetCircuitDef(name);
-        if (d is null || !d.IsAvailable(ai.frame)) return null;
-
-        array<string> scouts = { "armpeep", "corfink", "armawac", "corawac", "legwhisper" };
-        const int alive = UnitDefHelpers::SumUnitDefCounts(scouts);
-        const int interval = Global::RoleSettings::Air::ScoutIntervalSeconds * SECOND;
-
-        string why = "";
-        if (g_airLastScoutFrame < 0) {
-            if (alive < Global::RoleSettings::Air::MinAirScoutCount && ai.frame <= 5 * MINUTE) why = "opener";
-        } else if (interval > 0 && ai.frame - g_airLastScoutFrame >= interval) {
-            if (alive < Global::RoleSettings::Air::MaxAliveAirScouts) why = "every " + Global::RoleSettings::Air::ScoutIntervalSeconds + " s";
-        }
-        // The clock starts at the opener; if the opener window passes unused, at 5 minutes.
-        if (why == "" && g_airLastScoutFrame < 0 && ai.frame > 5 * MINUTE) g_airLastScoutFrame = ai.frame - interval;
-        if (why == "") return null;
-
-        IUnitTask@ t = aiFactoryMgr.Enqueue(
-            TaskS::Recruit(Task::RecruitType::FIREPOWER, Task::Priority::HIGH, d, pos, 64.f));
-        if (t is null) return null;
-        g_airLastScoutFrame = ai.frame;
-        GenericHelpers::LogUtil("[AIR][Scout] " + name + " queued (" + why + ", alive=" + alive + ")", 2);
-        return t;
     }
 
     IUnitTask@ Air_TryT1StrikeOpener(const CCircuitDef@ facDef, const string &in side, const AIFloat3 &in pos)
@@ -618,6 +471,7 @@ namespace RoleAir {
     }
 
     IUnitTask@ Air_FactoryAiMakeTask(CCircuitUnit@ u) {
+        if (AirEconomy::Active()) return AirProduction::MakeTask(u);
         const CCircuitDef@ facDef = (u is null ? null : u.circuitDef);
         if (facDef is null) {
             return aiFactoryMgr.DefaultMakeTask(u);
@@ -655,19 +509,34 @@ namespace RoleAir {
                 );
             }
 
-            // Air scouts: one early, then one every ScoutIntervalSeconds all game.
-            IUnitTask@ tScout = Air_TryAirScout(side, pos, false);
-            if (tScout !is null) return tScout;
+            // Add one early scout after the first constructor.
+            int scoutTarget = Global::RoleSettings::Air::MinAirScoutCount;
+            const int SCOUT_PRODUCTION_DEADLINE = 5 * 60 * SECOND;
+            if (scoutTarget > 0 && ai.frame <= SCOUT_PRODUCTION_DEADLINE) {
+                array<string> allScouts = UnitHelpers::GetAllT1AircraftScouts();
+                int haveScouts = UnitDefHelpers::SumUnitDefCounts(allScouts);
+                if (haveScouts < scoutTarget) {
+                    string scoutName = UnitHelpers::GetT1AirScoutForSide(side);
+                    CCircuitDef@ scoutDef = ai.GetCircuitDef(scoutName);
+                    if (scoutDef !is null && scoutDef.IsAvailable(ai.frame)) {
+                        // Use HIGH priority to ensure scouts are produced ahead of other unit types
+                        return aiFactoryMgr.Enqueue(
+                            TaskS::Recruit(Task::RecruitType::FIREPOWER, Task::Priority::HIGH, scoutDef, pos, 64.f)
+                        );
+                    }
+                }
+            }
 
-            // Barb4-style build power: MinT1AirConstructorCount outright, then one per
-            // T1AirConstructorPerMetalIncome of income, up to MaxT1AirConstructorCount.
-            // Past the first, only an energy stall holds them back.
             int desiredT1Builders = (maxT1Builders < 1 ? maxT1Builders : 1);
-            if (Air_IsEconomyHealthy()) {
-                const float perCtor = AiMax(Global::RoleSettings::Air::T1AirConstructorPerMetalIncome, 1.0f);
-                desiredT1Builders = AiMax(maxT1Builders, int(metalIncome / perCtor));
-                // no ceiling on TECH's economy: its turret block scales with the build power near the base
-                if (!EcoRole::Enabled()) desiredT1Builders = AiMin(desiredT1Builders, Global::RoleSettings::Air::MaxT1AirConstructorCount);
+            if (Air_IsEconomyHealthy()
+                && metalIncome >= Global::RoleSettings::Air::SecondT1AirConstructorMetalIncome
+                && energyIncome >= Global::RoleSettings::Air::SecondT1AirConstructorEnergyIncome) {
+                desiredT1Builders = (maxT1Builders < 2 ? maxT1Builders : 2);
+            }
+            if (Air_IsEconomyHealthy()
+                && metalIncome >= Global::RoleSettings::Air::ThirdT1AirConstructorMetalIncome
+                && energyIncome >= Global::RoleSettings::Air::ThirdT1AirConstructorEnergyIncome) {
+                desiredT1Builders = maxT1Builders;
             }
             if (t1BuildersTotal < desiredT1Builders
                 && t1BuilderDef !is null && t1BuilderDef.IsAvailable(ai.frame)) {
@@ -708,16 +577,6 @@ namespace RoleAir {
 
         // If T2 plant: ensure advanced constructor targets, then apply T2-specific strategy
         if (isT2Plant) {
-            // Metal-starved: wave bombers and the constructor minimum only (see
-            // METAL-STARVED MODE); everything else below is skipped.
-            const bool starved = Air_IsMetalStarved();
-
-            // 0) T2 radar-plane scouts (see Air_TryAirScout).
-            if (!starved) {
-                IUnitTask@ tT2Scout = Air_TryAirScout(side, pos, true);
-                if (tT2Scout !is null) return tT2Scout;
-            }
-
             // 1) Ensure at least MinT2AirConstructorCount advanced air constructors exist globally
             const int maxT2Cons = Global::RoleSettings::Air::MinT2AirConstructorCount;
             int minT2Cons = (maxT2Cons < 1 ? maxT2Cons : 1);
@@ -725,16 +584,6 @@ namespace RoleAir {
                 && metalIncome >= Global::RoleSettings::Air::SecondT2AirConstructorMetalIncome
                 && energyIncome >= Global::RoleSettings::Air::SecondT2AirConstructorEnergyIncome) {
                 minT2Cons = maxT2Cons;
-            }
-            // The economy (see ECONOMY): the chain's constructors at once
-            // (Air::ChainT2Constructors, TECH's T2 constructors: mohos, fusion,
-            // advanced fusion), not staged on income - the mohos are what the
-            // income waits on; on top of them TECH's plan wants one per
-            // PlanAirConstructorPerMetal of income from PlanAirConstructorsFromMetal,
-            // and the first two of those are dedicated (D-107)
-            if (EcoRole::Enabled()) {
-                if (minT2Cons < Global::RoleSettings::Air::ChainT2Constructors) minT2Cons = Global::RoleSettings::Air::ChainT2Constructors;
-                minT2Cons += TechPlan::AirConstructorsWanted();
             }
             if (minT2Cons > 0) {
                 array<string> t2AirCons; t2AirCons = { "armaca", "coraca", "legaca" };
@@ -750,19 +599,13 @@ namespace RoleAir {
                 }
             }
 
-            // 2) Heavy air strike (Legion/Cortex only), on one T2 production turn in
-            // T2HeavyAirEveryNthTurn. Capping only the alive count did not stop it
-            // monopolizing the plant: Tyrannus / Dragon die in fights, the count
-            // rarely stays at the target, so every turn refilled heavies and the
-            // wave bombers below (legphoenix / corhurc) were almost never reached.
-            ++g_airT2ProductionTurn;
-            const int heavyEvery = Global::RoleSettings::Air::T2HeavyAirEveryNthTurn;
-            const bool heavyTurn = (heavyEvery <= 1) || (g_airT2ProductionTurn % heavyEvery == 0);
+            // 2) Heavy air strike (Legion/Cortex only), capped so this cannot
+            // monopolize every subsequent T2 production decision.
             {
                 float mi = metalIncome;
                 float incomeThresh = Global::RoleSettings::Air::T2HeavyAirIncomeThreshold;
                 int batch = Global::RoleSettings::Air::T2HeavyAirBatchPerFactory;
-                if (!starved && heavyTurn && batch > 0 && mi > incomeThresh && (side == "legion" || side == "cortex")) {
+                if (batch > 0 && mi > incomeThresh && (side == "legion" || side == "cortex")) {
                     string heavyName = (side == "legion" ? "legfort" : "corcrwh");
                     CCircuitDef@ heavyDef = ai.GetCircuitDef(heavyName);
                     int haveHeavy = UnitDefHelpers::GetUnitDefCount(heavyName);
@@ -783,21 +626,12 @@ namespace RoleAir {
             }
 
             // 3) T2 bomber waves: fill the hold with the next wave's bombers and escorts.
-            // Not gated on Air_IsCombatProductionReady: its only live condition at T2
-            // is "no energy stall", and skipping here during a stall did not save
-            // anything - the plant still built, from the heavy step or the native
-            // legaap/coraap weights, which favour legfort / corcrwh late. AirWaves
-            // keeps its own BomberWaveProductionMetalIncome gate.
-            {
+            if (Air_IsCombatProductionReady(metalIncome, energyIncome)) {
                 IUnitTask@ waveTask = AirWaves::MakeProductionTask(u, side, pos);
                 if (waveTask !is null) {
                     return waveTask;
                 }
             }
-
-            // No bomber due: wait rather than take the native fallback, which is
-            // fighter-weighted at low income.
-            if (starved) return Air_StarvedFactoryWait(fname);
 
             // Dynamic selection runs after bounded strategic quotas so it cannot
             // make constructor or heavy-air policy unreachable.
@@ -851,6 +685,7 @@ namespace RoleAir {
     }
 
     string Air_SelectFactoryHandler(const AIFloat3& in pos, bool isStart, bool isReset) {
+        if (AirEconomy::Active() && isReset) return "none";
         if(isStart) {
             if(Global::Map::NearestMapStartPosition !is null) {
                 return FactoryHelpers::SelectStartFactoryForRole(Global::AISettings::Role, Global::AISettings::Side);
@@ -865,16 +700,13 @@ namespace RoleAir {
 
     // Local default implementations (ready to customize per-role)
     bool Air_AiIsSwitchTime(int lastSwitchFrame) {
+        if (AirEconomy::Active()) return false;
         int interval = (30 * SECOND);
         return (lastSwitchFrame + interval) <= ai.frame;
     }
     bool Air_AiIsSwitchAllowed(const CCircuitDef@ facDef, float armyCost, int factoryCount, float metalCurrent, bool &out assistRequired) {
         const bool isOK = (armyCost > 1.2f * facDef.costM * float(factoryCount)) || (metalCurrent > facDef.costM);
-        // Never ask for factory assist. The flag feeds only native
-        // CheckMobileAssistRequired, the first step of every default builder task:
-        // it guards the recruiting air plant with any constructor within 600, which
-        // is where every new air constructor spawns. AIR wants them on economy.
-        assistRequired = false;
+        assistRequired = !isOK;
         return isOK;
     }
     int Air_MakeSwitchInterval() {
@@ -888,21 +720,22 @@ namespace RoleAir {
 
     ******************************************************************************/
     
-    // T2 bombers and T2 fighters belong to the wave system (manager/air_waves.as):
-    // held at base, released together, escorted. Every other air unit, including
-    // all T1 bombers, keeps the native default task (solo bomb runs as built).
+    // Experimental AIR: opening scout, T1/T2 home screen, then exclusive T2
+    // wave escorts/bombers. Other aircraft retain their native task selection.
     IUnitTask@ Air_MilitaryAiMakeTask(CCircuitUnit@ u)
     {
+        IUnitTask@ homeTask = AirProduction::HomeTask(u);
+        if (homeTask !is null) return homeTask;
+        IUnitTask@ raidTask = AirRaids::MakeTask(u);
+        if (raidTask !is null) return raidTask;
         IUnitTask@ waveTask = AirWaves::MakeTask(u);
         if (waveTask !is null) return waveTask;
-        // A wave fighter waiting for its group gets no task - not the native default
-        // either - and stays idle until AirWaves::Update parks it (fighter groups).
-        if (AirWaves::IsParking(u)) return null;
         return aiMilitaryMgr.DefaultMakeTask(u);
     }
 
     void Air_MilitaryAiUnitRemoved(CCircuitUnit@ unit, Unit::UseAs usage)
     {
+        AirProduction::Removed(unit);
         AirWaves::OnUnitRemoved(unit);
     }
 
@@ -917,80 +750,101 @@ namespace RoleAir {
 
     ******************************************************************************/ 
 
-    /******************************************************************************
-
-    ADVANCED AIRCRAFT PLANT CAP
-
-    The second advanced aircraft plant waits for SecondT2AircraftPlantMetalIncome
-    native average metal income, the third for ThirdT2AircraftPlantMetalIncome,
-    and there is never a fourth (MaxT2AircraftPlants). Enforced as the def cap on
-    armaap / coraap / legaap, so native UpdateFactoryTasks (which skips an
-    unavailable factory) obeys it as well as the air.plants row
-    (Air_T2Plants). One-way: a later dip does not lower the
-    cap under a plant that is already on the map or in construction.
-
-    ******************************************************************************/
-    int g_airT2PlantsAllowed = 1;
-    dictionary g_airT2PlantCapOrig;   // def name -> config cap (behaviour "limit")
-
-    int _Air_StagedT2Plants(float avgMetalIncome)
-    {
-        int n = 1;
-        if (avgMetalIncome >= Global::RoleSettings::Air::SecondT2AircraftPlantMetalIncome) ++n;
-        if (avgMetalIncome >= Global::RoleSettings::Air::ThirdT2AircraftPlantMetalIncome) ++n;
-        return AiMin(n, Global::RoleSettings::Air::MaxT2AircraftPlants);
-    }
-
-    void _Air_ApplyT2PlantCap()
-    {
-        array<string> plants = UnitHelpers::GetAllT2AircraftPlants();
-        for (uint i = 0; i < plants.length(); ++i) {
-            CCircuitDef@ d = ai.GetCircuitDef(plants[i]);
-            if (d is null) continue;
-            if (!g_airT2PlantCapOrig.exists(plants[i])) g_airT2PlantCapOrig.set(plants[i], d.maxThisUnit);
-            int orig = 0;
-            g_airT2PlantCapOrig.get(plants[i], orig);
-            d.maxThisUnit = AiMin(orig, g_airT2PlantsAllowed);
-        }
-    }
-
-    void Air_InitT2PlantCap()
-    {
-        g_airT2PlantCapOrig.deleteAll();
-        g_airT2PlantsAllowed = AiMax(1, _Air_StagedT2Plants(aiEconomyMgr.metal.income));
-        _Air_ApplyT2PlantCap();
-        GenericHelpers::LogUtil("[AIR][T2Plant] advanced aircraft plants capped at " + g_airT2PlantsAllowed
-            + " (2nd at " + int(Global::RoleSettings::Air::SecondT2AircraftPlantMetalIncome)
-            + ", 3rd at " + int(Global::RoleSettings::Air::ThirdT2AircraftPlantMetalIncome)
-            + " avg metal income, max " + Global::RoleSettings::Air::MaxT2AircraftPlants + ")", 2);
-    }
-
-    void Air_UpdateT2PlantCap()
-    {
-        const float mi = aiEconomyMgr.metal.income;
-        const int staged = _Air_StagedT2Plants(mi);
-        if (staged <= g_airT2PlantsAllowed) return;
-        g_airT2PlantsAllowed = staged;
-        _Air_ApplyT2PlantCap();
-        GenericHelpers::LogUtil("[AIR][T2Plant] avg metal income " + int(mi) + ": advanced aircraft plant cap raised to "
-            + g_airT2PlantsAllowed, 1);
-    }
-
-    /******************************************************************************
-
-    BUILDER DISPATCH
-
-    With the experimental economy on (see ECONOMY) every builder - commander,
-    T1 and T2 air constructors, turrets - takes its task from TECH's rule table;
-    AIR's own work is the table's air.plants row (Air_T2Plants). The
-    table never returns null. Off, native's default task.
-
-    ******************************************************************************/
     IUnitTask@ Air_BuilderAiMakeTask(CCircuitUnit@ builder) {
-        GenericHelpers::LogUtil("[Air_BuilderAiMakeTask] called for builder", 4);
+        if (AirEconomy::Active()) return AirRules::MakeTask(builder);
+        GenericHelpers::LogUtil("[Air_BuilderAiMakeTask] called for builder", 3);
         if (builder is null) return null;
-        if (EcoRole::Enabled()) return TechBuild::MakeTask(builder);
+
+        const CCircuitDef@ udef = builder.circuitDef;
+        if (udef is null) return Builder::MakeDefaultTaskWithLog(builder.id, "AIR");
+
+        if (UnitHelpers::IsCommander(udef)) {
+            return Air_Commander_AiMakeTask(builder);
+        }
+
+        string uname = udef.GetName();
+        // T2 air constructors were pure native default: nothing in this role
+        // ever asked them for a second plant, a fusion or a gantry, which is
+        // why AIR floated at max metal late. The ladder returns null when not
+        // floating, and the default runs as before.
+        if (UnitHelpers::GetAllT2AirConstructors().find(uname) >= 0) {
+            IUnitTask@ tLate = Air_LateExpansion_AiMakeTask(builder);
+            if (tLate !is null) return tLate;
+        }
+
+        bool isT1AirConstructor = (uname == "armca" || uname == "corca" || uname == "legca");
+        if (isT1AirConstructor) {
+            if (builder is Builder::primaryT1AirConstructor) {
+                return Air_T1Constructor_AiMakeTask(builder);
+            }
+            if (builder is Builder::secondaryT1AirConstructor) {
+                return Builder::MakeDefaultTaskWithLog(builder.id, "AIR expansion");
+            }
+            if (Air_IsBuildFocusActive()) {
+                return Air_AssignFocusedFollower(builder);
+            }
+        }
+
         return Builder::MakeDefaultTaskWithLog(builder.id, "AIR");
+    }
+
+    /******************************************************************************
+
+    BUILDER LOGIC (COMMANDER)
+
+    ******************************************************************************/ 
+
+    // Accelerate the first constructor, then reinforce the strategic lane while
+    // early build-power focus remains active.
+    IUnitTask@ Air_Commander_AiMakeTask(CCircuitUnit@ comm)
+    {
+        if (comm is null) return null;
+
+        const int AIR_FACTORY_ASSIST_DEADLINE_FRAMES = Global::RoleSettings::Air::CommanderFactoryAssistDeadlineSeconds * SECOND;
+        CCircuitUnit@ primary = Builder::primaryT1AirConstructor;
+        if (primary !is null) {
+            IUnitTask@ windTask = Air_TryCommanderWind(comm);
+            if (windTask !is null) return windTask;
+
+            if (g_airStrategicFocusTask !is null
+                && primary.id == g_airStrategicFocusLeaderId && Air_IsBuildFocusActive()) {
+                IUnitTask@ focusGuard = GuardHelpers::AssignWorkerGuard(
+                    comm,
+                    primary,
+                    Task::Priority::HIGH,
+                    true,
+                    Global::RoleSettings::Air::CommanderFactoryAssistGuardTimeoutSeconds * SECOND
+                );
+                if (focusGuard !is null) return focusGuard;
+            }
+        }
+
+        if (primary !is null || ai.frame > AIR_FACTORY_ASSIST_DEADLINE_FRAMES) {
+            return Builder::MakeDefaultTaskWithLog(comm.id, "AIR commander");
+        }
+
+        CCircuitUnit@ target = null;
+        if (Factory::primaryT1AirPlant !is null) {
+            @target = Factory::primaryT1AirPlant;
+        }
+
+        if (target is null) {
+            return Builder::MakeDefaultTaskWithLog(comm.id, "AIR commander");
+        }
+
+        // Assign a high-priority guard task so the commander sticks near the air factory.
+        // The guard timeout is configurable via role settings.
+        const int AIR_FACTORY_ASSIST_GUARD_TIMEOUT_FRAMES = Global::RoleSettings::Air::CommanderFactoryAssistGuardTimeoutSeconds * SECOND;
+        IUnitTask@ guardTask = GuardHelpers::AssignWorkerGuard(
+            comm,
+            target,
+            Task::Priority::HIGH,
+            true,
+            AIR_FACTORY_ASSIST_GUARD_TIMEOUT_FRAMES // guard duration; can be renewed while within deadline
+        );
+
+        if (guardTask !is null) return guardTask;
+        return Builder::MakeDefaultTaskWithLog(comm.id, "AIR commander");
     }
 
     void Air_BuilderAiUnitAdded(CCircuitUnit@ unit, Unit::UseAs usage)
@@ -1020,19 +874,26 @@ namespace RoleAir {
     }
 
     void Air_BuilderAiTaskRemoved(IUnitTask@ task, bool done) {
-        Air_OnPlantNanoTaskRemoved(task);
-        Air_OnPorcTaskRemoved(task);
+        AirBuild::Removed(task);
+        if (task !is null && task is g_airCommanderWindTask) {
+            @g_airCommanderWindTask = null;
+        }
+        if (task !is null && task is g_airStrategicFocusTask) {
+            @g_airStrategicFocusTask = null;
+            g_airStrategicFocusLeaderId = -1;
+        }
     }
 
     void Air_BuilderAiUnitRemoved(CCircuitUnit@ unit, Unit::UseAs usage)
     {
-    }
-
-    // A retiring factory's bookkeeping (manager/lifecycle.as). AIR retires none,
-    // but the experimental system reads Lifecycle; a gone factory is forgotten.
-    void Air_FactoryAiUnitRemoved(CCircuitUnit@ unit, Unit::UseAs usage)
-    {
-        Lifecycle::Forget(unit);
+        if (unit !is null && unit.circuitDef !is null
+            && UnitHelpers::IsCommander(unit.circuitDef)) {
+            @g_airCommanderWindTask = null;
+        }
+        if (unit !is null && unit.id == g_airStrategicFocusLeaderId) {
+            @g_airStrategicFocusTask = null;
+            g_airStrategicFocusLeaderId = -1;
+        }
     }
 
     /******************************************************************************
@@ -1042,14 +903,22 @@ namespace RoleAir {
     ******************************************************************************/
 
     /**************************************************************************
-     T2 AIRCRAFT PLANTS (the air.plants row)
+     LATE-GAME EXPANSION
 
-     A T2 plant the layout has no footprint for goes on a ring
-     LateExpansionRadius out from the start, one slot per plant, so the base
-     grows outward instead of packing the core. Nanos are TECH's: the chain's
-     nano step and the power.t1 / power.turret / turret.build rows place them
-     in the layout's turret box, flush against the plants.
+     Runs only while metal is floating (see Global::RoleSettings::Air::Late*).
+     Every structure it places goes on a ring LateExpansionRadius out from the
+     start position, slot chosen by how many of that structure already exist,
+     so each new one lands on fresh ground and the base grows outward instead
+     of packing the core. Returns null when there is nothing to do, and the
+     caller falls through to its normal policy.
      **************************************************************************/
+    bool Air_IsFloating(float mi)
+    {
+        if (mi < Global::RoleSettings::Air::LateMetalIncome) return false;
+        return aiEconomyMgr.isMetalFull
+            || aiEconomyMgr.metal.current >= Global::RoleSettings::Air::LateMetalCurrent;
+    }
+
     AIFloat3 Air_ClampToMap(const AIFloat3 &in p, float margin)
     {
         const float w = float(aiTerrainMgr.GetTerrainWidth());
@@ -1083,200 +952,214 @@ namespace RoleAir {
         return Air_ClampToMap(AIFloat3(c.x + dx * r, c.y, c.z + dz * r), Global::RoleSettings::Air::LateExpansionShake);
     }
 
-    // The air.plants row of TECH's rule table (roles/tech_rules.as). The first
-    // T2 aircraft plant is the economy's advanced lab (the chain's alab step
-    // and the lab.t2 row, placed by the layout); after it, another T2 aircraft
-    // plant whenever the ADVANCED AIRCRAFT PLANT CAP stage allows one more (2nd
-    // at SecondT2AircraftPlantMetalIncome, 3rd at ThirdT2AircraftPlantMetalIncome)
-    // and the bank holds RequiredMetalCurrentForT2AircraftPlant: flush against
-    // the turrets (Layout::OrderFactory), else on the ring round the start; not
-    // while metal-starved. Null when none is due: the table goes on to the chain
-    // and the economy.
-    IUnitTask@ Air_T2Plants(CCircuitUnit@ u)
+    IUnitTask@ Air_LateExpansion_AiMakeTask(CCircuitUnit@ u)
     {
         if (u is null || u.circuitDef is null) return null;
-        const string side = Global::AISettings::Side;
+        const float mi = Economy::GetMinMetalIncomeLast10s();
+        const float ei = Economy::GetMinEnergyIncomeLast10s();
+        if (!Air_IsFloating(mi)) return null;
+
+        const string side = UnitHelpers::GetSideForUnitName(u.circuitDef.GetName());
+        const float shake = Global::RoleSettings::Air::LateExpansionShake;
         const int t2Plants = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2AircraftPlants());
-        if (t2Plants < 1 || t2Plants >= g_airT2PlantsAllowed || Factory::IsT2AirPlantBuildQueued()
-            || Air_IsMetalStarved() || !Builder::IsT2FactoryOffCooldown()
-            || aiEconomyMgr.metal.current < Global::RoleSettings::Air::RequiredMetalCurrentForT2AircraftPlant) return null;
-        CCircuitDef@ d = ai.GetCircuitDef(UnitHelpers::GetT2AirPlantForSide(side));
-        if (d is null || !d.IsAvailable(ai.frame) || !u.circuitDef.CanBuild(d)) return null;
-        IUnitTask@ t = Layout::OrderFactory(d, 600 * SECOND);
-        string where = "flush against the turrets";
-        if (t !is null) {
-            Builder::MarkT2FactoryEnqueued();
-        } else {
-            @t = Builder::EnqueueT2AirPlant(side, Air_RingAnchor(t2Plants - 1), Global::RoleSettings::Air::LateExpansionShake, 600 * SECOND);
-            where = "on ring slot " + (t2Plants - 1);
-        }
-        if (t !is null) {
-            GenericHelpers::LogUtil("[AIR][Plants] T2 aircraft plant " + (t2Plants + 1) + "/" + g_airT2PlantsAllowed
-                + " " + where + " (avg metal income " + int(aiEconomyMgr.metal.income) + ")", 1);
-        }
-        return t;
-    }
+        const int nanos = UnitDefHelpers::GetUnitDefCount(UnitHelpers::GetT1NanoNameForSide(side));
+        const int fusions = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllFusionReactors());
+        const int afus = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllAdvancedFusionReactors());
+        const int gantries = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllLandGantries());
 
-    // The whole air.plants row: another T2 aircraft plant when one is due,
-    // else a nano for a plant past the first.
-    IUnitTask@ Air_PlantsRow(CCircuitUnit@ u, float mi)
-    {
-        IUnitTask@ t = Air_T2Plants(u);
-        if (t !is null) return t;
-        return Air_PlantNanos(u, mi);
-    }
-
-    /**************************************************************************
-     NANOS AT THE T2 AIRCRAFT PLANTS PAST THE FIRST
-
-     The first T2 aircraft plant is the economy's advanced lab, flush against
-     TECH's turret block, and served by it. The plants the air.plants row adds
-     are AIR's alone, so their build power is AIR's too: every finished T2
-     aircraft plant but the primary gets PlantNanosBase construction turrets,
-     one more per PlantNanosIncomeStep of metal income above
-     PlantNanosIncomeFrom up to PlantNanosMax, and PlantNanosFloatBonus more
-     while the metal bank stays full (TechBuild::MetalFullLong). A plant's
-     turrets are those within a turret's reach of it (static assist build
-     power there / a turret's). The plant fewest served first,
-     PlantNanosInFlight orders at a time, none while metal-starved. Native
-     places each at the plant (Builder::EnqueueT1Nano); the air.turret.plant
-     row keeps them on the plant's production.
-     **************************************************************************/
-    const float AIR_NANO_REACH = 400.0f;   // armnanotc / cornanotc / legnanotc builddistance
-    const float AIR_NANO_POWER = 200.0f;   // ... and workertime
-    array<IUnitTask@> g_airPlantNanoTasks;
-    int g_airPlantNanoLog = -100000;
-
-    int Air_PlantNanosWanted(float mi)
-    {
-        int n = Global::RoleSettings::Air::PlantNanosBase;
-        const float step = AiMax(Global::RoleSettings::Air::PlantNanosIncomeStep, 1.0f);
-        if (mi > Global::RoleSettings::Air::PlantNanosIncomeFrom)
-            n += int((mi - Global::RoleSettings::Air::PlantNanosIncomeFrom) / step);
-        if (n > Global::RoleSettings::Air::PlantNanosMax) n = Global::RoleSettings::Air::PlantNanosMax;
-        if (TechBuild::MetalFullLong()) n += Global::RoleSettings::Air::PlantNanosFloatBonus;
-        return n;
-    }
-
-    IUnitTask@ Air_PlantNanos(CCircuitUnit@ u, float mi)
-    {
-        if (u is null || u.circuitDef is null || Air_IsMetalStarved()) return null;
-        if (int(g_airPlantNanoTasks.length()) >= Global::RoleSettings::Air::PlantNanosInFlight) return null;
-        const string side = Global::AISettings::Side;
-        CCircuitDef@ nano = ai.GetCircuitDef(UnitHelpers::GetT1NanoNameForSide(side));
-        if (nano is null || !nano.IsAvailable(ai.frame) || !u.circuitDef.CanBuild(nano)) return null;
-        const int wanted = Air_PlantNanosWanted(mi);
-        CCircuitUnit@ best = null;
-        int bestHave = wanted;
-        array<string>@ keys = Factory::allFactories.getKeys();
-        for (uint i = 0; keys !is null && i < keys.length(); ++i) {
-            CCircuitUnit@ fac = null;
-            if (!Factory::allFactories.get(keys[i], @fac) || fac is null || fac.circuitDef is null) continue;
-            if (fac is Factory::primaryT2AirPlant || !UnitHelpers::IsT2AircraftPlant(fac.circuitDef.GetName())) continue;
-            const int have = int(aiBuilderMgr.GetStaticBuildPowerNear(fac.GetPos(ai.frame), AIR_NANO_REACH) / AIR_NANO_POWER);
-            if (have < bestHave) { bestHave = have; @best = fac; }
-        }
-        if (best is null) return null;
-        IUnitTask@ t = Builder::EnqueueT1Nano(side, best.GetPos(ai.frame), SQUARE_SIZE * 16, 120 * SECOND, Task::Priority::NORMAL);
-        if (t is null) return null;
-        g_airPlantNanoTasks.insertLast(t);
-        if (ai.frame - g_airPlantNanoLog > 10 * SECOND) {
-            g_airPlantNanoLog = ai.frame;
-            GenericHelpers::LogUtil("[AIR][Plants] nano " + (bestHave + 1) + "/" + wanted + " for " + best.circuitDef.GetName() + " " + best.id
-                + " (+" + int(mi) + " metal" + (TechBuild::MetalFullLong() ? ", bank full" : "") + ") by " + u.circuitDef.GetName() + " " + u.id, 1);
-        }
-        return t;
-    }
-
-    void Air_OnPlantNanoTaskRemoved(IUnitTask@ task)
-    {
-        for (uint i = 0; i < g_airPlantNanoTasks.length(); ++i)
-            if (g_airPlantNanoTasks[i] is task) { g_airPlantNanoTasks.removeAt(i); return; }
-    }
-
-    // The air.turret.plant row: a construction turret with a producing T2
-    // aircraft plant in reach assists it (production is AIR's sink); TECH's
-    // turret rows above it keep the economy under construction first.
-    IUnitTask@ Air_TurretAssistPlant(CCircuitUnit@ u)
-    {
-        if (u is null) return null;
-        const AIFloat3 here = u.GetPos(ai.frame);
-        CCircuitUnit@ best = null;
-        float bestSq = 1.0e30f;
-        array<string>@ keys = Factory::allFactories.getKeys();
-        for (uint i = 0; keys !is null && i < keys.length(); ++i) {
-            CCircuitUnit@ fac = null;
-            if (!Factory::allFactories.get(keys[i], @fac) || fac is null || fac.circuitDef is null || fac.task is null) continue;
-            if (!UnitHelpers::IsT2AircraftPlant(fac.circuitDef.GetName())) continue;
-            const float sq = MapHelpers::SqDist(here, fac.GetPos(ai.frame));
-            const float r = AIR_NANO_REACH + 48.0f;   // the turret's reach plus the plant's half-size
-            if (sq <= r * r && sq < bestSq) { bestSq = sq; @best = fac; }
-        }
-        if (best is null) return null;
-        return GuardHelpers::AssignWorkerGuard(u, best, Task::Priority::LOW, true, 20 * SECOND);
-    }
-
-    /**************************************************************************
-     PORC ON TECH'S ECONOMY (the air.porc row)
-
-     Native porc (Air_AiMakeDefence, Cent's air-denial chain) queues DEFENCE,
-     BIG_GUN and RADAR orders, and TECH's rule table adopts no native order
-     but a repair (TechBuild::QueuedOrder): on TECH's economy AIR built no porc
-     at all (no Juno, anti-nuke, Bertha or EMP in three games, where the games
-     on AIR's own economy built one to seven). This row hands the queued porc
-     orders (DEFENCE, BIG_GUN) out, the nearest first, once a T2 aircraft plant
-     stands, to one builder per PorcConstructorsPerBuilder of our constructors
-     (PorcBuildersMin at least). Not before: with a flat minimum of two and
-     native's radar orders counted, two of AIR's three constructors spent 1:26
-     to 7:00 on radar towers and the T2 plant came three minutes after TECH's
-     (Starwatcher 2026-09-29); TECH's defence.base row covers the base until
-     then. How much is queued stays the porc policy's (PREVENT while starved).
-     **************************************************************************/
-    dictionary g_airPorcBuilders;   // builder id -> the porc order it was given
-    int g_airPorcLog = -100000;
-
-    IUnitTask@ Air_PorcTask(CCircuitUnit@ u)
-    {
-        if (u is null || u.circuitDef is null) return null;
-        int onPorc = 0;
-        array<string>@ keys = g_airPorcBuilders.getKeys();
-        for (uint i = 0; keys !is null && i < keys.length(); ++i) {
-            IUnitTask@ given = null;
-            g_airPorcBuilders.get(keys[i], @given);
-            CCircuitUnit@ b = ai.GetTeamUnit(parseInt(keys[i]));
-            if (b is null || given is null || b.task !is given) { g_airPorcBuilders.delete(keys[i]); continue; }
-            ++onPorc;
-        }
-        const int cons = UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT1Cons()) + UnitDefHelpers::SumUnitDefCounts(EcoRole::AllT2Cons());
-        const int per = (Global::RoleSettings::Air::PorcConstructorsPerBuilder < 1) ? 1 : Global::RoleSettings::Air::PorcConstructorsPerBuilder;
-        if (EcoRole::PrimaryT2Lab() is null) return null;   // the economy first: nothing before the T2 aircraft plant
-        const int cap = AiMax(Global::RoleSettings::Air::PorcBuildersMin, cons / per);
-        if (onPorc >= cap) return null;
-        array<int> types = { int(Task::BuildType::DEFENCE), int(Task::BuildType::BIG_GUN) };   // no RADAR: native's own radar schedule, not porc
-        for (uint i = 0; i < types.length(); ++i) {
-            IUnitTask@ t = aiBuilderMgr.FindQueuedTask(u, types[i]);
-            if (t is null) continue;
-            g_airPorcBuilders.set("" + u.id, @t);
-            if (ai.frame - g_airPorcLog > 10 * SECOND) {
-                g_airPorcLog = ai.frame;
-                IBuilderTask@ bt = cast<IBuilderTask>(t);
-                GenericHelpers::LogUtil("[AIR][Porc] " + ((bt !is null && bt.buildDef !is null) ? bt.buildDef.GetName() : "order")
-                    + " by " + u.circuitDef.GetName() + " " + u.id + " (" + (onPorc + 1) + " of " + cap + " builders on porc)", 1);
+        // 1. Build power. Nanos beyond the income-based target, anchored on the
+        //    ring so they stand where the new plants will be, not in the core.
+        const int nanoTarget = (t2Plants < 1 ? 1 : t2Plants) * Global::RoleSettings::Air::LateNanosPerT2Plant;
+        if (nanos < nanoTarget && nanos < Global::RoleSettings::Air::NanoMaxCount) {
+            IUnitTask@ t = Builder::EnqueueT1Nano(side, Air_RingAnchor(nanos), shake, 120 * SECOND, Task::Priority::NORMAL);
+            if (t !is null) {
+                GenericHelpers::LogUtil("[AIR][Late] nano " + (nanos + 1) + "/" + nanoTarget
+                    + " (metal " + int(aiEconomyMgr.metal.current) + ", income " + int(mi) + ")", 1);
+                return Air_SetStrategicFocus(u, t);
             }
-            return t;
         }
-        return null;
+
+        // 2. Production. More T2 air plants, each on the next ring slot.
+        if (t2Plants < Global::RoleSettings::Air::LateMaxT2AircraftPlants && !Factory::IsT2AirPlantBuildQueued()) {
+            IUnitTask@ t = Builder::EnqueueT2AirPlant(side, Air_RingAnchor(t2Plants), shake, 600 * SECOND);
+            if (t !is null) {
+                GenericHelpers::LogUtil("[AIR][Late] T2 air plant " + (t2Plants + 1) + "/"
+                    + Global::RoleSettings::Air::LateMaxT2AircraftPlants + " on ring slot " + t2Plants, 1);
+                return Air_SetStrategicFocus(u, t);
+            }
+        }
+
+        // 3. Energy to carry it. A fusion per LateEnergyPerT2Plant of shortfall;
+        //    an advanced fusion once rich enough for one.
+        const float wantEnergy = float(t2Plants < 1 ? 1 : t2Plants) * Global::RoleSettings::Air::LateEnergyPerT2Plant;
+        if (ei < wantEnergy || aiEconomyMgr.isEnergyEmpty) {
+            if (mi >= Global::RoleSettings::Air::LateAFUSMetalIncome
+                && aiEconomyMgr.metal.current >= Global::RoleSettings::Air::LateAFUSMetalCurrent) {
+                IUnitTask@ t = Builder::EnqueueAFUS(side, Air_RingAnchor(fusions + afus), shake, 900 * SECOND);
+                if (t !is null) {
+                    GenericHelpers::LogUtil("[AIR][Late] advanced fusion (energy " + int(ei) + " < " + int(wantEnergy) + ")", 1);
+                    return Air_SetStrategicFocus(u, t);
+                }
+            }
+            IUnitTask@ t = Builder::EnqueueFUS(side, Air_RingAnchor(fusions + afus), shake, 600 * SECOND, Task::Priority::NORMAL);
+            if (t !is null) {
+                GenericHelpers::LogUtil("[AIR][Late] fusion (energy " + int(ei) + " < " + int(wantEnergy) + ")", 1);
+                return Air_SetStrategicFocus(u, t);
+            }
+        }
+
+        // 4. T3. The gantry is the only way to the experimental air plant:
+        //    armhaap is built solely by the T3 air constructor the gantry makes.
+        if (gantries < 1
+            && mi >= Global::RoleSettings::Air::LateGantryMetalIncome
+            && aiEconomyMgr.metal.current >= Global::RoleSettings::Air::LateGantryMetalCurrent) {
+            IUnitTask@ t = Builder::EnqueueLandGantry(side);
+            if (t !is null) {
+                GenericHelpers::LogUtil("[AIR][Late] gantry (metal " + int(aiEconomyMgr.metal.current) + ", income " + int(mi) + ")", 1);
+                return Air_SetStrategicFocus(u, t);
+            }
+        }
+
+        return null;   // floating, but every rung is capped, queued or on cooldown
     }
 
-    void Air_OnPorcTaskRemoved(IUnitTask@ task)
-    {
-        array<string>@ keys = g_airPorcBuilders.getKeys();
-        for (uint i = 0; keys !is null && i < keys.length(); ++i) {
-            IUnitTask@ given = null;
-            g_airPorcBuilders.get(keys[i], @given);
-            if (given is task) g_airPorcBuilders.delete(keys[i]);
+    IUnitTask@ Air_T1Constructor_AiMakeTask(CCircuitUnit@ u) {
+        // Snapshot economy
+        //float mi = Global::Economy::MetalIncome;
+        //float ei = Global::Economy::EnergyIncome;
+		float mi = Economy::GetMinMetalIncomeLast10s();
+		float ei = Economy::GetMinEnergyIncomeLast10s();
+
+        AIFloat3 conLocation = u.GetPos(ai.frame);
+        string unitSide = UnitHelpers::GetSideForUnitName(u.circuitDef.GetName());
+
+        // Floating metal outranks the whole T1 ladder below: a converter or a
+        // solar does nothing for a bank that is already full.
+        {
+            IUnitTask@ tLate = Air_LateExpansion_AiMakeTask(u);
+            if (tLate !is null) return tLate;
         }
+
+        if (u is Builder::primaryT1AirConstructor) {
+
+            // Consider upgrading to a T2 Aircraft Plant if economy and prerequisites allow
+            //if (!Builder::IsT2AirPlantQueued) {
+                int t2AirPlantCount = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2AircraftPlants());
+                bool hasPrimaryT1AirPlant = (Factory::primaryT1AirPlant !is null);
+                if (EconomyHelpers::ShouldBuildT2AircraftPlant(
+                    /*mi*/ mi,
+                    /*ei*/ ei,
+                    /*metalCurrent*/ aiEconomyMgr.metal.current,
+                    /*requiredMetalIncome*/ Global::RoleSettings::Air::RequiredMetalIncomeForT2AircraftPlant,
+                    /*requiredMetalCurrent*/ Global::RoleSettings::Air::RequiredMetalCurrentForT2AircraftPlant,
+                    /*requiredEnergyIncome*/ Global::RoleSettings::Air::RequiredEnergyIncomeForT2AircraftPlant,
+                    /*constructorDef*/ u.circuitDef,
+                    /*t2AirPlantCount*/ t2AirPlantCount,
+                    /*maxAllowed*/ Global::RoleSettings::Air::MaxT2AircraftPlants
+                ) && hasPrimaryT1AirPlant) {
+                    AIFloat3 anchor = Factory::GetT1AirPlantPos();
+                    IUnitTask@ tT2Air = Builder::EnqueueT2AirPlant(unitSide, anchor, SQUARE_SIZE * 30, 600 * SECOND);
+                    if (tT2Air !is null) return Air_SetStrategicFocus(u, tT2Air);
+                }
+                // Reserve-trigger: if metal reserves exceed 1300 and we have zero T2 air plants, force-queue one
+                // regardless of income thresholds. Avoid duplicate enqueue if a build is already queued.
+                if (hasPrimaryT1AirPlant && t2AirPlantCount <= 0 && aiEconomyMgr.metal.current > 1300.0f) {
+                    AIFloat3 anchor2 = Factory::GetT1AirPlantPos();
+                    IUnitTask@ tForceT2 = Builder::EnqueueT2AirPlant(unitSide, anchor2, SQUARE_SIZE * 40, 600 * SECOND);
+                    if (tForceT2 !is null) return Air_SetStrategicFocus(u, tForceT2);
+                }
+           // }
+
+            // A mex upgrade outranks the whole energy ladder: best metal per metal,
+            // and the supply of spots is finite. See doc/known-issues.md KI-213.
+            if (Global::RoleSettings::MexUpgradeFirst)
+            {
+            	IUnitTask@ tMexUp = EconomyHelpers::EnqueueMexUpgradeIfFirst(u, Global::Map::StartPos,
+            			Global::RoleSettings::MexUpgradeRadius,
+            			Global::RoleSettings::MexUpgradeMaxConcurrent, "AIR");
+            	if (tMexUp !is null) return tMexUp;
+            }
+
+            // Build Energy Converter?
+            if (EconomyHelpers::ShouldBuildT1EnergyConverter(
+                /*metalIncome*/ mi,
+                /*energyIncome*/ ei,
+                /*energyCurrent*/ aiEconomyMgr.energy.current,
+                /*energyStorage*/ aiEconomyMgr.energy.storage,
+                /*untilMetalIncome*/ Global::RoleSettings::Air::BuildT1ConvertersUntilMetalIncome,
+                /*minEnergyIncome*/ Global::RoleSettings::Air::BuildT1ConvertersMinimumEnergyIncome,
+                /*minEnergyCurrentPercent*/ Global::RoleSettings::Air::BuildT1ConvertersMinimumEnergyCurrentPercent
+            )) {
+                IUnitTask@ tConv = Builder::EnqueueT1EnergyConverter(unitSide, conLocation, SQUARE_SIZE * 32, SECOND * 30);
+                if (tConv !is null) return Air_SetStrategicFocus(u, tConv);
+            }
+
+            // Build regular solar?
+            if (EconomyHelpers::ShouldBuildT1Solar(
+                /*energyIncome*/ ei,
+                /*minEnergyIncome*/ Global::RoleSettings::Air::SolarEnergyIncomeMinimum
+            )) {
+                IUnitTask@ tSolar = Builder::EnqueueT1Solar(u.id, unitSide, conLocation, SQUARE_SIZE * 32, SECOND * 30);
+                if (tSolar !is null) return Air_SetStrategicFocus(u, tSolar);
+            }
+
+            // Build a T1 nano caretaker if under desired target (income-based) or reserves allow
+            float energyPercent = (aiEconomyMgr.energy.storage > 0.0f)
+                ? (aiEconomyMgr.energy.current / aiEconomyMgr.energy.storage)
+                : 0.0f;
+
+            // Only build nanos if we have a preferred factory to anchor around
+            if (Factory::GetPreferredFactory() !is null && EconomyHelpers::ShouldBuildT1Nano(
+                ei,
+                mi,
+                Global::RoleSettings::Air::NanoEnergyPerUnit,
+                Global::RoleSettings::Air::NanoMetalPerUnit,
+                Global::RoleSettings::Air::NanoMaxCount,
+                aiEconomyMgr.metal.current,
+                Global::RoleSettings::Air::NanoBuildWhenOverMetal,
+                energyPercent
+            )) {
+                // Centralized selection with per-factory nano caps and prioritization
+                CCircuitUnit@ targetFactory = Factory::SelectFactoryNeedingNano();
+                if (targetFactory !is null) {
+                    IUnitTask@ tNano = Factory::EnqueueNanoForFactory(targetFactory, Task::Priority::NORMAL);
+                    if (tNano !is null) return Air_SetStrategicFocus(u, tNano);
+                }
+            }
+
+            // Build advanced T1 solar using Air predicate
+            // Compute current T2 air-related counts
+            array<string> t2AirCons; t2AirCons = { "armaca", "coraca", "legaca" };
+            int t2ConstructionAircraftCount = UnitDefHelpers::SumUnitDefCounts(t2AirCons);
+            array<string> t2AirPlants = UnitHelpers::GetAllT2AircraftPlants();
+            int t2AircraftPlantCount = UnitDefHelpers::SumUnitDefCounts(t2AirPlants);
+
+            const bool advancedSolarTimingReady =
+                ai.frame >= Global::RoleSettings::Air::AdvancedSolarEarliestSeconds * SECOND
+                && mi >= Global::RoleSettings::Air::AdvancedSolarMinimumMetalIncome
+                && aiEconomyMgr.metal.current >= Global::RoleSettings::Air::AdvancedSolarMinimumMetalCurrent
+                && !aiEconomyMgr.isEnergyFull
+                && !Air_HasCommanderWindOpportunity(unitSide);
+            if (advancedSolarTimingReady && EconomyHelpers::ShouldBuildT1AdvancedSolar(
+                /*energyIncome*/ ei,
+                /*metalIncome*/ mi,
+                /*energyIncomeMinimumThreshold*/ Global::RoleSettings::Air::AdvancedSolarEnergyIncomeMinimum,
+                /*energyIncomeMaximumThreshold*/ Global::RoleSettings::Air::AdvancedSolarEnergyIncomeMaximum,
+                /*t2ConstructorCount*/ t2ConstructionAircraftCount,
+                /*t2FactoryCount*/ t2AircraftPlantCount,
+                /*isT2FactoryQueued*/ Factory::IsT2AirPlantBuildQueued(),
+                /*enableT2ProgressGate*/ true,
+                /*metalIncomeFallbackMinimum*/ 6.0f
+            )) {
+                IUnitTask@ tAdvSolar = Builder::EnqueueT1AdvancedSolar(u.id, unitSide, conLocation, SQUARE_SIZE * 32, SECOND * 30);
+                if (tAdvSolar !is null) return Air_SetStrategicFocus(u, tAdvSolar);
+            } 
+        }
+
+        IUnitTask@ defaultTask = Builder::MakeDefaultTaskWithLog(u.id, "AIR strategic");
+        return Air_SetStrategicFocus(u, defaultTask);
     }
+
 
     /******************************************************************************
 
@@ -1324,9 +1207,9 @@ namespace RoleAir {
             "corscreamer", "corgate", "cortron", "cortoast", "corbuzz", "cortoast", "cortoast"}},
         {"legion", array<string> = {
             "leglht", "legrl", "legflak", "leghive", "leglupara", "legflak", "legjuno", "leglraa",
-            "legabm", "legbastion", "legflak", "leglraa", "legdeflector", "legcluster", "leglrpc", "legflak",
-            "leglraa", "legnanotc", "legnanotc", "leglrpc", "legdeflector", "leglrpc",   // no Perdition: no working fire DLL
-            "leglraa", "legdeflector", "legbastion", "legstarfall", "legbastion", "legbastion"}}
+            "legabm", "legbastion", "legflak", "leglraa", "legdeflector", "legacluster", "leglrpc", "legflak",
+            "legperdition", "leglraa", "legnanotc", "legnanotc", "leglrpc", "legdeflector", "leglrpc",
+            "leglraa", "legdeflector", "legperdition", "legbastion", "legstarfall", "legbastion", "legbastion"}}
     };
 
     void Air_PorcChain(const string &in side)
@@ -1352,6 +1235,12 @@ namespace RoleAir {
         GenericHelpers::LogUtil("[Porc] AIR: " + side + " air-denial chain set (" + land.length() + " entries)", 1);
     }
 
+    void Air_AiMakeDefence(int cluster, const AIFloat3& in pos)
+    {
+        if (!Global::RoleSettings::Air::ExperimentalBuild && (ai.frame > 10 * MINUTE
+            || aiEconomyMgr.metal.income > 10.0f || aiEnemyMgr.mobileThreat > 0.0f)) Military::Porc::MakeDefence(cluster, pos);
+    }
+
     void Register() {
         if (RoleConfigs::Get(AiRole::AIR) !is null) return;
         RoleConfig@ cfg = RoleConfig(AiRole::AIR, cast<MainUpdateDelegate@>(@Air_MainUpdate));
@@ -1372,10 +1261,7 @@ namespace RoleAir {
         @cfg.BuilderAiTaskRemovedHandler = cast<AiTaskRemovedDelegate@>(@Air_BuilderAiTaskRemoved);
 
         @cfg.SelectFactoryHandler = cast<SelectFactoryDelegate@>(@Air_SelectFactoryHandler);
-        @cfg.FactoryAiUnitRemoved = cast<AiUnitRemovedDelegate@>(@Air_FactoryAiUnitRemoved);
         @cfg.EconomyUpdateHandler = cast<EconomyUpdateDelegate@>(@Air_EconomyUpdate);
-        // The economy's planned base (see ECONOMY): the factory pair and turret box at setup
-        @cfg.LayoutPlanHandler = cast<LayoutPlanDelegate@>(@Air_LayoutPlan);
 
         @cfg.RoleMatchHandler = cast<RoleMatchDelegate@>(@Air_RoleMatch);
 
@@ -1384,8 +1270,8 @@ namespace RoleAir {
         @cfg.MilitaryAiTaskRemovedHandler = cast<AiTaskRemovedDelegate@>(@Air_MilitaryAiTaskRemoved);
 
         @cfg.PorcChainHandler = cast<PorcChainDelegate@>(@Air_PorcChain);
-        // Porc: preventive only while metal-starved, the shared policy otherwise.
         @cfg.AiMakeDefenceHandler = cast<AiMakeDefence@>(@Air_AiMakeDefence);
+        @cfg.LayoutPlanHandler = cast<LayoutPlanDelegate@>(@AirLayout::Init);
 
         RoleConfigs::Register(cfg);
     }

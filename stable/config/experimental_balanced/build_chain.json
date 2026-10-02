@@ -4,25 +4,13 @@
 		"unit": {
 		//             	   0          1         2          3            4         5          6          7            8         9        10
 			"armada": ["armllt",  "armtl",  "armrl",   "armbeamer", "armhlt", "armjuno", "armclaw", "armcir",  "armferret", "armpb", "armatl",
-					   "armflak", "armamb", "armanni", "armguard",  "armamd", "armtarg", "armgate", "armmercury", "armnanotc", "armbrtha", "armvulc", "armemp", "armveil", "armflak"],
+					   "armflak", "armamb", "armanni", "armguard",  "armamd", "armtarg", "armgate", "armmercury", "armnanotc", "armbrtha", "armvulc", "armemp"],
 		//            	   0          1           2          3          4         5          6            7          8          9      10
 			"cortex": ["corllt",  "cortl",    "corrl",   "corhllt", "corhlt", "corjuno", "cormaw",  "cormadsam", "corerad", "corvipe", "coratl",
-					   "corflak", "cortoast", "cordoom", "corpun",  "corfmd", "cortarg", "corgate", "corscreamer", "cornanotc", "corint", "corbuzz", "cortron", "corshroud", "corflak"]
+					   "corflak", "cortoast", "cordoom", "corpun",  "corfmd", "cortarg", "corgate", "corscreamer", "cornanotc", "corint", "corbuzz", "cortron"]
 		},
 		// Actual number of defences per cluster bounded by income - the order of defenses that should be build with numbers as above.
-		// 23: T2 radar jammer (Veil / Shroud / legajam) - once, after the first Annihilator / Doomsday /
-		//     Cluster: the cluster is hidden from enemy radar, so artillery cannot target it unseen.
-		//     ~125 metal but ~19000 energy and 125 E/s upkeep: late only.
-		// 24: T2 flak (armflak / corflak / legflak, 820-850 metal, 13000-14000 energy, 19000-20100 build time),
-		//     twice. The land order never reached flak before. Cumulative metal at a point, AA counted
-		//     (an AA entry costs nothing while the enemy has no air - it is skipped), income needed at
-		//     amountFactor 40 (32-48 by map size; half that when a full bank doubles the budget):
-		//       1st, after the Juno and before the first T2 artillery: arm 3385 / cor 3060 / leg 3850,
-		//           +85 / +77 / +96 - past every role's T2 lab threshold (+17 to +50), so a T2
-		//           constructor exists when a cluster gets here.
-		//       2nd, after the second T2 artillery: arm 9205 / cor 8910 / leg 13070, +230 / +223 / +327.
-		//     Legion also builds flak at 22, the slots where Armada / Cortex build their EMP / Tron.
-		"land":  [0, 2, 3, 3, 4, 3, 7, 5, 24, 12, 12, 24, 15, 13, 23, 18, 17, 18, 20, 22, 20, 19, 19, 20, 20, 18, 17, 17, 22, 12, 12, 21, 12, 12, 12],
+		"land":  [0, 2, 3, 3, 4, 3, 7, 5, 12, 12, 15, 13, 18, 17, 18, 20, 22, 20, 19, 19, 20, 20, 18, 17, 17, 22, 12, 12, 21, 12, 12, 12],
 		"water": [1, 1, 19, 1, 4, 9, 10, 9, 10],
 		"prevent": 1,  // number of preventive defences
 		"amount": {  // income bound factor

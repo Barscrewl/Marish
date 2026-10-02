@@ -597,12 +597,6 @@ namespace RoleFront {
         // Route T1 land constructors (bot or vehicle) to FRONT logic; others fallback
         int ctorTier = UnitHelpers::GetConstructorTier(udef);
         if (ctorTier == 1) {
-            // The first T2 plant of each kind: every T1 constructor, not only the
-            // primary / secondary ones routed below (Front_TryFirstT2Plant)
-            {
-                IUnitTask@ tFirstT2 = Front_TryFirstT2Plant(builder, UnitHelpers::GetSideForUnitName(udef.GetName()), Economy::GetMinMetalIncomeLast10s());
-                if (tFirstT2 !is null) return tFirstT2;
-            }
             if (builder is Builder::primaryT1BotConstructor || builder is Builder::secondaryT1BotConstructor
              || builder is Builder::primaryT1VehConstructor || builder is Builder::secondaryT1VehConstructor) {
                 // Use same economy snapshot style as T2: min over last 10s for incomes
@@ -613,16 +607,13 @@ namespace RoleFront {
                 return Front_T1Constructor_AiMakeTask(builder, defaultTask, metalIncome, energyIncome, isEnergyStalling, isEnergyFull);
             }
         } else if (ctorTier == 2) {
-            // Mirror TECH role routing: handle primary/secondary/freelance T2 constructors explicitly.
-            // Vehicle constructors too (main's d5c9904): a vehicle-opening FRONT otherwise never
-            // reached the fusion step or the silo block (Front_T2Constructor_AiMakeTask).
+            // Mirror TECH role routing: handle primary/secondary T2 bot constructors explicitly
             bool isEnergyFull = aiEconomyMgr.isEnergyFull;
             float metalIncome = Economy::GetMinMetalIncomeLast10s();
             float energyIncome = Economy::GetMinEnergyIncomeLast10s();
             float metalCurrent = aiEconomyMgr.metal.current;
             bool isEnergyLessThan90Percent = aiEconomyMgr.energy.current < aiEconomyMgr.energy.storage * Global::RoleSettings::Front::EnergyStorageLowPercent;
-            if (builder is Builder::primaryT2BotConstructor || builder is Builder::secondaryT2BotConstructor || builder is Builder::freelanceT2BotConstructor
-             || builder is Builder::primaryT2VehConstructor || builder is Builder::secondaryT2VehConstructor || builder is Builder::freelanceT2VehConstructor) {
+            if (builder is Builder::primaryT2BotConstructor || builder is Builder::secondaryT2BotConstructor || builder is Builder::freelanceT2BotConstructor) {
                 return Front_T2Constructor_AiMakeTask(builder, defaultTask, isEnergyFull, metalIncome, energyIncome, metalCurrent, isEnergyLessThan90Percent);
             }
         }
@@ -755,9 +746,6 @@ namespace RoleFront {
         // Gantries
         array<string> gantries = UnitHelpers::GetAllGantries();
         int gantryCap = (metalIncome >= Global::RoleSettings::Front::MetalIncomeForGantry) ? 1 : 0;
-        // Gantries added on maxed metal (manager/build_power.as) stay allowed.
-        const int buildPowerGantries = BuildPower::GantryCapFloor();
-        if (gantryCap < buildPowerGantries) gantryCap = buildPowerGantries;
         UnitHelpers::BatchApplyUnitCaps(gantries, gantryCap);
     }
 
@@ -791,9 +779,6 @@ namespace RoleFront {
         if (energyIncome > Global::RoleSettings::Front::NanoEnergyIncomeThresholdForMax) {
             nanoCap = Global::RoleSettings::Front::NanoMaxCount;
         }
-        // Turrets queued on capped metal (manager/build_power.as) stay buildable.
-        const int buildPowerFloor = BuildPower::NanoCapFloor();
-        if (nanoCap < buildPowerFloor) nanoCap = buildPowerFloor;
         array<string> nanos = UnitHelpers::GetT1NanoUnitNames();
         UnitHelpers::BatchApplyUnitCaps(nanos, nanoCap);
     }
@@ -834,69 +819,6 @@ namespace RoleFront {
         return null;
     }
 
-    // The first T2 plant's bank trigger: T2LabStoredMetalThresholdRatio of its
-    // cost, or FirstT2StoredStorageRatio of our metal storage when that is
-    // smaller, at FirstT2StoredMinMetalIncome or more. Played (team 15, All That
-    // Glitters 2026-09-28): storage ~1,900 against 2,340 for an armavp, so the
-    // bank trigger could never fire, whatever TECH shared.
-    bool Front_BankPaysFirstT2(CCircuitDef@ d, float metalIncome)
-    {
-        if (d is null || metalIncome < Global::RoleSettings::Front::FirstT2StoredMinMetalIncome) return false;
-        float need = d.costM * Global::RoleSettings::Front::T2LabStoredMetalThresholdRatio;
-        const float byStorage = aiEconomyMgr.metal.storage * Global::RoleSettings::Front::FirstT2StoredStorageRatio;
-        if (byStorage > 0.0f && byStorage < need) need = byStorage;
-        return aiEconomyMgr.metal.current >= need;
-    }
-
-    // Fast-track to the first T2 plant of a kind, for ANY T1 constructor that
-    // can build it (was the primary bot / vehicle constructor only: dead or busy,
-    // nothing tried). A bot constructor starts the T2 bot lab, a vehicle
-    // constructor the T2 vehicle plant, when none of that kind stands or is
-    // ordered and any trigger is met (OR): metal income, game time
-    // (TimeTriggerForFirstT2LabSeconds), or the bank (Front_BankPaysFirstT2).
-    IUnitTask@ Front_TryFirstT2Plant(CCircuitUnit@ u, const string &in unitSide, float metalIncome)
-    {
-        const bool timeMet = (ai.frame >= (Global::RoleSettings::Front::TimeTriggerForFirstT2LabSeconds * SECOND));
-        {
-            CCircuitDef@ d = ai.GetCircuitDef(UnitHelpers::GetT2BotLabForSide(unitSide));
-            if (d !is null && u.circuitDef.CanBuild(d)
-                && UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2BotLabs()) < 1
-                && aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::FACTORY), d) == 0) {
-                const bool incomeMet = (metalIncome >= Global::RoleSettings::Front::MinimumMetalIncomeForFirstT2Lab);
-                const bool bankMet = Front_BankPaysFirstT2(d, metalIncome);
-                if (incomeMet || timeMet || bankMet) {
-                    IUnitTask@ t = Builder::EnqueueT2BotLabIfNeeded(unitSide, Factory::GetT1BotLabPos(), SQUARE_SIZE * 30, SECOND * 300);
-                    if (t !is null) {
-                        GenericHelpers::LogUtil("[FRONT] first T2 bot lab " + d.GetName() + " by " + u.circuitDef.GetName() + " " + u.id
-                            + " (" + (incomeMet ? "income" : (timeMet ? "time" : "bank")) + ": +" + int(metalIncome) + " metal, bank "
-                            + int(aiEconomyMgr.metal.current) + " of " + int(aiEconomyMgr.metal.storage) + ")", 1);
-                        return t;
-                    }
-                }
-            }
-        }
-        {
-            const string vehName = (unitSide == "cortex") ? "coravp" : ((unitSide == "legion") ? "legavp" : "armavp");
-            CCircuitDef@ d = ai.GetCircuitDef(vehName);
-            if (d !is null && u.circuitDef.CanBuild(d)
-                && UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2VehicleLabs()) < 1
-                && aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::FACTORY), d) == 0) {
-                const bool incomeMet = (metalIncome >= Global::RoleSettings::Front::MinimumMetalIncomeForFirstT2VehiclePlant);
-                const bool bankMet = Front_BankPaysFirstT2(d, metalIncome);
-                if (incomeMet || timeMet || bankMet) {
-                    IUnitTask@ t = Builder::EnqueueT2VehiclePlant(unitSide, Factory::GetPreferredFactoryPos(), SQUARE_SIZE * 24, 600 * SECOND);
-                    if (t !is null) {
-                        GenericHelpers::LogUtil("[FRONT] first T2 vehicle plant " + d.GetName() + " by " + u.circuitDef.GetName() + " " + u.id
-                            + " (" + (incomeMet ? "income" : (timeMet ? "time" : "bank")) + ": +" + int(metalIncome) + " metal, bank "
-                            + int(aiEconomyMgr.metal.current) + " of " + int(aiEconomyMgr.metal.storage) + ")", 1);
-                        return t;
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
     IUnitTask@ Front_T1Constructor_AiMakeTask(CCircuitUnit@ u, IUnitTask@ defaultTask, float metalIncome, float energyIncome, bool isEnergyStalling, bool isEnergyFull) {
         // Econ snapshot is passed by caller (min over last 10s for incomes)
 
@@ -908,7 +830,28 @@ namespace RoleFront {
             int t2ConstructionBotCount = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2BotConstructors());
             int t2LabCount = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2BotLabs());
 
-            // The first T2 bot lab's fast-track is Front_TryFirstT2Plant, above, for any T1 constructor.
+            // Fast-track: if we have zero T2 bot labs and ANY trigger is met, build a T2 Bot Lab now.
+            // Triggers (OR):
+            //  1) metal income >= configured threshold
+            //  2) game time >= 22 minutes
+            //  3) stored metal >= T2 bot lab cost
+            if (t2LabCount < 1) {
+                const float incomeTrigger = Global::RoleSettings::Front::MinimumMetalIncomeForFirstT2Lab;
+                const bool timeTriggerMet = (ai.frame >= (Global::RoleSettings::Front::TimeTriggerForFirstT2LabSeconds * SECOND));
+                const bool incomeTriggerMet = (metalIncome >= incomeTrigger);
+                // Resolve T2 lab cost for stored-metal trigger
+                bool storedMetalTriggerMet = false;
+                string t2LabName = UnitHelpers::GetT2BotLabForSide(unitSide);
+                CCircuitDef@ t2LabDef = ai.GetCircuitDef(t2LabName);
+                if (t2LabDef !is null) {
+                    storedMetalTriggerMet = (aiEconomyMgr.metal.current >= (t2LabDef.costM * Global::RoleSettings::Front::T2LabStoredMetalThresholdRatio));
+                }
+                if (incomeTriggerMet || timeTriggerMet || storedMetalTriggerMet) {
+                    AIFloat3 anchor2 = Factory::GetT1BotLabPos();
+                    IUnitTask@ t2b = Builder::EnqueueT2BotLabIfNeeded(unitSide, anchor2, SQUARE_SIZE * 30, SECOND * 300);
+                    if (t2b !is null) return t2b;
+                }
+            }
 
             // Transition to vehicles if metal income > threshold and no vehicle plant
             int t1VehLabCount = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT1VehicleLabs());
@@ -949,7 +892,33 @@ namespace RoleFront {
 
         // Primary constructor branch (Vehicles)
         if (u is Builder::primaryT1VehConstructor) {
-            // The first T2 vehicle plant's fast-track is Front_TryFirstT2Plant, above, for any T1 constructor.
+            int t2VehLabCount = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2VehicleLabs());
+            
+            // Fast-track: if we have zero T2 vehicle labs and ANY trigger is met, build a T2 Vehicle Plant now.
+            if (t2VehLabCount < 1) {
+                const float incomeTrigger = Global::RoleSettings::Front::MinimumMetalIncomeForFirstT2VehiclePlant;
+                const bool timeTriggerMet = (ai.frame >= (Global::RoleSettings::Front::TimeTriggerForFirstT2LabSeconds * SECOND));
+                const bool incomeTriggerMet = (metalIncome >= incomeTrigger);
+                
+                // Resolve T2 vehicle lab cost for stored-metal trigger
+                bool storedMetalTriggerMet = false;
+                string t2VehName = "";
+                if (unitSide == "armada") t2VehName = "armavp";
+                else if (unitSide == "cortex") t2VehName = "coravp";
+                else if (unitSide == "legion") t2VehName = "legavp";
+                
+                if (t2VehName != "") {
+                    CCircuitDef@ t2VehDef = ai.GetCircuitDef(t2VehName);
+                    if (t2VehDef !is null) {
+                        storedMetalTriggerMet = (aiEconomyMgr.metal.current >= (t2VehDef.costM * Global::RoleSettings::Front::T2LabStoredMetalThresholdRatio));
+                    }
+                }
+
+                if (incomeTriggerMet || timeTriggerMet || storedMetalTriggerMet) {
+                    IUnitTask@ tVeh2 = Builder::EnqueueT2VehiclePlant(unitSide, Factory::GetPreferredFactoryPos(), SQUARE_SIZE * 24, 600 * SECOND);
+                    if (tVeh2 !is null) return tVeh2;
+                }
+            }
 
             // Transition to bots if metal income > threshold and no bot lab
             int t1BotLabCount = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT1BotLabs());
@@ -978,7 +947,7 @@ namespace RoleFront {
         string unitSide = UnitHelpers::GetSideForUnitName(u.circuitDef.GetName());
 
         // Freelance T2 constructors just do default tasks
-        if (u is Builder::freelanceT2BotConstructor || u is Builder::freelanceT2VehConstructor) {
+        if (u is Builder::freelanceT2BotConstructor) {
             return defaultTask;
         }
 
@@ -1003,34 +972,6 @@ namespace RoleFront {
                 IUnitTask@ tFus2 = Builder::EnqueueFUS(unitSide, anchor, SQUARE_SIZE * 32, SECOND * 300);
                 if (tFus2 !is null) return tFus2;
             }
-
-            // Nuclear silos, late only (main's 23900e8, ported). FRONT never
-            // rushes one: from NukeSustainAfterSeconds of game time, at
-            // NukeSustainMinMetalIncome or more, one silo at a time - none ordered
-            // or under construction - up to NukeLimit.
-            const int nukeAfter = Global::RoleSettings::Front::NukeSustainAfterSeconds;
-            if (nukeAfter > 0 && ai.frame >= nukeAfter * SECOND
-                && metalIncome >= Global::RoleSettings::Front::NukeSustainMinMetalIncome) {
-                // Front_ApplyStartLimits pins the silo defs to StartCapNukeSilos (0),
-                // so EnqueueNukeSilo would find them unavailable: the cap goes to
-                // NukeLimit once the window is open (only written when it changes).
-                UnitHelpers::BatchApplyUnitCaps(UnitHelpers::GetAllNukeSilos(), Global::RoleSettings::Front::NukeLimit);
-                int unfinished = 0;
-                array<string> silos = UnitHelpers::GetAllNukeSilos();
-                for (uint i = 0; i < silos.length(); ++i) {
-                    CCircuitDef@ sd = ai.GetCircuitDef(silos[i]);
-                    if (sd !is null) unfinished += aiBuilderMgr.GetUnfinishedCount(sd);
-                }
-                const int nukeTotal = EconomyHelpers::GetNukeSiloCount();
-                if (!Builder::IsNukeSiloBuildQueued() && unfinished == 0 && nukeTotal < Global::RoleSettings::Front::NukeLimit) {
-                    IUnitTask@ tNuke = Builder::EnqueueNukeSilo(unitSide, anchor, SQUARE_SIZE * 32, SECOND * 300);
-                    if (tNuke !is null) {
-                        GenericHelpers::LogUtil("[FRONT] nuclear silo " + (nukeTotal + 1) + " of " + Global::RoleSettings::Front::NukeLimit
-                            + " (+" + int(metalIncome) + " metal, " + int(ai.frame / MINUTE) + " min) by " + u.circuitDef.GetName() + " " + u.id, 1);
-                        return tNuke;
-                    }
-                }
-            }
         } 
 
         return defaultTask;
@@ -1053,96 +994,6 @@ namespace RoleFront {
 
         return match;
     }
-
-    /******************************************************************************
-
-    PORC CHAIN (PorcChainHandler)
-
-    FRONT was being rushed by human players early and its defences collapsed.
-    The default land order spends a defence point's budget (amountFactor 32-48 x
-    income, ~960-2400 metal at +30 to +50) on a Sentry, an AA, two or three
-    Beamers and then a 440-480 metal HLT; the Dragon's Claw / Maw are not in the
-    order at all, and Legion's Dragon's Jaw is only its 14th, 24th and 25th entry,
-    so Legion opened on Hives (7500 energy each).
-
-    FRONT's land chain now opens on the mid-tier pieces that income can buy: the
-    first six default entries (LLT, AA, HLLT, HLLT, HLT, HLLT) become eight, cumulative
-    metal in brackets:
-      Armada  Sentry, Beamer, Dragon's Claw, AA, Beamer, Beamer, Dragon's Claw, HLT  (1855)
-      Cortex  Guard, Twin Guard, Dragon's Maw, AA, Twin Guard, Twin Guard, Dragon's Maw, HLT  (1815)
-      Legion  LLT, Dragon's Jaw, AA, LLT, Dragon's Jaw, Dragon's Jaw, Hive, Cacophony  (1810)
-    then the default order carries on (AA, Juno, ...). Water chain unchanged.
-
-    ******************************************************************************/
-    dictionary FrontPorcOpening = {
-        {"armada", array<string> = {"armllt", "armbeamer", "armclaw", "armrl", "armbeamer", "armbeamer", "armclaw", "armhlt"}},
-        {"cortex", array<string> = {"corllt", "corhllt", "cormaw", "corrl", "corhllt", "corhllt", "cormaw", "corhlt"}},
-        {"legion", array<string> = {"leglht", "legdtr", "legrl", "leglht", "legdtr", "legdtr", "leghive", "legmg"}}
-    };
-    const uint FRONT_PORC_DEFAULT_OPENING = 6;   // default land entries the opening replaces
-
-    void Front_PorcChain(const string &in side)
-    {
-        array<string>@ opening = null;
-        array<string>@ land = PorcHelpers::DefaultChain(side, false);
-        if (!FrontPorcOpening.get(side, @opening) || opening is null || land.length() <= FRONT_PORC_DEFAULT_OPENING) {
-            PorcHelpers::ApplyDefaultChains(side);
-            GenericHelpers::LogUtil("[Porc] FRONT: no opening for side " + side + "; keeping the default", 2);
-            return;
-        }
-        // A role switch re-applies the chain from the current one: drop our own
-        // opening if it is already there, else the default one it replaces.
-        bool ours = land.length() >= opening.length();
-        for (uint i = 0; ours && i < opening.length(); ++i) {
-            if (land[i] != opening[i]) ours = false;
-        }
-        const uint skip = ours ? opening.length() : FRONT_PORC_DEFAULT_OPENING;
-        array<string> chain;
-        for (uint i = 0; i < opening.length(); ++i) chain.insertLast(opening[i]);
-        for (uint i = skip; i < land.length(); ++i) chain.insertLast(land[i]);
-        aiMilitaryMgr.SetPorcChain(side, false, @chain);
-        aiMilitaryMgr.SetPorcChain(side, true, PorcHelpers::DefaultChain(side, true));
-        GenericHelpers::LogUtil("[Porc] FRONT: " + side + " opening set (" + opening.length() + " mid-tier entries, "
-            + chain.length() + " total)", 1);
-    }
-
-    /******************************************************************************
-
-    BASE PORC (AiMakeDefenceHandler)
-
-    The opening above is only walked where native DefaultMakeDefence walks the
-    whole order. In mode AUTO it does that only at clusters its own heuristic
-    calls front line - rich clusters MORE than 1000 from the base, clusters with
-    two threatened neighbours, clusters outside our influence - and every other
-    cluster takes `porcupine.prevent` (1) entry: the Sentry / Guard / Pharos.
-    The shared policy stays in AUTO until pressure (10 min) or the late game
-    (25 min, or +120 metal and +1500 energy), so through the rush window FRONT's
-    own base clusters got one LLT each and no Beamer, Twin Guard or Dragon's Jaw.
-
-    From BasePorcFromMinutes, a cluster within BasePorcRadius of the start asks
-    the shared policy for FULL, so the base walks the opening as far as the
-    budget (amountFactor x income) reaches. Other clusters, and any cluster
-    while energy is stalling, keep the shared policy unchanged.
-
-    ******************************************************************************/
-    void Front_AiMakeDefence(int cluster, const AIFloat3& in pos)
-    {
-        // Same opening gate as the handler-less path in Military::AiMakeDefence.
-        if (!((ai.frame > 10 * MINUTE) || (aiEconomyMgr.metal.income > 10.f) || (aiEnemyMgr.mobileThreat > 0.f))) return;
-        const AIFloat3 start = Global::Map::StartPos;
-        const float dx = pos.x - start.x, dz = pos.z - start.z;
-        const float r = Global::RoleSettings::Front::BasePorcRadius;
-        const bool baseCluster = Global::Map::HasStart && (dx * dx + dz * dz <= r * r);
-        const bool forceFull = baseCluster && !aiEconomyMgr.isEnergyStalling
-            && ai.frame >= Global::RoleSettings::Front::BasePorcFromMinutes * MINUTE;
-        if (forceFull && !g_frontBasePorcLogged) {
-            g_frontBasePorcLogged = true;
-            GenericHelpers::LogUtil("[Porc] FRONT: base cluster " + cluster + " walks the whole order (FULL) from here on, within "
-                + int(r) + " of the start", 1);
-        }
-        Military::Porc::MakeDefence(cluster, pos, forceFull);
-    }
-    bool g_frontBasePorcLogged = false;
 
     void Register() {
         if (RoleConfigs::Get(AiRole::FRONT) !is null) return; // already
@@ -1172,8 +1023,6 @@ namespace RoleFront {
         @cfg.MilitaryAiUnitAdded = cast<AiUnitAddedDelegate@>(@Front_MilitaryAiUnitAdded);
 
         @cfg.RoleMatchHandler = cast<RoleMatchDelegate@>(@Front_RoleMatch);
-        @cfg.PorcChainHandler = cast<PorcChainDelegate@>(@Front_PorcChain);
-        @cfg.AiMakeDefenceHandler = cast<AiMakeDefence@>(@Front_AiMakeDefence);
 
         RoleConfigs::Register(cfg);
     }
