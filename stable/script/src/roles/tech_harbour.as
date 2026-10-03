@@ -19,7 +19,8 @@ moves to the water beside the island:
      energy floats;
   3. the advanced shipyard's construction subs grow the sea economy: a naval
      fusion while energy runs short, floating advanced converters (the land
-     one's twin) while it floats;
+     one's twin) while it floats and metal has room; while metal overflows
+     they assist the advanced yard instead, and a second yard is allowed;
   4. the advanced yard pumps sea units: its construction subs, then cruisers,
      missile ships and AA ships (a T1 yard, if one exists, its ships then
      destroyers).
@@ -131,6 +132,7 @@ namespace TechHarbour {
     }
 
     int logFrame = -100000;
+    int assistLogFrame = -100000;
     int yardTry = -100000;   // the advanced shipyard's site search, at most every 10 s (a ring of ~1300 points)
     void Say(const string &in what)
     {
@@ -198,10 +200,13 @@ namespace TechHarbour {
             if (keep !is null) return keep;
         }
 
-        // 1. the advanced shipyard (owner: the priority after the second advanced fusion)
+        // 1. the advanced shipyard (owner: the priority after the second advanced fusion);
+        // a second one only while metal overflows (played: Tundra, one yard on +600
+        // metal with the bank full for 25 minutes)
         CCircuitDef@ ayard = Def(UnitHelpers::GetT2ShipyardForSide(side));
+        const int yardCap = aiEconomyMgr.isMetalFull ? Global::RoleSettings::Tech::HarbourMaxT2Shipyards : 1;
         if (ayard !is null && u.circuitDef.CanBuild(ayard)
-            && ayard.count + Queued(ayard, Task::BuildType::FACTORY) < Global::RoleSettings::Tech::HarbourMaxT2Shipyards) {
+            && ayard.count + Queued(ayard, Task::BuildType::FACTORY) < yardCap) {
             // the site is picked here (played: native's search started from the
             // island's middle and found no water 30 deep within its radius)
             const int id = (ai.frame - yardTry >= 10 * SECOND) ? Layout::CrampedLabSite(ayard, Anchor(), Global::RoleSettings::Tech::HarbourYardSearch, u, 64.0f) : -2;
@@ -232,12 +237,23 @@ namespace TechHarbour {
             if (t !is null) return t;
         }
         if (t2) {
-            // 3. T2: floating advanced converters while energy is over
-            // HarbourConverterEnergyShare of storage, else a naval fusion. Played:
-            // over 30%: 24 converters on +1600 energy and no fusion (metal +84);
-            // only when full: 1 fusion and 2 converters (metal +60)
+            // 3. T2, metal overflowing: production is the sink, the subs assist the
+            // advanced yard. Played (Tundra): four subs on +368..+617 metal with
+            // the bank full put their time into converters, which make more of
+            // the metal that was already being thrown away
+            if (aiEconomyMgr.isMetalFull && Factory::primaryT2Shipyard !is null) {
+                IUnitTask@ t = GuardHelpers::AssignWorkerGuard(u, Factory::primaryT2Shipyard, Task::Priority::NORMAL, true, 30 * SECOND);
+                if (t !is null) {
+                    if (ai.frame - assistLogFrame > 60 * SECOND) { assistLogFrame = ai.frame; Say("metal overflows: " + u.circuitDef.GetName() + " " + u.id + " assists the advanced shipyard"); }
+                    return t;
+                }
+            }
+            // 4. T2: floating advanced converters while energy is over
+            // HarbourConverterEnergyShare of storage and metal has room, else a
+            // naval fusion. Played: over 30%: 24 converters on +1600 energy and no
+            // fusion (metal +84); only when full: 1 fusion and 2 converters (metal +60)
             const bool energyHigh = aiEconomyMgr.energy.current > aiEconomyMgr.energy.storage * Global::RoleSettings::Tech::HarbourConverterEnergyShare;
-            if (energyFull || energyHigh) {
+            if ((energyFull || energyHigh) && !aiEconomyMgr.isMetalFull) {
                 IUnitTask@ t = Builder::EnqueueAdvNavalEnergyConverter(side, at, r, 60 * SECOND);
                 if (t !is null) return t;
             }
@@ -257,7 +273,7 @@ namespace TechHarbour {
                 if (t !is null) return t;
             }
         }
-        // 4. help what goes up at the harbour
+        // 5. help what goes up at the harbour
         {
             CCircuitUnit@ f = aiBuilderMgr.FindUnfinishedNear(at, r, null);
             if (f !is null) return aiBuilderMgr.Enqueue(TaskB::Repair(Task::Priority::NORMAL, f, 30 * SECOND));

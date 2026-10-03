@@ -1890,6 +1890,44 @@ namespace UnitHelpers {
         return ids;
     }
 
+    // Surface warships, T1 and T2, per side (NavalWaves picks the battle-line
+    // roles from these). Submarines, constructors, carriers, jammers and scouts
+    // are left out: they have their own native tasks. Legion's T2 leganavy*
+    // hulls have no behaviour_leg.json entry and default to role assault.
+    array<string> GetArmadaNavalSurfaceWarships()
+    {
+        // T1: Decade raider, destroyer, Ellysaw frigate
+        // T2: cruiser, battleship, Epoch flagship, missile ship, AA ship
+        array<string> ids = { "armdecade", "armroy", "armpship",
+                              "armcrus", "armbats", "armepoch", "armmship", "armaas" };
+        return ids;
+    }
+
+    array<string> GetCortexNavalSurfaceWarships()
+    {
+        array<string> ids = { "corroy", "corpship",
+                              "corcrus", "corbats", "corblackhy", "cormship", "corarch" };
+        return ids;
+    }
+
+    array<string> GetLegionNavalSurfaceWarships()
+    {
+        array<string> ids = { "legnavyfrigate", "legnavydestro", "legnavyaaship", "legnavyartyship",
+                              "leganavycruiser", "leganavybattleship", "leganavyflagship",
+                              "leganavyartyship", "leganavyaaship", "leganavymissileship",
+                              "leganavyantiswarm" };
+        return ids;
+    }
+
+    array<string> GetAllNavalSurfaceWarships()
+    {
+        array<string> ids; dictionary seen;
+        { array<string> a = GetArmadaNavalSurfaceWarships(); _AppendUniqueNonEmpty(@a, @ids, @seen); }
+        { array<string> a = GetCortexNavalSurfaceWarships(); _AppendUniqueNonEmpty(@a, @ids, @seen); }
+        { array<string> a = GetLegionNavalSurfaceWarships(); _AppendUniqueNonEmpty(@a, @ids, @seen); }
+        return ids;
+    }
+
     array<string> GetAllT2Constructors()
     {
         array<string> ids;

@@ -110,6 +110,7 @@ namespace Main {
 		}
 		Team::Roster::Update();  // announce ourselves to allied BARb instances until the roster is complete
 		Spam::Update();          // economy-gated spam: activation, focus rotation
+		NavalWaves::Update();    // battle-line warships: held, then launched together at the drawn wave size
 		Team::Ferry::Update();   // transport ferry: hand-over on arrival, run polling
 		Team::SeaAssist::Update();  // SEA seeds a TACTICAL ally with a construction ship
 		Team::Donation::Update();   // a teammate without T2 asks TECH for a constructor

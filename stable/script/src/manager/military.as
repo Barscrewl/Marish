@@ -5,6 +5,7 @@
 #include "spam.as"
 #include "ferry.as"
 #include "amphibious_ops.as"
+#include "naval_waves.as"
 
 namespace Military {
 
@@ -44,6 +45,10 @@ namespace Military {
 		if (t !is null) return t;
 		@t = Spam::MilitaryMakeTask(u);   // spam units join their factory's route
 		if (t !is null) return t;
+		// Battle-line warships: held, then launched together at the drawn wave
+		// size (manager/naval_waves.as). Ahead of the role policy, whatever the role.
+		@t = NavalWaves::MakeTask(u);
+		if (t !is null) return t;
 
 		RoleConfig@ cfg = (Global::profileController is null) ? null : Global::profileController.RoleCfg;
 		if (cfg !is null && cfg.MilitaryAiMakeTaskHandler !is null) {
@@ -67,6 +72,7 @@ namespace Military {
 	void AiTaskRemoved(IUnitTask@ task, bool done)
 	{
 		Spam::OnTaskRemoved(task);
+		NavalWaves::OnTaskRemoved(task);
 		TechFlank::TaskRemoved(task);
         AmphibiousOps::TaskRemoved(task);
 		RoleConfig@ cfg = (Global::profileController is null) ? null : Global::profileController.RoleCfg;
@@ -89,6 +95,7 @@ namespace Military {
 	void AiUnitRemoved(CCircuitUnit@ unit, Unit::UseAs usage)
 	{
 		Team::Ferry::OnUnitRemoved(unit);
+		NavalWaves::OnUnitRemoved(unit);
 		TechFlank::UnitRemoved(unit);
         AmphibiousOps::UnitRemoved(unit);
 

@@ -95,6 +95,31 @@ namespace Global {
         float ExcessMetalBudgetMod = 2.0f;
     }
 
+    // Battle-line warships of every faction: held at base, then every held
+    // ship launched as one attack, see manager/naval_waves.as. A surface
+    // warship joins when named here or when its main role is assault,
+    // skirmish, riot or heavy.
+    namespace NavalWaves {
+        bool Enabled = true;
+        array<string> Ships = {
+            "armpship", "armroy",               // Armada: Ellysaw frigate, destroyer
+            "corpship", "corroy",               // Cortex: Riptide frigate, destroyer
+            "legnavyfrigate", "legnavydestro"   // Legion: Argonaut frigate, destroyer
+        };
+        // Each wave launches the whole hold once it holds a size drawn fresh per
+        // wave from [MinWaveSize, MaxWaveSize], all hulls combined.
+        int MinWaveSize = 7;
+        int MaxWaveSize = 10;
+        // Time-out: a hold of at least TimeoutMinSize that has waited this long
+        // launches anyway, so a yard that cannot reach the drawn size never parks
+        // for good. 0 turns it off.
+        int TimeoutMinSize = 3;
+        int MaxHoldSeconds = 240;
+        // Released ships re-enter Military::AiMakeTask within a few seconds and
+        // take the wave's attack task while this window is open.
+        int ReleaseWindowSeconds = 15;
+    }
+
     // Spam: economy-gated mass production on parallel routes, see manager/spam.as
     // and doc/spam-routes.md. Units need "attribute": ["spam"] in behaviour.json.
     // Air transport ferry (Team::Ferry, manager/ferry.as). AIR builds one
@@ -420,7 +445,7 @@ namespace Global {
             float WeaponAirHalfLife = 300.0f;           // weapons/analysis/air_half_life
             float WeaponCoastRadius = 3500.0f;          // weapons/analysis/coast_radius: beaches this close to the base
             float WeaponEnemyCoastRadius = 2500.0f;     // weapons/analysis/enemy_coast_radius: water this close to an enemy start is hostile
-            int HarbourMaxT2Shipyards = 1;
+            int HarbourMaxT2Shipyards = 2;                 // the second only while metal overflows (TechHarbour::SeaTask)
             int HarbourYardSeconds = 480;                   // INV-051: the advanced shipyard framed this soon after the harbour begins
             int HarbourHoverConstructors = 3;               // the hover plant's constructors: they float out and build the advanced shipyard
             float HarbourYardSearch = 1200.0f;              // the advanced shipyard's site search around the hover plant (deep water)
