@@ -724,7 +724,9 @@ namespace RoleAir {
     // wave escorts/bombers. Other aircraft retain their native task selection.
     IUnitTask@ Air_MilitaryAiMakeTask(CCircuitUnit@ u)
     {
-        IUnitTask@ homeTask = AirProduction::HomeTask(u);
+        IUnitTask@ reconTask = AirRecon::MakeTask(u);
+    if (reconTask !is null) return reconTask;
+    IUnitTask@ homeTask = AirProduction::HomeTask(u);
         if (homeTask !is null) return homeTask;
         IUnitTask@ raidTask = AirRaids::MakeTask(u);
         if (raidTask !is null) return raidTask;

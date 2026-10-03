@@ -509,87 +509,14 @@ namespace TechBuild {
         return null;
     }
 
-    // D-106 (owner's rule): a fallback so no metal is lost to overflow when our
-    // build power cannot keep up: whenever the metal bank is over
-    // TeamShareMetalAbove of storage, refresh every teammate's economy and give
-    // up to TeamShareMetalBudget of our storage, the lowest-filled live teammate
-    // first, each filled up to its free storage
-    int teamShareFrame = -100000;
-    int teamShareLog = -100000;
-    bool firstLabStood = false;
-    int verifyFrame = -1;          // one check after a donation: did it arrive
-    array<int> verifyTeams;
-    void VerifyShare()
-    {
-        if (verifyFrame < 0 || ai.frame < verifyFrame) return;
-        verifyFrame = -1;
-        string line = "";
-        for (uint i = 0; i < verifyTeams.length(); ++i) {
-            TeamEconomy::UpdateTeam(verifyTeams[i]);
-            line += (line.length() > 0 ? ", " : "") + "team " + verifyTeams[i] + " received " + int(TeamEconomy::Metal(verifyTeams[i], TeamEconomy::RECEIVED))
-                + " (bank " + int(TeamEconomy::Metal(verifyTeams[i], TeamEconomy::CURRENT)) + ")";
-        }
-        GenericHelpers::LogUtil("[TECH][Share] after the donation: we sent " + int(TeamEconomy::OwnMetal(TeamEconomy::SENT)) + "; " + line + " (D-106)", 1);
-    }
-    void ShareOverflow()
-    {
-        VerifyShare();
-        RefillAirRoles();                                  // D-108
-        if (airConvId >= 0) LiftCapForRole(UnitHelpers::GetAdvEnergyConverterNameForSide(Global::AISettings::Side));   // D-108
-        if (airAfusId >= 0) LiftCapForRole(UnitHelpers::GetAdvFusionNameForSide(Global::AISettings::Side));           // D-108
-        if (airAfusId >= 0) Layout::HoldAfusSetAhead();    // D-108
-        const float stor = aiEconomyMgr.metal.storage;
-        const float cur = aiEconomyMgr.metal.current;
-        // not the start bank: until the first lab has stood a full bank is the
-        // opening's metal, not overflow (played: 420 metal given away at 15 s;
-        // the opening's own flag was already set)
-        if (!firstLabStood) {
-            CCircuitDef@ l1 = ai.GetCircuitDef(UnitHelpers::GetT1BotLabForSide(Global::AISettings::Side));
-            if (l1 !is null && l1.count > aiBuilderMgr.GetUnfinishedCount(l1)) firstLabStood = true;
-        }
-        if (!firstLabStood && !WasIntoT2()) return;
-        if (stor <= 0.0f || cur < Global::RoleSettings::Tech::TeamShareMetalAbove * stor) return;
-        if (ai.frame - teamShareFrame < int(Global::RoleSettings::Tech::TeamShareCheckSeconds * SECOND)) return;
-        teamShareFrame = ai.frame;
-        const int n = TeamEconomy::UpdateAll();
-        array<int> ids;
-        array<float> fills;
-        for (int i = 0; i < n; ++i) {
-            const int tid = TeamEconomy::TeamAt(i);
-            if (tid < 0 || !TeamEconomy::Alive(tid) || TeamEconomy::Metal(tid, TeamEconomy::FREE) < Global::RoleSettings::Tech::TeamShareMinAmount) continue;
-            // insertion by fill, lowest first
-            const float f = TeamEconomy::MetalFill(tid);
-            uint at = 0;
-            while (at < fills.length() && fills[at] <= f) ++at;
-            ids.insertAt(at, tid);
-            fills.insertAt(at, f);
-        }
-        float budget = Global::RoleSettings::Tech::TeamShareMetalBudget * stor;
-        if (budget > cur) budget = cur;
-        string sent = "";
-        for (uint i = 0; i < ids.length() && budget >= Global::RoleSettings::Tech::TeamShareMinAmount; ++i) {
-            float give = TeamEconomy::Metal(ids[i], TeamEconomy::FREE);
-            if (give > budget) give = budget;
-            if (give < Global::RoleSettings::Tech::TeamShareMinAmount) continue;
-            if (!TeamEconomy::SendMetal(ids[i], give)) continue;
-            budget -= give;
-            if (verifyFrame < 0) { verifyTeams.resize(0); verifyFrame = ai.frame + 45; }   // after the engine's next slow update
-            verifyTeams.insertLast(ids[i]);
-            sent += (sent.length() > 0 ? ", " : "") + int(give) + " to team " + ids[i] + " (" + int(fills[i] * 100.0f) + "% full)";
-        }
-        if (sent.length() > 0 || ai.frame - teamShareLog > 60 * SECOND) {
-            teamShareLog = ai.frame;
-            GenericHelpers::LogUtil("[TECH][Share] metal " + int(cur) + " of " + int(stor) + " (" + int(cur * 100.0f / stor) + "%): "
-                + ((sent.length() > 0) ? ("sent " + sent) : ("no teammate with room (" + n + " teammates)"))
-                + "; the engine counts " + int(TeamEconomy::OwnMetal(TeamEconomy::SENT)) + " metal sent in the last update (D-106)", 1);
-        }
-    }
-
     // From Tech_EconomyUpdate: the first lab's exit cone, held while it stands.
     void Tick()
     {
         TrackMetal();   // D-075
-        ShareOverflow();   // D-106
+        RefillAirRoles();                                  // D-108
+        if (airConvId >= 0) LiftCapForRole(UnitHelpers::GetAdvEnergyConverterNameForSide(Global::AISettings::Side));   // D-108
+        if (airAfusId >= 0) LiftCapForRole(UnitHelpers::GetAdvFusionNameForSide(Global::AISettings::Side));           // D-108
+        if (airAfusId >= 0) Layout::HoldAfusSetAhead();    // D-108
         TechForward::Tick();   // D-109
         // D-076: the T1 lab retires the moment the advanced lab is under way.
         // One state, read by every actor: production stops (Lifecycle::Retire

@@ -14,7 +14,18 @@ namespace AirGrowth {
     IUnitTask@ MakeTask(CCircuitUnit@ u)
     {
         if (!AirEconomy::TechGrowth()) return null;
+        CCircuitDef@ firstLab = ai.GetCircuitDef(UnitHelpers::GetT2AirPlantForSide(Global::AISettings::Side));
+        // Completed counts can change between the once-per-second snapshots.
+        if (AirEconomy::t2 == 0 && AirEconomy::Planned(firstLab, Task::BuildType::FACTORY) == 0
+            && AirBuild::Can(u, firstLab) && !AirBuild::Busy(firstLab, Task::BuildType::FACTORY)
+            && AirEconomy::Transition(firstLab)) {
+            if (AirBuild::firstLabAttemptFrame != ai.frame || AirBuild::firstLabAttemptBuilder != u.id)
+                Invariants::Violation("INV-120", "AIR", "shared growth considered before eligible first-lab placement");
+        }
         EcoPlanner::State@ s = EcoPlanner::Read(u, AirEconomy::metal, AirEconomy::energy, true);
+        // AIR admitted its funded support request before this chooser. It must
+        // not ask TECH's independent 8-BP/M rule to make a second decision.
+        s.buildPowerNear = 0.0f;
         // The next reactor is an objective, even at a temporarily full bank.
         // Keep one reactor frame and focus mobile build power on it.
         CCircuitUnit@ reactor = null;
@@ -26,21 +37,18 @@ namespace AirGrowth {
             if (reactor !is null) break;
         }
         s.energyGoal = AiMax(EcoPlanner::TargetEnergy(s.mIncome), AirEconomy::demandE * 1.3f);
-        if (!AirEconomy::MassBombers()) s.energyGoal = AiMax(s.energyGoal, s.eIncome + 1.0f);
+        if (!AirEconomy::GrowthComplete()) s.energyGoal = AiMax(s.energyGoal, s.eIncome + 1.0f);
         // AIR can retain small, local T1 energy orders while its flying crew
         // scales reactors elsewhere. Generic ENERGY queues must not lock out
         // this district; only real owned reactor commitments serialize it.
         s.energyBuilding = AirBuild::ReactorPending() || reactor !is null;
         s.energyAssistable = reactor !is null;
         s.turretSlot = false;
-        for (uint b = 0; b < AirLayout::bays.length(); ++b)
-            if (AirLayout::bays[b].factoryId >= 0 && AirBuild::SupportCommitted(b) < AirEconomy::NanoTarget(b))
-                s.turretSlot = true;
         string why;
         string key = EcoPlanner::Decide(s, why);
         // The growth goal outranks a full bank's ordinary 'no more energy' answer,
         // after surplus conversion/build power have had their shared decisions.
-        if (key.length() == 0 && s.builderIsT2 && !AirEconomy::MassBombers() && !s.energyBuilding)
+        if (key.length() == 0 && s.builderIsT2 && !AirEconomy::GrowthComplete() && !s.energyBuilding)
             key = EcoPlanner::PickEnergy(s, why, "two-AFUS objective");
         IUnitTask@ task = null;
         if (key == "nano") @task = AirBuild::Nano(u);
@@ -59,7 +67,7 @@ namespace AirGrowth {
         // A shared chooser answer may be temporarily unexecutable (for example
         // support already claimed by another worker). A full bank after the
         // bomber milestone must still permit funded, serial economic growth.
-        if (task is null && s.builderIsT2 && AirEconomy::MassBombers() && AirEconomy::MexesReady()) {
+        if (task is null && s.builderIsT2 && AirEconomy::GrowthComplete() && AirEconomy::MexesReady()) {
             CCircuitDef@ d = ai.GetCircuitDef(UnitHelpers::GetAdvFusionNameForSide(side));
             if (AirBuild::Can(u, d) && AirMath::OverflowGrowth(AirEconomy::MetalFloating(), AirEconomy::recovery,
                 s.energyBuilding || AirBuild::Busy(d, Task::BuildType::ENERGY), s.mCur, s.eCur, s.mIncome, s.eIncome,

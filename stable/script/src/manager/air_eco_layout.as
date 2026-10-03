@@ -10,10 +10,30 @@ namespace AirEcoLayout {
         int facing = 0;
         bool started = false;
         array<int> slots; // reactor first, then advanced converters
+        array<int> support; // schema 2: independent economy turret bank
+        int supportRetry = 0;
     }
     array<Module@> modules;
     int retryAfter = 0;
     int planFrame = -100000;
+    dictionary supportPositions;
+    string PositionKey(const AIFloat3 &in pos) { return "" + int(pos.x / 8.0f + .5f) + ":" + int(pos.z / 8.0f + .5f); }
+    bool Owns(const AIFloat3 &in pos) { return supportPositions.exists(PositionKey(pos)); }
+    int ReactorAt(const AIFloat3 &in pos) {
+        int owner = -1;
+        if (!supportPositions.get(PositionKey(pos), owner) || owner < 0 || owner >= int(modules.length())
+            || modules[owner].slots.length() == 0) return -1;
+        CCircuitUnit@ u = aiTerrainMgr.GetReservationUnit(modules[owner].slots[0]);
+        return u is null ? -1 : u.id;
+    }
+    void IndexSupport() {
+        supportPositions.deleteAll();
+        for (uint i = 0; i < modules.length(); ++i) for (uint s = 0; s < modules[i].support.length(); ++s) {
+            const int pin = modules[i].support[s];
+            if (aiTerrainMgr.GetReservationState(pin) >= 0)
+                supportPositions.set(PositionKey(aiTerrainMgr.GetReservationPos(pin)), int(i));
+        }
+    }
 
     void Save(Module@ m)
     {
@@ -24,6 +44,10 @@ namespace AirEcoLayout {
         aiTerrainMgr.SetLayoutInt(m.key + ".side", m.side == "cortex" ? 1 : m.side == "legion" ? 2 : 0);
         aiTerrainMgr.SetLayoutInt(m.key + ".count", int(m.slots.length()));
         for (uint i = 0; i < m.slots.length(); ++i) aiTerrainMgr.SetLayoutInt(m.key + ".slot." + i, m.slots[i]);
+        aiTerrainMgr.SetLayoutInt(m.key + ".schema", 2);
+        aiTerrainMgr.SetLayoutInt(m.key + ".supportCount", int(m.support.length()));
+        for (uint i = 0; i < m.support.length(); ++i) aiTerrainMgr.SetLayoutInt(m.key + ".support." + i, m.support[i]);
+        IndexSupport();
     }
     void Init()
     {
@@ -39,8 +63,11 @@ namespace AirEcoLayout {
             m.side = side == 1 ? "cortex" : side == 2 ? "legion" : "armada";
             const int n = aiTerrainMgr.GetLayoutInt(m.key + ".count", 0);
             for (int s = 0; s < AiMin(n, 9); ++s) m.slots.insertLast(aiTerrainMgr.GetLayoutInt(m.key + ".slot." + s, -1));
+            const int support = aiTerrainMgr.GetLayoutInt(m.key + ".supportCount", 0);
+            for (int s = 0; s < AiMin(support, 20); ++s) m.support.insertLast(aiTerrainMgr.GetLayoutInt(m.key + ".support." + s, -1));
             modules.insertLast(m);
         }
+        IndexSupport();
     }
     bool NearReactor(const AIFloat3 &in pos, float separation)
     {
@@ -54,8 +81,45 @@ namespace AirEcoLayout {
     void ReleaseUnused(Module@ m)
     {
         for (uint i = 0; i < m.slots.length(); ++i) aiTerrainMgr.ReleasePersistentBuilding(m.slots[i]);
+        for (uint i = 0; i < m.support.length(); ++i) aiTerrainMgr.ReleasePersistentBuilding(m.support[i]);
         if (m.zone > 0) aiTerrainMgr.ReleaseZone(m.zone);
-        m.slots.resize(0); m.zone = 0; Save(m);
+        m.slots.resize(0); m.support.resize(0); m.zone = 0; Save(m);
+    }
+    // Reserve a whole support bank or nothing. The first candidate fits between
+    // reactor and converters before the module envelope is claimed. Alternatives
+    // allow safe supplementary banks for old occupied modules, without moving them.
+    void ReserveSupport(Module@ m) {
+        if (m is null || m.slots.length() == 0 || m.support.length() > 0 || ai.frame < m.supportRetry) return;
+        m.supportRetry = ai.frame + 30 * SECOND;
+        CCircuitDef@ nano = ai.GetCircuitDef(UnitHelpers::GetT1NanoNameForSide(m.side));
+        CCircuitDef@ reactor = ai.GetCircuitDef(UnitHelpers::GetAdvFusionNameForSide(m.side));
+        if (nano is null || reactor is null) return;
+        const int count = AiMax(0, AiMin(20, Global::RoleSettings::Air::EcoSupportSlots));
+        if (count == 0) return;
+        // GetFootprint is in half-cells; adjacent centers need a full footprint.
+        const float step = float(AiMax(nano.GetFootprintX(), nano.GetFootprintZ())) * SQUARE_SIZE * 2.0f;
+        const AIFloat3 origin = aiTerrainMgr.GetReservationPos(m.slots[0]);
+        const float first = float(reactor.GetFootprintZ()) * SQUARE_SIZE + step * .5f + 16;
+        for (int candidate = 0; candidate < 5; ++candidate) {
+            array<int> pins;
+            const int f = candidate == 0 ? m.facing : (m.facing + candidate - 1) % 4;
+            const float offset = candidate == 0 ? first : first + step;
+            for (int i = 0; i < count; ++i) {
+                const AIFloat3 p = AirLayout::Offset(origin, f, (float(i % 6) - 2.5f) * step,
+                    offset + float(i / 6) * step);
+                if (!AirHome::EconomySite(p) || !ProductionMath::WithinReach(MapHelpers::SqDist(p, origin), nano.GetBuildDistance())
+                    || !aiTerrainMgr.CanReserveBuilding(nano, p, f)) break;
+                const int pin = aiTerrainMgr.ReservePersistentBuilding(nano, p, f);
+                if (pin < 0) break;
+                pins.insertLast(pin);
+            }
+            if (int(pins.length()) == count) {
+                m.support = pins;
+                if (m.key.length() > 0) Save(m);
+                return;
+            }
+            for (uint i = 0; i < pins.length(); ++i) aiTerrainMgr.ReleasePersistentBuilding(pins[i]);
+        }
     }
     Module@ Reserve(const string &in side, Module@ reuse = null)
     {
@@ -69,9 +133,14 @@ namespace AirEcoLayout {
         const float cw = float(converter.GetFootprintX()) * SQUARE_SIZE;
         const float cd = float(converter.GetFootprintZ()) * SQUARE_SIZE;
         const float pitch = 2.0f * cw + 16.0f;
-        const float across = (ConverterSlots() == 0 ? rw : AiMax(rw, 1.5f * pitch + cw)) + 16.0f;
-        const float bankZ = rd + Global::RoleSettings::Air::EcoConverterClearance + cd;
-        const float front = ConverterSlots() == 0 ? rd : bankZ + 3.0f * cd + 16.0f;
+        CCircuitDef@ nano = ai.GetCircuitDef(UnitHelpers::GetT1NanoNameForSide(side));
+        const float nanoSize = nano is null ? 0.0f : float(AiMax(nano.GetFootprintX(), nano.GetFootprintZ())) * SQUARE_SIZE * 2.0f;
+        const int supportRows = (AiMax(0, AiMin(20, Global::RoleSettings::Air::EcoSupportSlots)) + 5) / 6;
+        const float across = AiMax(ConverterSlots() == 0 ? rw : AiMax(rw, 1.5f * pitch + cw),
+            3.0f * nanoSize) + 16.0f;
+        const float bankZ = rd + AiMax(Global::RoleSettings::Air::EcoConverterClearance,
+            float(supportRows) * nanoSize + 32.0f) + cd;
+        const float front = ConverterSlots() == 0 ? rd + float(supportRows) * nanoSize + 32.0f : bankZ + 3.0f * cd + 16.0f;
         const float along = (front + rd) * 0.5f + 16.0f;
         const float shift = (front - rd) * 0.5f;
         // Fine candidate spacing can move an unused module around one blocker
@@ -117,19 +186,23 @@ namespace AirEcoLayout {
                     for (uint s = 0; s < slots.length(); ++s) aiTerrainMgr.ReleasePersistentBuilding(slots[s]);
                     continue;
                 }
+                Module@ m = reuse is null ? Module() : reuse;
+                m.side = side; m.facing = f; m.slots = slots; m.supportRetry = 0;
+                ReserveSupport(m);
                 const int envelope = aiTerrainMgr.ReserveZone(AirLayout::Offset(at, f, 0.0f, shift), f, across, along, false);
                 if (envelope <= 0) {
                     for (uint s = 0; s < slots.length(); ++s) aiTerrainMgr.ReleasePersistentBuilding(slots[s]);
+                    for (uint s = 0; s < m.support.length(); ++s) aiTerrainMgr.ReleasePersistentBuilding(m.support[s]);
+                    m.support.resize(0); m.slots.resize(0);
                     continue;
                 }
-                Module@ m = reuse is null ? Module() : reuse;
                 if (reuse is null) m.key = Prefix() + modules.length();
                 m.side = side; m.facing = f; m.slots = slots;
                 m.zone = envelope;
                 if (reuse is null) modules.insertLast(m);
                 Save(m);
                 GenericHelpers::LogUtil("[AIR][EcoLayout] reserved " + m.key + " reactor=" + int(at.x) + "," + int(at.z)
-                    + " converters=" + ConverterSlots() + " zone=" + m.zone, 1);
+                    + " converters=" + ConverterSlots() + " support=" + m.support.length() + " zone=" + m.zone, 1);
                 return m;
             }
         }
@@ -140,7 +213,9 @@ namespace AirEcoLayout {
     {
         if (m.started) return m;
         if (m.slots.length() == 0) return Reserve(m.side, m);
-        const int state = LayoutHelpers::ActivationState(m.slots);
+        array<int> pins = m.slots;
+        for (uint i = 0; i < m.support.length(); ++i) pins.insertLast(m.support[i]);
+        const int state = LayoutHelpers::ActivationState(pins);
         if (state == 2) { m.started = true; Save(m); return m; }
         if (state == 0) return m;
         GenericHelpers::LogUtil("[AIR][EcoLayout] relocate blocked unused " + m.key, 1);
@@ -156,6 +231,7 @@ namespace AirEcoLayout {
         Module@ retry = null;
         for (uint i = 0; i < modules.length(); ++i) {
             Module@ m = modules[i];
+            if (m.started && m.support.length() == 0) ReserveSupport(m);
             if (!m.started && LayoutHelpers::ActivationState(m.slots) == 2) { m.started = true; Save(m); }
             if (m.started) ++active;
             if (m.slots.length() > 0) ++planned;
@@ -197,5 +273,28 @@ namespace AirEcoLayout {
         }
         return null;
     }
-    void Leave() { modules.resize(0); retryAfter = 0; planFrame = -100000; }
+    IUnitTask@ Nano(CCircuitUnit@ u, CCircuitDef@ nano) {
+        for (uint i = 0; i < modules.length(); ++i) {
+            Module@ m = modules[i];
+            if (m.slots.length() == 0) continue;
+            CCircuitUnit@ reactor = aiTerrainMgr.GetReservationUnit(m.slots[0]);
+            // Reserved future districts are not a reason to build unused power.
+            if (reactor is null || reactor.GetBuildProgress() >= 1.0f || AirWorkforce::shortage <= 0
+                || !AirWorkforce::Useful(reactor, u)) continue;
+            const CCircuitDef@ job = reactor.circuitDef;
+            if (job.GetBuildTime() <= 0 || !AirWorkforce::Fund(nano, u.circuitDef.GetBuildSpeed(),
+                nano.GetBuildSpeed() * job.costM / job.GetBuildTime(), nano.GetBuildSpeed() * job.costE / job.GetBuildTime())) continue;
+            ReserveSupport(m);
+            for (uint s = 0; s < m.support.length(); ++s) {
+                const int pin = m.support[s];
+                if (aiTerrainMgr.GetReservationState(pin) != 0 || !aiTerrainMgr.IsReservationBuildable(pin)) continue;
+                const AIFloat3 pos = aiTerrainMgr.GetReservationPos(pin);
+                if (!aiTerrainMgr.CanReachAt(u, pos, u.circuitDef.GetBuildDistance())) continue;
+                IUnitTask@ task = AirLayout::Pinned(Task::BuildType::NANO, Task::Priority::HIGH, nano, pin);
+                if (task !is null) return task;
+            }
+        }
+        return null;
+    }
+    void Leave() { modules.resize(0); supportPositions.deleteAll(); retryAfter = 0; planFrame = -100000; }
 }

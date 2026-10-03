@@ -3,6 +3,7 @@
 #include "../global.as"
 #include "../types/role_config.as"
 #include "../helpers/map_helpers.as"
+#include "team_economy.as"
 
 // void OpenStrategy(const CCircuitDef@ facDef, const AIFloat3& in pos)
 // {
@@ -61,6 +62,10 @@ namespace Economy {
 		if (cfg !is null && cfg.EconomyUpdateHandler !is null) {
 			cfg.EconomyUpdateHandler();
 		}
+
+		// D-175: one overflow policy and cooldown for every experimental role.
+		TeamEconomy::ShareOverflow();
+		Invariants::CheckTeamShare();
 	}
 
 	// Resource getters (expose current resource info handles)

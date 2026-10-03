@@ -10,6 +10,8 @@ namespace AirRules {
         AirEconomy::Tick();
         IBuilderTask@ current = cast<IBuilderTask>(u.task);
         if (current !is null && current.GetBuildType() < int(Task::BuildType::REPAIR)) return u.task;
+        IUnitTask@ retirement = AirBuild::RetireStarter(u);
+        if (retirement !is null) return AirBuild::Record(retirement, "starter.reclaim", u);
         if (MetalEconomy::Active()) return AirBuild::Record(MetalEconomy::AirTask(u), "metal.economy", u);
         const string side = UnitHelpers::GetSideForUnitName(u.circuitDef.GetName());
         const bool commander = UnitHelpers::IsCommander(u.circuitDef);
@@ -29,9 +31,14 @@ namespace AirRules {
         @t = AirBuild::Resume(u);
         if (t !is null) return AirBuild::Record(t, "project.resume", u);
         // Home spots precede the starter. Recovery never repeats a paid opening.
-        if (AirEconomy::t1 + AirEconomy::t2 == 0) {
-            @t = aiEconomyMgr.EnqueueMexWithin(u, Global::Map::StartPos, 700.0f, 3, true);
-            if (t !is null) return AirBuild::Record(t, "opening.mex", u);
+        if (AirEconomy::t1 + AirEconomy::t2 == 0 && aiTerrainMgr.GetLayoutInt("air.starter.retired",0) == 0) {
+            // maxSpots limits native search candidates, not owned extractors.
+            // Without an ownership check the commander keeps taking fourth,
+            // fifth, ... spots and may never reach its nearby starter lab.
+            if (AirEconomy::MexCount() < 3) {
+                @t = aiEconomyMgr.EnqueueMexWithin(u, Global::Map::StartPos, 700.0f, 3, true);
+                if (t !is null) return AirBuild::Record(t, "opening.mex", u);
+            }
             if (AirEconomy::energy < 80.0f) {
                 @t = AirBuild::Energy(u, false);
                 if (t !is null) return AirBuild::Record(t, "opening.energy", u);
@@ -39,6 +46,12 @@ namespace AirRules {
         }
         @t = AirBuild::Factory(u, false);
         if (t !is null) return AirBuild::Record(t, Team::Ferry::requestPending ? "transport.plant" : "opening.plant", u);
+        if (!AirEconomy::recovery && AirEconomy::OpeningSupportNeeded()) {
+            @t = AirBuild::Nano(u, true);
+            if (t !is null) return AirBuild::Record(t, "opening.support", u);
+            @t = AirBuild::Assist(u, false, ai.GetCircuitDef(UnitHelpers::GetT1NanoNameForSide(side)));
+            if (t !is null) return AirBuild::Record(t, "opening.support.assist", u);
+        }
         // T2 builders, including gifts, upgrade mexes without requiring a T2 plant.
         if ((!AirEconomy::TechGrowth() || AirEconomy::MassBombers() || AirEconomy::t2 == 0)
             && AirEconomy::BankedLab(ai.GetCircuitDef(UnitHelpers::GetT2AirPlantForSide(Global::AISettings::Side)))) {
@@ -49,9 +62,30 @@ namespace AirRules {
         if (t !is null) return AirBuild::Record(t, "mex.upgrade", u);
         @t = AirBuild::AssistMex(u);
         if (t !is null) return AirBuild::Record(t, "mex.assist", u);
+        CCircuitDef@ nextLab=ai.GetCircuitDef(UnitHelpers::GetT2AirPlantForSide(Global::AISettings::Side));
+        CCircuitDef@ transitionStore=ai.GetCircuitDef(UnitHelpers::GetMetalStorageNameForSide(side));
+        if (nextLab !is null && AirMath::TransitionStorage(AirEconomy::t2>0,
+            AirEconomy::bankM,aiEconomyMgr.metal.storage,nextLab.costM)
+            && !AirBuild::Busy(transitionStore,Task::BuildType::STORE)) {
+            @t=AirBuild::Utility(u,UnitHelpers::GetMetalStorageNameForSide(side),Task::BuildType::STORE,4);
+            if (t !is null) return AirBuild::Record(t,"transition.storage",u);
+        }
         @t = AirReclaim::MakeTask(u);
         if (t !is null) return AirBuild::Record(t, "energy.reclaim", u);
-        if (AirEconomy::MetalFloating()) {
+        // First access precedes discretionary shared economy/its assists.
+        // Later factories retain the twenty-turret gate and capacity policy.
+        if (AirEconomy::t2 == 0) {
+            @t = AirBuild::Factory(u, true);
+            if (t !is null) return AirBuild::Record(t, "transition.bay", u);
+            if (AirEconomy::SavingForFirstLab()) {
+                @t = AirBuild::Nano(u);
+                if (t !is null) return AirBuild::Record(t, "transition.support", u);
+                @t = AirBuild::Assist(u);
+                if (t !is null) return AirBuild::Record(t, "transition.finish", u);
+                return AirBuild::Record(aiBuilderMgr.Enqueue(TaskB::Wait(3 * SECOND)), "transition.save", u);
+            }
+        }
+        { // One funded support decision, before shared growth/assistance.
             @t = AirBuild::Nano(u);
             if (t !is null) return AirBuild::Record(t, "overflow.support", u);
             @t = AirBuild::Assist(u, false, ai.GetCircuitDef(UnitHelpers::GetT1NanoNameForSide(Global::AISettings::Side)));
@@ -89,13 +123,6 @@ namespace AirRules {
             @t = AirBuild::Utility(u, UnitHelpers::GetEnergyStorageNameForSide(side), Task::BuildType::STORE, 1);
             if (t !is null) return AirBuild::Record(t, "storage.buffer", u);
         }
-        // An income-qualified first T2 lab must not wait for the aspirational
-        // T1 energy target. Recovery remains above this row; later labs also
-        // require spare capacity unless their full cost is already banked.
-        if (AirEconomy::t2 == 0) {
-            @t = AirBuild::Factory(u, true);
-            if (t !is null) return AirBuild::Record(t, "transition.bay", u);
-        }
         // Production demand is a floor, plus energy for the next stage of T1 growth.
         const float targetE = AiMax(160.0f, AiMax(AirEconomy::metal * 45.0f, AirEconomy::demandE * 1.3f));
         if (!AirEconomy::TechGrowth() && (AirEconomy::energy < targetE || AirEconomy::recovery)) {
@@ -131,10 +158,10 @@ namespace AirRules {
         // to allied resource clusters and must not recruit these constructors.
         @t = AirBuild::Assist(u);
         if (t !is null) return AirBuild::Record(t, "project.assist", u);
-        // Advanced aircraft remain available for economy; a renewable guard
+        // All aircraft remain available for economy; a renewable guard
         // would absorb their mobile build power indefinitely at a completed lab.
         CCircuitUnit@ plant = Factory::primaryT1AirPlant;
-        if (!AirBuild::EconomyAircraft(u) && plant !is null && !Lifecycle::IsRetiring(plant)) {
+        if (!AirBuild::EconomyAircraft(u) && AirBuild::PlantHasWork(plant)) {
             // Non-interruptible guards explicitly start the native timeout;
             // interruptible guards deactivate their timer while assigned.
             @t = GuardHelpers::AssignWorkerGuard(u, plant, Task::Priority::NORMAL, false, 5 * SECOND);

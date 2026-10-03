@@ -70,6 +70,7 @@ namespace AirLayout {
     string Key(int i) { return "air.bay." + i; }
     void Save(Bay@ b)
     {
+        aiTerrainMgr.SetLayoutInt("air.supportRevision", aiTerrainMgr.GetLayoutInt("air.supportRevision", 0) + 1);
         aiTerrainMgr.SetLayoutInt(b.key + ".cluster", b.cluster);
         aiTerrainMgr.SetLayoutInt(b.key + ".slot", b.slot);
         aiTerrainMgr.SetLayoutInt(b.key + ".envelope", b.envelope);
@@ -88,6 +89,7 @@ namespace AirLayout {
         if (!enabled) return;
         UnlockCampus();
         AirEconomy::Reset(); AirProduction::Reset();
+        AirBuild::AdoptExisting();
         aiBuilderMgr.experimentalBuild = true;
         aiBuilderMgr.experimentalAirDirect = true;
         if (aiTerrainMgr.GetLayoutInt("air.reclaimCaptured", 0) == 0) {
@@ -156,14 +158,15 @@ namespace AirLayout {
         }
         const int cluster = reuse !is null && reuse.cluster >= 0 ? reuse.cluster : aiTerrainMgr.GetLayoutInt("air.clusters", 0);
         const string key = "air.cluster." + cluster;
-        const int variant = MetalEconomy::Active() ? int(ai.frame / (10 * SECOND)) : 0;
-        const int planFacing = MetalEconomy::Active() ? (facing + variant / 3) % 4 : facing;
-        // A cramped metal platform may not hold two allies' full campuses.
-        // Keep atomic support reservations, but allow a smaller cluster after
-        // a complete six-site search cycle. Future demand plans another cluster.
+        const bool compact = ai.frame >= (MetalEconomy::Active() ? MetalEconomy::CompactCampusAfterSeconds
+            : Global::RoleSettings::Air::CompactCampusAfterSeconds) * SECOND;
+        const int variant = (MetalEconomy::Active() || compact) ? int(ai.frame / (10 * SECOND)) : 0;
+        const int planFacing = (MetalEconomy::Active() || compact) ? (facing + variant / 3) % 4 : facing;
+        // Cliffs and small islands can reject every full campus rectangle.
+        // Keep each lab's twenty support pins atomic, then plan more compact
+        // clusters until the aggregate six-site reserve is satisfied.
         const int count = members.length() > 0 ? int(members.length())
-            : MetalEconomy::Active() && ai.frame >= MetalEconomy::CompactCampusAfterSeconds * SECOND
-                ? (variant % 3 == 0 ? 6 : variant % 3 == 1 ? 3 : 1) : 6;
+            : AirMath::CampusSize(compact, variant);
         // Perimeter-only bounded search, one atomic native transaction per site.
         for (int ring = 0; ring <= Global::RoleSettings::Air::EconomySearchRings; ++ring) {
             const int length = AiMax(1, 8 * ring);
@@ -178,7 +181,7 @@ namespace AirLayout {
                 const int firstNanos = UnitHelpers::IsT2AircraftPlant(plant.GetName()) ? 20 : AiMin(5, Global::RoleSettings::Air::T1NanoLimit);
                 // Narrow metal lanes need a longer compound with fewer columns.
                 // Keep the same six sites and support pins, using the shared geometry.
-                const int columns = AiMin(count, MetalEconomy::Active() ? 3 - variant % 3 : 3);
+                const int columns = AiMin(count, (MetalEconomy::Active() || compact) ? 3 - variant % 3 : 3);
                 if (!aiTerrainMgr.PlanAirFactoryCluster(key, plant, advanced, nano, at, planFacing, count, columns, firstNanos)) continue;
                 bool allowed = true;
                 for (int b = 0; b < count; ++b) {
@@ -204,7 +207,7 @@ namespace AirLayout {
                 }
                 aiTerrainMgr.SetLayoutInt("air.clusters", AiMax(cluster + 1, aiTerrainMgr.GetLayoutInt("air.clusters", 0)));
                 if (members.length() != uint(count))
-                    Invariants::Violation("INV-109", key, "AIR compound must contain exactly six reserved lab sites");
+                    Invariants::Violation("INV-109", key, "AIR compound member count differs from its atomic plan");
                 GenericHelpers::LogUtil("[AIR][Layout] cluster=" + cluster + " labs=" + count + " at=" + int(at.x) + "," + int(at.z), 1);
                 return members[0];
             }
@@ -236,6 +239,10 @@ namespace AirLayout {
     void PlanAhead()
     {
         if (!enabled || ai.frame - aheadFrame < SECOND) return;
+        // Claim the commander's nearby starter first. Speculative campuses
+        // cannot force this one irreplaceable opening builder to walk away.
+        if (AirEconomy::t1 + AirEconomy::t2 == 0 && !AirEconomy::HasMobileConstructor()
+            && aiTerrainMgr.GetLayoutInt("air.starter.ordered", 0) == 0) return;
         aheadFrame = ai.frame;
         const string side = Global::AISettings::Side;
         // Reserve the starter and campus during the opening, before wind and
@@ -251,7 +258,8 @@ namespace AirLayout {
             int have = 0;
             Bay@ retry = null;
             for (uint i = 0; i < bays.length(); ++i) {
-                if (bays[i].defName != names[t]) continue;
+                // Adopted opening/gifted factories do not replace future campus capacity.
+                if (bays[i].defName != names[t] || bays[i].cluster < 0) continue;
                 if (bays[i].slot >= 0 || bays[i].started || bays[i].factoryId >= 0) ++have;
                 else if (retry is null) @retry = bays[i];
             }

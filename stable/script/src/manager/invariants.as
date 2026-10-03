@@ -95,6 +95,28 @@ namespace Invariants {
     dictionary energyFrames;   // energy def name -> unfinished count last tick (INV-009)
     dictionary offSince;   // reclaim target id -> frame turrets were first seen off it (INV-008)
 
+    // D-175: every role checks the same overflow promise after sharing.
+    void CheckTeamShare()
+    {
+        const float mStor = aiEconomyMgr.metal.storage;
+        const bool high = TeamEconomy::OpeningReady() && mStor > 0.0f
+            && aiEconomyMgr.metal.current >= Global::RoleSettings::Tech::TeamShareMetalAbove * mStor;
+        if (!high) overflowSince = -1;
+        else if (overflowSince < 0) overflowSince = ai.frame;
+        else if (ai.frame - overflowSince >= 60 * SECOND) {
+            int roomFor = -1;
+            for (int i = 0; i < TeamEconomy::Count(); ++i) {
+                const int tid = TeamEconomy::TeamAt(i);
+                if (tid >= 0 && TeamEconomy::Alive(tid) && TeamEconomy::Frame(tid) >= 0
+                    && TeamEconomy::Metal(tid, TeamEconomy::FREE) >= 0.25f * mStor) { roomFor = tid; break; }
+            }
+            if (roomFor >= 0)
+                Violation("INV-033", "share", "metal over " + int(Global::RoleSettings::Tech::TeamShareMetalAbove * 100.0f)
+                    + "% for 60 s while team " + roomFor + " has " + int(TeamEconomy::Metal(roomFor, TeamEconomy::FREE)) + " free");
+            overflowSince = ai.frame;
+        }
+    }
+
     void Tick()
     {
         // INV-002: a frame of ours under construction has build power on it
@@ -353,28 +375,6 @@ namespace Invariants {
                 string why;
                 if (TechBuild::AfusFunded(why))
                     Violation("INV-031", "" + l2.id, "the advanced lab " + l2.id + " retired while the advanced fusion was funded: " + why);
-            }
-        }
-
-        // INV-033 (D-106): our metal bank does not sit over TeamShareMetalAbove for
-        // 60 s while a live teammate has room for metal (the snapshot is the one
-        // the donation refreshed)
-        {
-            const float mStor = aiEconomyMgr.metal.storage;
-            const bool high = mStor > 0.0f && aiEconomyMgr.metal.current >= Global::RoleSettings::Tech::TeamShareMetalAbove * mStor;
-            if (!high) overflowSince = -1;
-            else if (overflowSince < 0) overflowSince = ai.frame;
-            else if (ai.frame - overflowSince >= 60 * SECOND) {
-                int roomFor = -1;
-                for (int i = 0; i < TeamEconomy::Count(); ++i) {
-                    const int tid = TeamEconomy::TeamAt(i);
-                    if (tid >= 0 && TeamEconomy::Alive(tid) && TeamEconomy::Frame(tid) >= 0
-                        && TeamEconomy::Metal(tid, TeamEconomy::FREE) >= 0.25f * mStor) { roomFor = tid; break; }
-                }
-                if (roomFor >= 0)
-                    Violation("INV-033", "share", "metal over " + int(Global::RoleSettings::Tech::TeamShareMetalAbove * 100.0f)
-                        + "% for 60 s while team " + roomFor + " has " + int(TeamEconomy::Metal(roomFor, TeamEconomy::FREE)) + " free");
-                overflowSince = ai.frame;
             }
         }
 

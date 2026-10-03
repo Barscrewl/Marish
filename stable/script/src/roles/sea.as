@@ -22,8 +22,8 @@ namespace RoleSea {
         bool IsT2SeaConstructor(const CCircuitDef@ d) {
             if (d is null) return false;
             const string n = d.GetName();
-            // T2 sea constructors (BAR): armacsub/coracsub; Legion reuses Cortex variant
-            return (n == "armacsub" || n == "coracsub");
+            // T2 sea constructors (BAR): armacsub/coracsub/leganavyconsub
+            return (n == "armacsub" || n == "coracsub" || n == "leganavyconsub");
         }
 
         // Attempt to donate a unit to the lead team; logs and guards
@@ -226,7 +226,7 @@ namespace RoleSea {
 
         // Resolve side-specific constructor unit names (with safe fallbacks)
         string t1Ctor = (side == "armada" ? "armcs" : side == "cortex" ? "corcs" : side == "legion" ? "legnavyconship" : "armcs");
-        string t2Ctor = (side == "armada" ? "armacsub" : side == "cortex" ? "coracsub" : side == "legion" ? "coracsub" : "armacsub");
+        string t2Ctor = (side == "armada" ? "armacsub" : side == "cortex" ? "coracsub" : side == "legion" ? "leganavyconsub" : "armacsub");   // legadvshipyard builds leganavyconsub, not coracsub
 
         if (isT1Shipyard) {
             // Ensure at least two T1 construction ships exist before producing other units
@@ -388,8 +388,8 @@ namespace RoleSea {
             }
 
             // 7) Flagship (capital ship): ensure at least 1, placed last in sequence
-            // Side IDs: armada -> armepoch, cortex -> corblackhy; Legion falls back to Cortex variant
-            string flagshipName = (side == "armada" ? "armepoch" : (side == "cortex" ? "corblackhy" : "corblackhy"));
+            // Side IDs: armada -> armepoch, cortex -> corblackhy, legion -> leganavyflagship
+            string flagshipName = (side == "armada" ? "armepoch" : (side == "cortex" ? "corblackhy" : (side == "legion" ? "leganavyflagship" : "corblackhy")));
             int haveFlagship = UnitDefHelpers::GetUnitDefCount(flagshipName);
             if (haveFlagship >= 0 && haveFlagship < 1) {
                 CCircuitDef@ dFlag = ai.GetCircuitDef(flagshipName);

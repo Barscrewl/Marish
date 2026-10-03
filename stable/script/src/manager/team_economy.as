@@ -1,5 +1,6 @@
 #include "../global.as"
 #include "../helpers/generic_helpers.as"
+#include "../helpers/team_share_math.as"
 
 /******************************************************************************
 
@@ -70,4 +71,84 @@ namespace TeamEconomy {
             + " +" + int(Metal(teamId, INCOME)) + " (free " + int(Metal(teamId, FREE)) + "), energy " + int(Energy(teamId, CURRENT)) + "/"
             + int(Energy(teamId, STORAGE)) + " +" + int(Energy(teamId, INCOME));
     }
+    // D-106 (owner's rule): a fallback so no metal is lost to overflow when our
+    // build power cannot keep up: whenever the metal bank is over
+    // TeamShareMetalAbove of storage, refresh every teammate's economy and give
+    // up to TeamShareMetalBudget of our storage, the lowest-filled live teammate
+    // first, each filled up to its free storage
+    int teamShareFrame = -100000;
+    int teamShareLog = -100000;
+    bool firstFactoryStood = false;
+    int verifyFrame = -1;          // one check after a donation: did it arrive
+    array<int> verifyTeams;
+    // TECH retains its original T1-bot/T2-recovery gate. Other roles accept
+    // any completed factory; native GetFactoryCount excludes construction frames.
+    // The latch survives reclaim/loss and role switches within this instance.
+    bool OpeningReady()
+    {
+        if (firstFactoryStood) return true;
+        if (Global::AISettings::Role == AiRole::TECH) {
+            CCircuitDef@ l1 = ai.GetCircuitDef(UnitHelpers::GetT1BotLabForSide(Global::AISettings::Side));
+            firstFactoryStood = (l1 !is null && l1.count > aiBuilderMgr.GetUnfinishedCount(l1)) || TechBuild::WasIntoT2();
+        } else {
+            firstFactoryStood = aiFactoryMgr.GetFactoryCount() > 0;
+        }
+        return firstFactoryStood;
+    }
+
+    void VerifyShare()
+    {
+        if (verifyFrame < 0 || ai.frame < verifyFrame) return;
+        verifyFrame = -1;
+        string line = "";
+        for (uint i = 0; i < verifyTeams.length(); ++i) {
+            TeamEconomy::UpdateTeam(verifyTeams[i]);
+            line += (line.length() > 0 ? ", " : "") + "team " + verifyTeams[i] + " received " + int(TeamEconomy::Metal(verifyTeams[i], TeamEconomy::RECEIVED))
+                + " (bank " + int(TeamEconomy::Metal(verifyTeams[i], TeamEconomy::CURRENT)) + ")";
+        }
+        GenericHelpers::LogUtil("[" + Team::Roster::RoleName(Global::AISettings::Role) + "][Share] after the donation: we sent " + int(TeamEconomy::OwnMetal(TeamEconomy::SENT)) + "; " + line + " (D-106)", 1);
+    }
+    void ShareOverflow()
+    {
+        VerifyShare();
+        const float stor = aiEconomyMgr.metal.storage;
+        const float cur = aiEconomyMgr.metal.current;
+        float budget = TeamShareMath::Budget(cur, stor,
+            Global::RoleSettings::Tech::TeamShareMetalAbove,
+            Global::RoleSettings::Tech::TeamShareMetalBudget, OpeningReady());
+        if (budget < Global::RoleSettings::Tech::TeamShareMinAmount || budget <= 0.0f) return;
+        if (ai.frame - teamShareFrame < int(Global::RoleSettings::Tech::TeamShareCheckSeconds * SECOND)) return;
+        teamShareFrame = ai.frame;
+        const int n = TeamEconomy::UpdateAll();
+        array<int> ids;
+        array<float> fills;
+        for (int i = 0; i < n; ++i) {
+            const int tid = TeamEconomy::TeamAt(i);
+            if (tid < 0 || !TeamEconomy::Alive(tid) || TeamEconomy::Metal(tid, TeamEconomy::FREE) < Global::RoleSettings::Tech::TeamShareMinAmount) continue;
+            // insertion by fill, lowest first
+            const float f = TeamEconomy::MetalFill(tid);
+            uint at = 0;
+            while (at < fills.length() && fills[at] <= f) ++at;
+            ids.insertAt(at, tid);
+            fills.insertAt(at, f);
+        }
+        string sent = "";
+        for (uint i = 0; i < ids.length() && budget >= Global::RoleSettings::Tech::TeamShareMinAmount; ++i) {
+            const float give = TeamShareMath::Amount(TeamEconomy::Metal(ids[i], TeamEconomy::FREE), budget,
+                Global::RoleSettings::Tech::TeamShareMinAmount);
+            if (give <= 0.0f) continue;
+            if (!TeamEconomy::SendMetal(ids[i], give)) continue;
+            budget -= give;
+            if (verifyFrame < 0) { verifyTeams.resize(0); verifyFrame = ai.frame + 45; }   // after the engine's next slow update
+            verifyTeams.insertLast(ids[i]);
+            sent += (sent.length() > 0 ? ", " : "") + int(give) + " to team " + ids[i] + " (" + int(fills[i] * 100.0f) + "% full)";
+        }
+        if (sent.length() > 0 || ai.frame - teamShareLog > 60 * SECOND) {
+            teamShareLog = ai.frame;
+            GenericHelpers::LogUtil("[" + Team::Roster::RoleName(Global::AISettings::Role) + "][Share] metal " + int(cur) + " of " + int(stor) + " (" + int(cur * 100.0f / stor) + "%): "
+                + ((sent.length() > 0) ? ("sent " + sent) : ("no teammate with room (" + n + " teammates)"))
+                + "; the engine counts " + int(TeamEconomy::OwnMetal(TeamEconomy::SENT)) + " metal sent in the last update (D-106)", 1);
+        }
+    }
+
 }

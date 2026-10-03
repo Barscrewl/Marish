@@ -202,3 +202,13 @@ TECH evaluates the adapter at mex.expand while preserving prior lab lifecycle
 rows. Other experimental mobile constructors share the economic chooser. The
 native legacy-profile adapter uses the separate `metal_map` JSON fragment loaded
 by each active profile. See [implementation](../../doc/metal-maps-implementation.md).
+
+
+### Shared metal overflow (D-175)
+
+The shared economy callback calls `TeamEconomy::ShareOverflow` and
+`Invariants::CheckTeamShare` for all six experimental roles. TECH's existing
+`TeamShare*` settings remain the one shared configuration: 95% full, a 20%
+storage budget, five-second interval, and 25-metal minimum gift. Opening
+resources are protected until a completed factory; TECH retains its original
+T1-bot/T2 recovery gate. See [details](../../doc/team-metal-sharing.md).

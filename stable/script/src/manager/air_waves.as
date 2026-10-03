@@ -8,15 +8,16 @@
 #include "../helpers/unitdef_helpers.as"
 #include "military.as"
 #include "../helpers/air_math.as"
+#include "air_operations.as"
 
 /******************************************************************************
 
 T2 BOMBER WAVES
 
-D-162: ExperimentalBuild opts into the staged, funded ordinary-bomber strike
-controller documented in doc/air-enhancement-review.md. The historical
-description below applies to the legacy branch. Experimental T1 raids live in
-air_raids.as; experimental waves explicitly return home without native mop-up.
+D-171: ExperimentalBuild opts into funded, committed bomber operations in
+doc/air-committed-operations-plan.md. Offensive survivors keep attacking;
+defensive sorties may return and repair. Experimental T1 raids live in
+air_raids.as. The historical description below applies to the legacy branch.
 
 Native CMilitaryManager::DefaultMakeTask puts every unit whose main role is
 "bomber" into a CBombTask the moment it leaves the factory, so bombers trickle
@@ -103,6 +104,8 @@ namespace AirWaves {
     int lastNoTargetLog = -100000;
     int targetMinimum = 0;
     int plannedCount = 0;
+    bool plannedDefensive = false;
+    bool plannedFront = false;
     int lastPlanFrame = -100000;
     float learnedResistance = 1.0f;
     AIFloat3 lastRaidAim;
@@ -402,20 +405,42 @@ namespace AirWaves {
                     failedRaidUntil.removeAt(i); failedRaidAims.removeAt(i);
                 } else wt.ExcludeStrikeRegion(failedRaidAims[i], Global::RoleSettings::Air::StrikeFailedRegionRadius);
             }
-            // Alternate economy raids with a coordinated static assault. A failed
-            // preference may use another feasible known static target.
-            const int preference = waveIndex % 3 == 2 ? 3 : 4;
+            // Defend a nearby T3 first; otherwise seek reachable backline economy.
+            // Frontline static is the fallback when no backline target qualifies.
+            AirOperations::Configure(wt, false, 6);
+            plannedDefensive = wt.PickStrikeTarget(Global::Map::StartPos, 6, 0.0f, true);
+            const int defensiveMinimum = wt.GetRequiredBombers();
+            // Accumulate a viable response before committing to cheap cleanup.
+            // This only governs launch; an existing offensive wave stays committed.
+            if (!plannedDefensive && defensiveMinimum > bombers) {
+                targetMinimum = defensiveMinimum;
+                raw.Abort();
+                return null;
+            }
+            if (!plannedDefensive) {
+                AirOperations::Configure(wt, true, 5);
+                // The opening draw sizes an economy raid. A blocked backline
+                // must still allow a larger, payload-funded frontline assault.
+                if (!OpeningDone()) ConfigureStrike(wt,
+                    ai.GetCircuitDef(UnitHelpers::GetT2WaveBomberForSide(Global::AISettings::Side)),
+                    heldBombers, AiMin(bombers, OpeningSize()));
+            }
+            const int preference = 5;
             // Supply the ground-front objective before selecting the actual target.
-            wt.SetPlan(Task::WaveMode::STRIKE, _FrontAim(), Global::RoleSettings::Air::WaveFormDistance,
+            wt.SetPlan(Task::WaveMode::STRIKE, plannedDefensive ? wt.GetAim() : _FrontAim(), Global::RoleSettings::Air::WaveFormDistance,
                 Global::RoleSettings::Air::StrikeLaneSpacing, Global::RoleSettings::Air::WaveOverrun,
                 Global::RoleSettings::Air::WaveFormTimeoutSeconds * SECOND, 0, Task::WAVE_SMART_BEARING, 1);
-            if (!wt.PickStrikeTarget(Global::Map::StartPos, preference, Global::RoleSettings::Air::StrikeMinTargetMetal, false)
-                && !wt.PickStrikeTarget(Global::Map::StartPos, 0, Global::RoleSettings::Air::StrikeMinTargetMetal, false)) {
+            plannedFront = !plannedDefensive && !wt.PickStrikeTarget(Global::Map::StartPos, preference,
+                Global::RoleSettings::Air::StrikeMinTargetMetal, false);
+            if (plannedFront) ConfigureStrike(wt,
+                ai.GetCircuitDef(UnitHelpers::GetT2WaveBomberForSide(Global::AISettings::Side)), heldBombers, bombers);
+            if (plannedFront && !wt.PickOperationTarget(Global::Map::StartPos, 0.0f, false)) {
                 targetMinimum = wt.GetRequiredBombers();
                 raw.Abort();
                 if (ai.frame - lastNoTargetLog >= 30 * SECOND) {
                     lastNoTargetLog = ai.frame;
-                    GenericHelpers::LogUtil("[AIR][Waves] held: no feasible known target; request fresh reconnaissance", 1);
+                    GenericHelpers::LogUtil("[AIR][Waves] held: no feasible known target; defensive minimum="
+                        + defensiveMinimum + " available=" + bombers + "; request fresh reconnaissance", 1);
                 }
                 return null;
             }
@@ -424,8 +449,9 @@ namespace AirWaves {
                 if (MapHelpers::SqDist(wt.GetAim(), failedRaidAims[i]) <= Global::RoleSettings::Air::StrikeFailedRegionRadius
                     * Global::RoleSettings::Air::StrikeFailedRegionRadius)
                     Invariants::Violation("INV-105", "failed.raid", "AIR selected a target in an unexpired failed raid region");
-            plannedCount = OpeningDone() ? AiMax(Global::RoleSettings::Air::StrikeFirstSize, targetMinimum) : OpeningSize();
-            if (plannedCount > bombers || FightersFor(plannedCount) > int(heldFighters.getSize())) {
+            plannedCount = AirMath::OperationSize(bombers, targetMinimum, OpeningDone(), OpeningSize(),
+                plannedFront, plannedDefensive, Global::RoleSettings::Air::StrikeFirstSize);
+            if (plannedCount == 0 || FightersFor(plannedCount) > int(AirProduction::home.getSize())) {
                 raw.Abort(); return null;
             }
             ConfigureStrike(wt, ai.GetCircuitDef(UnitHelpers::GetT2WaveBomberForSide(Global::AISettings::Side)), heldBombers, plannedCount);
@@ -435,7 +461,8 @@ namespace AirWaves {
             lastMethod = Task::WaveMode::STRIKE;
             lastRaidAim = wt.GetAim();
             GenericHelpers::LogUtil("[AIR][Waves] planned strike target=" + wt.GetStrikeTargetId()
-                + " bombers=" + plannedCount + " required=" + targetMinimum + " aim=" + int(wt.GetAim().x) + "," + int(wt.GetAim().z), 1);
+                + " bombers=" + plannedCount + " required=" + targetMinimum + " aim=" + int(wt.GetAim().x) + "," + int(wt.GetAim().z)
+                + " mission=" + (plannedDefensive ? "defensive" : plannedFront ? "frontline" : "economy"), 1);
             return raw;
         }
         const float fd = Global::RoleSettings::Air::WaveFormDistance;
@@ -493,6 +520,7 @@ namespace AirWaves {
                 points.insertLast(AIFloat3(pos.x + 80.0f, 0.0f, pos.z));
                 route.SetPatrol(true);
             }
+            route.SetAirControl(true);
             route.SetRoute(points);
             route.SetTraversal(true, 192.0f, false);
             u.SetIdleMode(isBomber ? 1 : 0);
@@ -577,19 +605,18 @@ namespace AirWaves {
     void _TryLaunch(int frame)
     {
         const int bombers = int(heldBombers.getSize());
-        const int fighters = int(heldFighters.getSize());
+        const int fighters = Global::RoleSettings::Air::ExperimentalBuild ? int(AirProduction::home.getSize()) : int(heldFighters.getSize());
         if (bombers == 0) { holdSinceFrame = -1; return; }
         if (holdSinceFrame < 0) holdSinceFrame = frame;
         if (Global::RoleSettings::Air::ExperimentalBuild) {
             const bool busy = (waveTask !is null && !waveTask.IsDead()) || !lastWaveEvaluated;
-            if (!AirEconomy::MassBombers() || busy || frame - lastPlanFrame < 10 * SECOND) return;
-            const int floor = OpeningDone() ? Global::RoleSettings::Air::StrikeFirstSize : OpeningSize();
+            if (busy || frame - lastPlanFrame < 10 * SECOND) return;
+            const int floor = 3; // A small defensive T3 response may launch before the offensive draw.
             if (bombers < floor || fighters < FightersFor(floor)) return;
             lastPlanFrame = frame;
             // Re-probe even below an old target minimum: reconnaissance may
             // expose a cheaper objective. Never waive the new target's budget.
-            _Launch(frame, "target and route budget", OpeningDone()
-                ? AiMin(bombers, Global::RoleSettings::Air::StrikeWaveCap) : OpeningSize());
+            _Launch(frame, "target and route budget", AiMin(bombers, Global::RoleSettings::Air::StrikeWaveCap));
             return;
         }
 
@@ -624,16 +651,29 @@ namespace AirWaves {
         nextVipIdx = 0;
 
         array<IUnitTask@> aborted;
-        _ReleaseHeld(@heldBombers, @waveBombers, @aborted, limit);
-        _ReleaseHeld(@heldFighters, null, @aborted, limit < 0 ? -1 : FightersFor(limit));
+        int attached = 0;
+        if (Global::RoleSettings::Air::ExperimentalBuild) {
+            array<string>@ ids = heldBombers.getKeys();
+            for (uint i = 0; i < ids.length() && int(waveBombers.getSize()) < limit; ++i) {
+                CCircuitUnit@ member = ai.GetTeamUnit(parseInt(ids[i]));
+                if (member is null) { heldBombers.delete(ids[i]); continue; }
+                if (aiMilitaryMgr.TransferUnit(member, planned)) {
+                    waveBombers.set(ids[i], int(member.id)); heldBombers.delete(ids[i]);
+                }
+            }
+            attached = AirOperations::AttachFighters(cast<CAirWaveTask>(planned), !plannedDefensive);
+        } else {
+            _ReleaseHeld(@heldBombers, @waveBombers, @aborted, limit);
+            _ReleaseHeld(@heldFighters, null, @aborted, limit < 0 ? -1 : FightersFor(limit));
+        }
         const int launchedBombers = int(waveBombers.getSize());
-        const int launchedFighters = int(launchQueue.getSize()) - launchedBombers;
+        const int launchedFighters = Global::RoleSettings::Air::ExperimentalBuild ? attached : int(launchQueue.getSize()) - launchedBombers;
         if (Global::RoleSettings::Air::ExperimentalBuild
-            && ((!OpeningDone() && launchedBombers != OpeningSize()) || launchedBombers < targetMinimum))
+            && ((!plannedDefensive && !plannedFront && !OpeningDone() && launchedBombers != OpeningSize()) || launchedBombers < targetMinimum))
             Invariants::Violation("INV-103", "" + waveIndex, "bomber release differs from opening draw or cannot fund selected mission");
 
         ++waveIndex;
-        if (Global::RoleSettings::Air::ExperimentalBuild && launchedBombers > 0)
+        if (Global::RoleSettings::Air::ExperimentalBuild && launchedBombers > 0 && !plannedDefensive && !plannedFront)
             aiTerrainMgr.SetLayoutInt("air.openingBombDone", 1);
         @waveTask = Global::RoleSettings::Air::ExperimentalBuild ? planned : _PlanWave(launchedBombers);
         evaluationCohort.deleteAll();
@@ -712,6 +752,14 @@ namespace AirWaves {
     void _EvaluateLastWave()
     {
         lastWaveEvaluated = true;
+        if (Global::RoleSettings::Air::ExperimentalBuild) {
+            // A one-way operation has zero survivors by design. Do not learn
+            // a failed route from that alone; each launch remeasures visible AA.
+            learnedResistance = 1.0f;
+            nextWaveSize = Required();
+            GenericHelpers::LogUtil("[AIR][Waves] committed operation ended; next=" + nextWaveSize, 1);
+            return;
+        }
         int survivors = 0;
         array<string>@ cohort = evaluationCohort.getKeys();
         for (uint i = 0; i < cohort.length(); ++i) if (ai.GetTeamUnit(parseInt(cohort[i])) !is null) ++survivors;
@@ -797,7 +845,7 @@ namespace AirWaves {
         if (Economy::GetMinMetalIncomeLast10s() < Global::RoleSettings::Air::BomberWaveProductionMetalIncome) return null;
 
         const int bombers = int(heldBombers.getSize());
-        const int fighters = int(heldFighters.getSize());
+        const int fighters = Global::RoleSettings::Air::ExperimentalBuild ? int(AirProduction::home.getSize()) : int(heldFighters.getSize());
         const int required = Required();
         const int targetFighters = FightersFor(required);
 
@@ -838,7 +886,7 @@ namespace AirWaves {
         if (waveTask !is null && waveTask is task) {
             @waveTask = null;
             GenericHelpers::LogUtil("[AIR][Waves] Wave " + waveIndex + (Global::RoleSettings::Air::ExperimentalBuild
-                ? " run over; survivors return to staging" : " run over; survivors mop up on the native bomb task"), 1);
+                ? (plannedDefensive ? " defensive operation complete; survivors repair/stage" : " committed operation exhausted") : " run over; survivors mop up on the native bomb task"), 1);
         }
         if (waveBombTasks.getSize() == 0) return;
         array<string>@ keys = waveBombTasks.getKeys();

@@ -6,6 +6,19 @@ namespace AirRaids {
     dictionary cohort;
     CAirWaveTask@ wave = null;
     int lastTry = -100000;
+    bool OpeningPending() { return Global::RoleSettings::Air::T1OpeningRaidEnabled && aiTerrainMgr.GetLayoutInt("air.t1.openingDone", 0) == 0; }
+    int OpeningSize()
+    {
+        int size = aiTerrainMgr.GetLayoutInt("air.t1.openingSize", 0);
+        if (size <= 0) {
+            const int low = AirMath::OpeningWave(Global::RoleSettings::Air::T1OpeningBomberMin, Global::RoleSettings::Air::T1OpeningBomberMax, 0);
+            const int high = AirMath::OpeningWave(Global::RoleSettings::Air::T1OpeningBomberMin, Global::RoleSettings::Air::T1OpeningBomberMax, 300);
+            size = AiRandom(low, high);
+            aiTerrainMgr.SetLayoutInt("air.t1.openingSize", size);
+            GenericHelpers::LogUtil("[AIR][Raid] opening size drawn=" + size, 1);
+        }
+        return size;
+    }
     bool IsBomber(const CCircuitDef@ d)
     {
         return d !is null && (d.GetName() == "armthund" || d.GetName() == "corshad");
@@ -35,10 +48,17 @@ namespace AirRaids {
             int survivors = 0;
             array<string>@ ids = cohort.getKeys();
             for (uint i = 0; i < ids.length(); ++i) if (ai.GetTeamUnit(parseInt(ids[i])) !is null) ++survivors;
-            GenericHelpers::LogUtil("[AIR][Raid] returned cohort=" + cohort.getSize() + " survivors=" + survivors, 1);
+            GenericHelpers::LogUtil("[AIR][Raid] exhausted cohort=" + cohort.getSize() + " survivors=" + survivors, 1);
             cohort.deleteAll(); joining.deleteAll(); @wave = null;
         }
-        if (int(held.getSize()) < Global::RoleSettings::Air::T1RaidMinimum
+        if (OpeningPending() && aiTerrainMgr.GetLayoutInt("air.t1.openingReady", 0) == 0) return;
+        array<string>@ candidates = held.getKeys();
+        for (uint i = 0; i < candidates.length(); ++i) {
+            CCircuitUnit@ u = ai.GetTeamUnit(parseInt(candidates[i]));
+            if (u is null || (u.task !is null && u.task.GetType() == int(Task::Type::PLAYER))) held.delete(candidates[i]);
+        }
+        const int minimum = OpeningPending() ? OpeningSize() : Global::RoleSettings::Air::T1RaidMinimum;
+        if (int(held.getSize()) < minimum
             || AirScreen::HomeValue() < AirEconomy::EnemyAir()) return;
         array<string>@ ids = held.getKeys();
         CCircuitUnit@ first = ai.GetTeamUnit(parseInt(ids[0]));
@@ -50,22 +70,26 @@ namespace AirRaids {
             Global::RoleSettings::Air::StrikeEdgeInset, Global::RoleSettings::Air::StrikeUnknownReserve,
             Global::RoleSettings::Air::StrikeRiskScale, Global::RoleSettings::Air::StrikeArmyReserve,
             Global::RoleSettings::Air::StrikeLocalAaReserve, false);
-        if (!wave.PickStrikeTarget(Global::Map::StartPos, 2, 30.0f, false)) {
+        AirOperations::Configure(wave, true, 2);
+        if (!wave.PickOperationTarget(Global::Map::StartPos, 0.0f)) {
             wave.Abort(); @wave = null; return;
         }
         wave.SetPlan(Task::WaveMode::STRIKE, wave.GetAim(), Global::RoleSettings::Air::WaveFormDistance,
             Global::RoleSettings::Air::StrikeLaneSpacing, Global::RoleSettings::Air::WaveOverrun,
             Global::RoleSettings::Air::WaveFormTimeoutSeconds * SECOND, 0, Task::WAVE_SMART_BEARING, 1);
         array<IUnitTask@> tasks;
-        for (uint i = 0; i < ids.length(); ++i) {
+        for (uint i = 0; i < ids.length() && (!OpeningPending() || int(cohort.getSize()) < minimum); ++i) {
             CCircuitUnit@ u = ai.GetTeamUnit(parseInt(ids[i]));
             if (u is null) continue;
-            joining.set(ids[i], true); cohort.set(ids[i], true);
-            if (u.task !is null && tasks.findByRef(u.task) < 0) tasks.insertLast(u.task);
+            if (aiMilitaryMgr.TransferUnit(u, wave)) { cohort.set(ids[i], true); held.delete(ids[i]); }
         }
-        held.deleteAll();
-        for (uint i = 0; i < tasks.length(); ++i) tasks[i].Abort();
-        GenericHelpers::LogUtil("[AIR][Raid] launched bombers=" + joining.getSize() + " target=" + wave.GetStrikeTargetId(), 1);
+        if (cohort.isEmpty()) { wave.Abort(); @wave = null; return; }
+        if (OpeningPending()) {
+            if (int(cohort.getSize()) != minimum) Invariants::Violation("INV-122", "T1 opening", "opening raid did not transfer its drawn cohort");
+            aiTerrainMgr.SetLayoutInt("air.t1.openingDone", 1);
+        }
+        const int escorts = AirOperations::AttachFighters(wave);
+        GenericHelpers::LogUtil("[AIR][Raid] launched bombers=" + cohort.getSize() + " escorts=" + escorts + " target=" + wave.GetStrikeTargetId(), 1);
     }
     void Removed(int id) { held.delete("" + id); joining.delete("" + id); }
     void Reset()
