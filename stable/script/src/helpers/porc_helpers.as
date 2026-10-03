@@ -79,7 +79,9 @@ namespace PorcHelpers {
 	// wants an income around 600. In practice these entries are unreachable and
 	// the class is never built at all. Position 7 - the Juno - is the last
 	// entry a well-funded cluster actually reaches, which is why swapping there
-	// is the only way to get a launcher onto the map.
+	// is the only way to get a launcher onto the map. The Juno itself is pulled
+	// forward to Global::Porc::JunoChainPosition for every role but SUPPORT
+	// (PrioritiseJuno); SUPPORT's swap reads the JSON order, before that move.
 	dictionary Junos = {
 		{"armada", "armjuno"},
 		{"cortex", "corjuno"},
@@ -166,8 +168,22 @@ namespace PorcHelpers {
 	// Push the default chain for both terrains. Roles with no opinion use this.
 	void ApplyDefaultChains(const string &in side)
 	{
-		aiMilitaryMgr.SetPorcChain(side, false, DefaultChain(side, false));
+		array<string>@ land = DefaultChain(side, false);
+		PrioritiseJuno(@land, side);
+		aiMilitaryMgr.SetPorcChain(side, false, land);
 		aiMilitaryMgr.SetPorcChain(side, true, DefaultChain(side, true));
+	}
+
+	// Pull the side's Juno forward to Global::Porc::JunoChainPosition: behind
+	// the JSON's position 7 a point needs +70..+95 metal income before it gets
+	// one (cumulative cost; budget ~32 x income on a large map)
+	void PrioritiseJuno(array<string>@ land, const string &in side)
+	{
+		const int to = Global::Porc::JunoChainPosition;
+		const string juno = ForSide(@Junos, side);
+		if (land is null || to < 0 || juno.length() == 0 || !Contains(land, juno)) return;
+		Prioritise(land, juno, uint(to));
+		GenericHelpers::LogUtil("[Porc] " + side + ": " + juno + " moved to chain position " + to, 1);
 	}
 
 	// Move `name` to position `to` if it is present. The common role edit:

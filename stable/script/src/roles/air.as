@@ -1232,6 +1232,7 @@ namespace RoleAir {
         if (Global::ModOptions::ScavUnitsForPlayers) {
             PorcHelpers::AppendTier(@land, @PorcHelpers::ScavUnitsLand, side, "scavunitsforplayers");
         }
+        PorcHelpers::PrioritiseJuno(@land, side);   // Juno ahead of the Beamer / Chainsaw (Global::Porc::JunoChainPosition)
         aiMilitaryMgr.SetPorcChain(side, false, land);
         aiMilitaryMgr.SetPorcChain(side, true, PorcHelpers::DefaultChain(side, true));
         GenericHelpers::LogUtil("[Porc] AIR: " + side + " air-denial chain set (" + land.length() + " entries)", 1);

@@ -93,6 +93,13 @@ namespace Global {
         // on defence instead of overflowing.
         float ExcessMetalPercent = 0.9f;
         float ExcessMetalBudgetMod = 2.0f;
+        // The Juno's place in the land chain (0-based), for the default and AIR
+        // chains (PorcHelpers::PrioritiseJuno); SUPPORT keeps its launcher swap.
+        // At 3 it follows the light laser, the light AA and one beamer: a point
+        // reaches it at ~1,000 metal (about +31 metal income on a big map)
+        // instead of ~2,200-3,000 (+70..+95). Played (Failed Negotiations): four
+        // Junos in 17 minutes, all FRONT, the first at 11.7. -1 leaves the JSON order.
+        int JunoChainPosition = 3;
     }
 
     // Battle-line warships of every faction: held at base, then every held
