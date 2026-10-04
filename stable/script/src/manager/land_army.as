@@ -36,7 +36,7 @@ Global::LandArmy.
 Support escorts: every T2 bot lab also lists its radar, jammer and T2 AA bot.
 All three carry the support role in behaviour.json, so a squad never takes
 one as its leader. Radars and jammers get the native CSupportTask, which walks
-each into an army squad that it then moves with; in the experimental profiles
+each into an army squad that it then moves with; in warband and the experimental profiles
 radars are rationed one per squad, most valuable squad first (behaviour.json
 "sensor"), and jammers join the nearest squad. T2 AA bots are given a guard
 task on the army's most valuable unit instead (MakeAAGuardTask): in tests the
@@ -323,10 +323,122 @@ namespace LandArmy {
         CapKind(AABots, AACap());
     }
 
+    // ---- T2 lab gate and T1 lab retirement -------------------------------
+    // No T2 bot lab before MinimumMetalIncomeForFirstT2Lab metal income
+    // (sliding 10 s minimum): every T2 bot lab is capped at 0 below it while
+    // none stands or is framed. One cap holds every path; played on All That
+    // Glitters, native's factory switch (army cost over 1.2 x the lab's cost)
+    // started a T2 lab on far less income than the script's own trigger.
+    // While a T2 bot lab stands or is framed, no T1 bot lab is ordered, and
+    // the T1 bot labs standing when it was framed are retired (production
+    // stops) and reclaimed: their metal goes into the T2 lab (SMRTBARb TECH,
+    // roles/tech_build.as ReclaimT1Lab). Losing the T2 lab lifts both caps.
+    array<int> retiredT1Labs;
+    int reclaimDeferLog = -100000;
+    int turretsPulledAt = -100000;
+    bool t2GateLogged = false;
+
+    // The T2 lab's income: the sliding 10 s minimum averaged over the last
+    // T2LabIncomeWindowSeconds. The 10 s minimum alone opened the gate on
+    // reclaim: played on Starwatcher, a FRONT with five mexes read +37 for a
+    // stretch of commander reclaim and framed its T2 lab on +10 real income.
+    array<int> incomeFrames;
+    array<float> incomeValues;
+    float avgMinIncome = 0.0f;
+
+    void SampleIncome(float income)
+    {
+        incomeFrames.insertLast(ai.frame);
+        incomeValues.insertLast(income);
+        const int oldest = ai.frame - Global::LandArmy::T2LabIncomeWindowSeconds * SECOND;
+        while (incomeFrames.length() > 1 && incomeFrames[0] < oldest) {
+            incomeFrames.removeAt(0);
+            incomeValues.removeAt(0);
+        }
+        float sum = 0.0f;
+        for (uint i = 0; i < incomeValues.length(); ++i) sum += incomeValues[i];
+        avgMinIncome = sum / float(incomeValues.length());
+    }
+
+    bool T2LabIncomeMet()
+    {
+        return avgMinIncome >= Global::RoleSettings::Front::MinimumMetalIncomeForFirstT2Lab;
+    }
+
+    bool T2LabBegun()
+    {
+        array<string> labs = UnitHelpers::GetAllT2BotLabs();
+        for (uint i = 0; i < labs.length(); ++i) {
+            CCircuitDef@ d = ai.GetCircuitDef(labs[i]);
+            if (d !is null && (d.count > 0 || aiBuilderMgr.GetUnfinishedCount(d) > 0)) return true;
+        }
+        return false;
+    }
+
+    void ApplyLabGates(float income)
+    {
+        SampleIncome(income);
+        const bool t2Begun = T2LabBegun();
+        const bool t2Allowed = t2Begun || T2LabIncomeMet();
+        if (t2Allowed && !t2Begun && !t2GateLogged) {
+            t2GateLogged = true;
+            GenericHelpers::LogUtil("[LandArmy] T2 lab allowed: income " + int(avgMinIncome) + " (10 s minimum, averaged over "
+                + Global::LandArmy::T2LabIncomeWindowSeconds + " s)", 1);
+        }
+        array<string> t2 = UnitHelpers::GetAllT2BotLabs();
+        for (uint i = 0; i < t2.length(); ++i) SetAllowed(t2[i], t2Allowed);
+        array<string> t1 = UnitHelpers::GetAllT1BotLabs();
+        for (uint i = 0; i < t1.length(); ++i) SetAllowed(t1[i], !t2Begun);
+        if (!t2Begun || Global::AISettings::Role != AiRole::FRONT) return;
+
+        array<Id>@ ids = ai.GetOwnedUnitIds();
+        for (uint i = 0; i < ids.length(); ++i) {
+            CCircuitUnit@ lab = ai.GetTeamUnit(ids[i]);
+            if (lab is null || lab.circuitDef is null || !UnitHelpers::IsT1BotLab(lab.circuitDef.GetName())
+                || Lifecycle::IsRetiring(lab)) continue;
+            if (lab.task !is null) aiFactoryMgr.AbortTask(lab.task);   // native's recruit task would re-issue the build on idle
+            Lifecycle::Retire(lab, "the T2 lab is under way; the T1 lab is reclaimed for its metal");
+            retiredT1Labs.insertLast(int(lab.id));
+        }
+    }
+
+    // A retired T1 lab within T1LabReclaimRadius of the builder, reclaimed
+    // once the metal bank has room for its metal (past the cap it is lost);
+    // the construction turrets in reach join the reclaim.
+    IUnitTask@ ReclaimT1LabTask(CCircuitUnit@ u)
+    {
+        if (u is null || retiredT1Labs.length() == 0) return null;
+        const float r = Global::RoleSettings::Front::T1LabReclaimRadius;
+        for (uint i = 0; i < retiredT1Labs.length(); ) {
+            CCircuitUnit@ lab = ai.GetTeamUnit(retiredT1Labs[i]);
+            if (lab is null) { retiredT1Labs.removeAt(i); continue; }
+            ++i;
+            if (lab is u || MapHelpers::SqDist(u.GetPos(ai.frame), lab.GetPos(ai.frame)) > r * r) continue;
+            const float labMetal = lab.circuitDef.costM;
+            if (aiEconomyMgr.metal.current + labMetal > aiEconomyMgr.metal.storage) {
+                if (ai.frame - reclaimDeferLog > 30 * SECOND) {
+                    reclaimDeferLog = ai.frame;
+                    GenericHelpers::LogUtil("[LandArmy] T1 lab reclaim deferred: metal " + int(aiEconomyMgr.metal.current) + " of "
+                        + int(aiEconomyMgr.metal.storage) + " leaves no room for its " + int(labMetal), 1);
+                }
+                return null;
+            }
+            IUnitTask@ t = aiBuilderMgr.Enqueue(TaskB::Reclaim(Task::Priority::HIGH, lab, 180 * SECOND));
+            if (t !is null && ai.frame - turretsPulledAt >= 30 * SECOND) {
+                turretsPulledAt = ai.frame;
+                const int n = aiBuilderMgr.TurretsOnReclaim(lab.id, Global::RoleSettings::Tech::ReclaimTurretMargin, true);
+                GenericHelpers::LogUtil("[LandArmy] reclaiming T1 lab " + lab.id + " for the T2 lab; " + n + " turret(s) join", 1);
+            }
+            return t;
+        }
+        return null;
+    }
+
     // Economy::AiUpdateEconomy, after the role's handler, and once at the end of setup.
     void Apply(float income)
     {
         ApplyFactoryBans();
+        ApplyLabGates(income);
         ApplyRoster(income);
         ApplySupportCaps();
     }

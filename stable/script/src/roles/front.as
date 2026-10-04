@@ -604,8 +604,16 @@ namespace RoleFront {
                 bool isEnergyStalling = aiEconomyMgr.isEnergyStalling;
                 float metalIncome = Economy::GetMinMetalIncomeLast10s();
                 float energyIncome = Economy::GetMinEnergyIncomeLast10s();
-                return Front_T1Constructor_AiMakeTask(builder, defaultTask, metalIncome, energyIncome, isEnergyStalling, isEnergyFull);
+                IUnitTask@ t1 = Front_T1Constructor_AiMakeTask(builder, defaultTask, metalIncome, energyIncome, isEnergyStalling, isEnergyFull);
+                if (t1 !is defaultTask) return t1;
             }
+            // Marish: every other T1 constructor, and the primary when it had
+            // nothing of its own: the retired T1 lab's metal, then the nearest
+            // open home spot, before native's assist/defence/radar default
+            IUnitTask@ rec = LandArmy::ReclaimT1LabTask(builder);
+            if (rec !is null) return rec;
+            IUnitTask@ mex = Front_ExpandMex(builder, Global::RoleSettings::Front::ConstructorMexRadius);
+            if (mex !is null) return mex;
         } else if (ctorTier == 2) {
             // Mirror TECH role routing: handle primary/secondary T2 bot constructors explicitly
             bool isEnergyFull = aiEconomyMgr.isEnergyFull;
@@ -627,11 +635,43 @@ namespace RoleFront {
 
     ******************************************************************************/ 
 
-    // For the first 2 minutes of the game, keep the commander assigned to guard
-    // the primary T1 bot lab or primary T1 vehicle plant (if present).
+    // The nearest open spot within `radius` of the start that this builder can
+    // reach safely, outside allied ground and nearer our start than any ally's
+    // (native EnqueueMexWithin, ally-aware; an untaken mex order in the radius
+    // is handed back before a new spot is closed). A builder already on a mex
+    // keeps it. Null when every such spot is ours or ordered, or while energy
+    // stalls (native's energy task comes first then).
+    IUnitTask@ Front_ExpandMex(CCircuitUnit@ u, float radius)
+    {
+        if (u is null || u.circuitDef is null || aiEconomyMgr.isEnergyStalling) return null;
+        IBuilderTask@ cur = (u.task is null) ? null : cast<IBuilderTask>(u.task);
+        if (cur !is null && Task::BuildType(cur.GetBuildType()) == Task::BuildType::MEX) return u.task;
+        IUnitTask@ t = aiEconomyMgr.EnqueueMexWithin(u, Global::Map::StartPos, radius, 0, true);
+        if (t !is null) {
+            IBuilderTask@ order = cast<IBuilderTask>(t);
+            const AIFloat3 at = (order is null) ? Global::Map::StartPos : order.GetBuildPos();
+            GenericHelpers::LogUtil("[FRONT][Mex] " + u.circuitDef.GetName() + " " + u.id + " -> spot "
+                + int(sqrt(MapHelpers::SqDist(at, Global::Map::StartPos))) + " from start", 2);
+        }
+        return t;
+    }
+
+    // Marish: once the first lab stands, the commander takes the open spots
+    // within CommanderMexRadius of the start (until CommanderMexSeconds); then,
+    // for the first 2 minutes, it guards the primary T1 bot lab or vehicle plant.
+    // Played: it guarded the lab while constructors stood assisting and the
+    // spots 800-900 elmos out waited until minute 2-3.
     IUnitTask@ Front_Commander_AiMakeTask(CCircuitUnit@ comm, IUnitTask@ defaultTask)
     {
         if (comm is null) return defaultTask;
+
+        IUnitTask@ rec = LandArmy::ReclaimT1LabTask(comm);
+        if (rec !is null) return rec;
+        if (Factory::primaryT1BotLab !is null
+            && ai.frame <= Global::RoleSettings::Front::CommanderMexSeconds * SECOND) {
+            IUnitTask@ mex = Front_ExpandMex(comm, Global::RoleSettings::Front::CommanderMexRadius);
+            if (mex !is null) return mex;
+        }
 
         // 2 minutes in frames: 2 * 60 * SECOND
         const int FRONT_COMMANDER_GUARD_DEADLINE = 2 * 60 * SECOND;
@@ -648,7 +688,7 @@ namespace RoleFront {
             @target = Factory::primaryT1VehPlant;
         }
 
-        if (target is null) {
+        if (target is null || Lifecycle::IsRetiring(target)) {
             // No suitable factory yet; let normal builder/commander logic handle this frame
             return defaultTask;
         }
@@ -830,23 +870,13 @@ namespace RoleFront {
             int t2ConstructionBotCount = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2BotConstructors());
             int t2LabCount = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT2BotLabs());
 
-            // Fast-track: if we have zero T2 bot labs and ANY trigger is met, build a T2 Bot Lab now.
-            // Triggers (OR):
-            //  1) metal income >= configured threshold
-            //  2) game time >= 22 minutes
-            //  3) stored metal >= T2 bot lab cost
+            // Fast-track: with no T2 bot lab, build one as soon as metal income
+            // reaches MinimumMetalIncomeForFirstT2Lab (the 10 s minimum averaged
+            // over a minute, LandArmy::T2LabIncomeMet). Marish: income only. The
+            // stored-metal and 22-minute triggers are gone, and land_army.as
+            // holds the T2 labs at 0 below that income.
             if (t2LabCount < 1) {
-                const float incomeTrigger = Global::RoleSettings::Front::MinimumMetalIncomeForFirstT2Lab;
-                const bool timeTriggerMet = (ai.frame >= (Global::RoleSettings::Front::TimeTriggerForFirstT2LabSeconds * SECOND));
-                const bool incomeTriggerMet = (metalIncome >= incomeTrigger);
-                // Resolve T2 lab cost for stored-metal trigger
-                bool storedMetalTriggerMet = false;
-                string t2LabName = UnitHelpers::GetT2BotLabForSide(unitSide);
-                CCircuitDef@ t2LabDef = ai.GetCircuitDef(t2LabName);
-                if (t2LabDef !is null) {
-                    storedMetalTriggerMet = (aiEconomyMgr.metal.current >= (t2LabDef.costM * Global::RoleSettings::Front::T2LabStoredMetalThresholdRatio));
-                }
-                if (incomeTriggerMet || timeTriggerMet || storedMetalTriggerMet) {
+                if (LandArmy::T2LabIncomeMet()) {
                     AIFloat3 anchor2 = Factory::GetT1BotLabPos();
                     IUnitTask@ t2b = Builder::EnqueueT2BotLabIfNeeded(unitSide, anchor2, SQUARE_SIZE * 30, SECOND * 300);
                     if (t2b !is null) return t2b;
@@ -875,6 +905,13 @@ namespace RoleFront {
                 IUnitTask@ tLab = Builder::EnqueueT2BotLabIfNeeded(unitSide, anchor, SQUARE_SIZE * 30, SECOND * 300);
                 if (tLab !is null) return tLab;
             }
+
+            // Marish: the retired T1 lab's metal, then the nearest open home spot,
+            // before any nano
+            IUnitTask@ tRec = LandArmy::ReclaimT1LabTask(u);
+            if (tRec !is null) return tRec;
+            IUnitTask@ tMex = Front_ExpandMex(u, Global::RoleSettings::Front::ConstructorMexRadius);
+            if (tMex !is null) return tMex;
 
             // After T2 lab attempt: build a T1 nano caretaker when either reserves allow
             // it or we're early-game with sufficient income and zero existing nanos.

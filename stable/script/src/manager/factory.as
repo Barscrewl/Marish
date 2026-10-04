@@ -113,6 +113,8 @@ namespace Factory {
 			IUnitTask@ ferry = Team::Ferry::FactoryMakeTask(u);
 			if (ferry !is null) return ferry;
 		}
+		// A retiring factory produces nothing (Lifecycle): it waits to be reclaimed.
+		if (Lifecycle::IsRetiring(u)) return aiFactoryMgr.Enqueue(TaskS::Wait(true, 3 * SECOND));
 		IUnitTask@ t = TechFlank::Produce(u);
 		if (t !is null) return t;
 		@t = Spam::FactoryMakeTask(u);   // active spam overrides every T1 factory decision

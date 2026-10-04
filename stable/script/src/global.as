@@ -265,6 +265,10 @@ namespace Global {
         // T2 AA bots guard the most valuable roster unit with fewer than this
         // many AA guards (manager/land_army.as MakeAAGuardTask).
         int AAPerVip = 2;
+        // The first T2 bot lab's income test (Front::MinimumMetalIncomeForFirstT2Lab)
+        // reads the sliding 10 s minimum averaged over this many seconds, so a
+        // stretch of reclaim does not open it.
+        int T2LabIncomeWindowSeconds = 60;
     }
 
     namespace Spam {
@@ -1513,6 +1517,19 @@ namespace Global {
 
             // Nano Policy Extras
             float NanoMinIncomeForFirst = 10.0f;
+
+            // Marish opening mexes (roles/front.as Front_ExpandMex). The commander
+            // takes the open spots within CommanderMexRadius of the start until
+            // CommanderMexSeconds, before guarding the lab. T1 constructors take the
+            // nearest open spot within ConstructorMexRadius whenever native offers
+            // them anything but a mex or energy. Allied ground and spots nearer an
+            // ally's start are left to the allies.
+            float CommanderMexRadius = 1000.0f;
+            int CommanderMexSeconds = 300;
+            float ConstructorMexRadius = 1800.0f;
+            // Marish: the T1 bot labs standing when the T2 lab's frame appears are
+            // retired and reclaimed by builders within this distance of them.
+            float T1LabReclaimRadius = 1500.0f;
             float T2LabStoredMetalThresholdRatio = 0.9f;
 
             // Transition thresholds for switching between T1 factory types (Bot <-> Vehicle)
@@ -1521,9 +1538,13 @@ namespace Global {
             /******************** FRONT T2 LAB THRESHOLDS ********************/
             // Economy thresholds and caps for building a T2 Bot Lab when in FRONT role
             // Mirrors FrontTech defaults but scoped to Front so front.as does not reference FrontTech settings.
-            // Special-case: first T2 lab/plant fast-track threshold (bot or vehicle) when none exist yet
-            // If total T2 labs (bot + vehicle) < 1 and metal income >= this, FRONT will attempt to build one.
-            float MinimumMetalIncomeForFirstT2Lab = 50.0f;
+            // Marish: the first T2 bot lab comes at this metal income (sliding 10 s
+            // minimum, averaged over Global::LandArmy::T2LabIncomeWindowSeconds)
+            // and never before it, whatever is banked or however long the
+            // game has run. manager/land_army.as caps T2 bot labs at 0 below it,
+            // which also holds native's factory switch (it adds a factory on army
+            // cost alone).
+            float MinimumMetalIncomeForFirstT2Lab = 25.0f;
             float MinimumMetalIncomeForT2Lab = 40.0f;
             float MinimumEnergyIncomeForT2Lab = 2000.0f;
             float RequiredMetalCurrentForT2Lab = 200.0f;
