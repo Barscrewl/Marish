@@ -1042,6 +1042,7 @@
 		},
 		"armaak": {
 			"role": ["anti_air"],
+			"attribute": ["support"],
 			"threat":{"air": 2.0, "water": 0.0, "surf":0.0},
 			"limit": 10
 
@@ -1478,7 +1479,7 @@
 		},
 		"coraak": {
 			"role": ["anti_air"],
-			//"attribute": ["support"],
+			"attribute": ["support"],
 			"limit": 10
 		},
 		"cormando": {

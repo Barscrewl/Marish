@@ -438,12 +438,17 @@
 		"retreat": 0
 	},
 	"armaak": {
-		"role": ["anti_air"]
+		"role": ["anti_air"],
+		"attribute": ["support"]
 	},
 	"armmark": {
 		"role": ["assault"],
 		"attribute": ["support"],
 		"limit": 1
+	},
+	"armaser": {
+		"role": ["support"],
+		"limit": 5
 	},
 	"armspid": {
 		"role": ["support"]
@@ -761,7 +766,8 @@
 		"role": ["artillery"]
 	},
 	"coraak": {
-		"role": ["anti_air"]
+		"role": ["anti_air"],
+		"attribute": ["support"]
 	},
 	"cormando": {
 		"role": ["builder"],
@@ -777,6 +783,10 @@
 		"role": ["assault"],
 		"attribute": ["support"],
 		"limit": 1
+	},
+	"corspec": {
+		"role": ["support"],
+		"limit": 5
 	},
 	"coramph": {
 		"role": ["raider", "anti_air"]

@@ -41,9 +41,10 @@
 		"importance": [0.0, 1.0],
 		"require_energy": true,
 		"income_tier": [],
-		"unit":      ["armack", "armfboy", "armsnipe"],
+		// Support escorts (radar, jammer, T2 AA): counts capped by manager/land_army.as.
+		"unit":      ["armack", "armfboy", "armsnipe", "armmark", "armaser", "armaak"],
 		"land": {
-			"tier0": [ 0.25, 1.00, 1.00]
+			"tier0": [ 0.25, 1.00, 1.00, 0.30, 0.30, 0.30]
 		},
 		"caretaker": 6
 	},
@@ -283,9 +284,10 @@
 		"importance": [0.0, 1.0],
 		"require_energy": false,
 		"income_tier": [],
-		"unit":      ["corack", "corpyro", "cormort", "corhrk", "corsumo"],
+		// Support escorts (radar, jammer, T2 AA): counts capped by manager/land_army.as.
+		"unit":      ["corack", "corpyro", "cormort", "corhrk", "corsumo", "corvoyr", "corspec", "coraak"],
 		"land": {
-			"tier0": [ 0.25, 1.00, 1.00, 1.00, 1.00]
+			"tier0": [ 0.25, 1.00, 1.00, 1.00, 1.00, 0.30, 0.30, 0.30]
 		},
 		"caretaker": 16
 	},

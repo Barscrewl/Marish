@@ -4,6 +4,8 @@
 #include "../types/ai_role.as"
 #include "../helpers/generic_helpers.as"
 #include "../helpers/unit_helpers.as"
+#include "../unit.as"
+#include "../task.as"
 
 /******************************************************************************
 
@@ -30,6 +32,17 @@ active step. factory.json lists nothing but these units and constructors.
 The T2 lab and the gantry come from FRONT's own income triggers
 (MinimumMetalIncomeForFirstT2Lab, MetalIncomeForGantry). Thresholds live in
 Global::LandArmy.
+
+Support escorts: every T2 bot lab also lists its radar, jammer and T2 AA bot.
+All three carry the support role in behaviour.json, so a squad never takes
+one as its leader. Radars and jammers get the native CSupportTask, which walks
+each into an army squad that it then moves with; in the experimental profiles
+radars are rationed one per squad, most valuable squad first (behaviour.json
+"sensor"), and jammers join the nearest squad. T2 AA bots are given a guard
+task on the army's most valuable unit instead (MakeAAGuardTask): in tests the
+native escort left them parked by the base. Each kind is capped at SupportMax
+alive. T2 AA starts lower and grows with the army, and goes past SupportMax
+when enemy bombers are scouted.
 
 Factory bans: vehicle plants (T1 and T2) are capped at 0 for every role.
 FRONT also never builds hover plants, amphibious complexes or underwater
@@ -180,10 +193,141 @@ namespace LandArmy {
         UnitHelpers::BatchApplyUnitCaps(banned, 0);
     }
 
+    array<string> RadarBots  = {"armmark", "corvoyr", "legaradk"};
+    array<string> JammerBots = {"armaser", "corspec", "legajamk"};
+    array<string> AABots     = {"armaak", "coraak", "legadvaabot"};
+    int lastAACap = -1;
+
+    // At most `cap` alive across one escort kind: each def may add only the
+    // room the kind as a whole still has.
+    void CapKind(const array<string> &in names, int cap)
+    {
+        array<CCircuitDef@> defs;
+        int total = 0;
+        for (uint i = 0; i < names.length(); ++i) {
+            CCircuitDef@ d = ai.GetCircuitDef(names[i]);
+            if (d is null) continue;   // Legion off, or not in this game
+            defs.insertLast(d);
+            total += d.count;
+        }
+        const int room = (cap > total) ? cap - total : 0;
+        for (uint i = 0; i < defs.length(); ++i) {
+            const int m = defs[i].count + room;
+            if (defs[i].maxThisUnit != m) defs[i].maxThisUnit = m;
+        }
+    }
+
+    int AACap()
+    {
+        const int maxCap = Global::LandArmy::SupportMax;
+        int cap = Global::LandArmy::SupportFirstAA + int(aiMilitaryMgr.armyCost / Global::LandArmy::ArmyMetalPerAA);
+        if (cap > maxCap) cap = maxCap;
+        const float bombers = aiEnemyMgr.GetEnemyCost(Unit::Role::BOMBER.type);
+        if (bombers >= Global::LandArmy::ManyBombersMetal) {
+            cap = maxCap + 1 + int((bombers - Global::LandArmy::ManyBombersMetal) / Global::LandArmy::BomberMetalPerExtraAA);
+            if (cap > Global::LandArmy::AAMaxVsBombers) cap = Global::LandArmy::AAMaxVsBombers;
+        }
+        if (cap != lastAACap) {
+            GenericHelpers::LogUtil("[LandArmy] T2 AA cap " + cap + " (army " + int(aiMilitaryMgr.armyCost)
+                + " metal, enemy bombers " + int(bombers) + " metal)", 1);
+            lastAACap = cap;
+        }
+        return cap;
+    }
+
+    // ---- T2 AA guards ------------------------------------------------------
+    // Roster combat units alive (id -> 1) and each T2 AA bot's vip (id -> id).
+    dictionary roster;
+    dictionary army;
+    dictionary aaVip;
+
+    bool IsAABot(const CCircuitDef@ d)
+    {
+        return d !is null && AABots.find(d.GetName()) >= 0;
+    }
+
+    // Military::AiUnitAdded / AiUnitRemoved
+    void OnUnitAdded(CCircuitUnit@ u)
+    {
+        if (u is null || u.circuitDef is null) return;
+        if (roster.isEmpty()) {
+            Load();
+            for (uint i = 0; i < sequences.length(); ++i)
+                for (uint j = 0; j < sequences[i].steps.length(); ++j)
+                    for (uint k = 0; k < sequences[i].steps[j].units.length(); ++k)
+                        roster.set(sequences[i].steps[j].units[k], true);
+        }
+        if (roster.exists(u.circuitDef.GetName())) army.set("" + u.id, int(u.id));
+    }
+
+    void OnUnitRemoved(CCircuitUnit@ u)
+    {
+        if (u is null) return;
+        army.delete("" + u.id);
+        aaVip.delete("" + u.id);
+    }
+
+    int GuardsOn(int vipId, int except)
+    {
+        int n = 0;
+        array<string>@ keys = aaVip.getKeys();
+        for (uint i = 0; i < keys.length(); ++i) {
+            int v = 0;
+            if (keys[i] != "" + except && aaVip.get(keys[i], v) && v == vipId) ++n;
+        }
+        return n;
+    }
+
+    // The most expensive roster unit with fewer than AAPerVip AA guards; when
+    // every one has its share, the most expensive one.
+    CCircuitUnit@ PickVip(int aaId)
+    {
+        CCircuitUnit@ best = null;
+        CCircuitUnit@ bestAny = null;
+        array<string>@ keys = army.getKeys();
+        for (uint i = 0; i < keys.length(); ++i) {
+            int id = 0;
+            army.get(keys[i], id);
+            CCircuitUnit@ v = ai.GetTeamUnit(id);
+            if (v is null || v.circuitDef is null) { army.delete(keys[i]); continue; }
+            const float cost = v.circuitDef.costM;
+            if (bestAny is null || cost > bestAny.circuitDef.costM) @bestAny = v;
+            if (GuardsOn(id, aaId) < Global::LandArmy::AAPerVip
+                && (best is null || cost > best.circuitDef.costM)) @best = v;
+        }
+        return (best !is null) ? best : bestAny;
+    }
+
+    // Military::AiMakeTask: a T2 AA bot guards the army's most valuable unit,
+    // so it walks with it and fires at aircraft near it. The native support
+    // escort left them parked by the base. Null (no army yet) falls through to
+    // the native task. When the vip dies the guard task ends and the bot comes
+    // back here for the next one.
+    IUnitTask@ MakeAAGuardTask(CCircuitUnit@ u)
+    {
+        if (u is null || !IsAABot(u.circuitDef)) return null;
+        CCircuitUnit@ vip = PickVip(int(u.id));
+        if (vip is null) return null;
+        IUnitTask@ t = aiMilitaryMgr.Enqueue(TaskF::Guard(vip));
+        if (t is null) return null;
+        aaVip.set("" + u.id, int(vip.id));
+        GenericHelpers::LogUtil("[LandArmy] " + u.circuitDef.GetName() + "(" + u.id + ") guards "
+            + vip.circuitDef.GetName() + "(" + vip.id + ")", 2);
+        return t;
+    }
+
+    void ApplySupportCaps()
+    {
+        CapKind(RadarBots, Global::LandArmy::SupportMax);
+        CapKind(JammerBots, Global::LandArmy::SupportMax);
+        CapKind(AABots, AACap());
+    }
+
     // Economy::AiUpdateEconomy, after the role's handler, and once at the end of setup.
     void Apply(float income)
     {
         ApplyFactoryBans();
         ApplyRoster(income);
+        ApplySupportCaps();
     }
 }

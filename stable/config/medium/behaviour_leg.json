@@ -599,7 +599,8 @@
 				"role": ["raider", "anti_air"]
 			},
 			"legadvaabot": {
-				"role": ["anti_air"]
+				"role": ["anti_air"],
+				"attribute": ["support"]
 			},
 
 			"legaspy": {
@@ -610,6 +611,10 @@
 				"role": ["assault"],
 				"attribute": ["support"],
 				"limit": 1
+			},
+			"legajamk": {
+				"role": ["support"],
+				"limit": 5
 			},
 
 			// T3 LEGION EXPERIMENTAL - leggant

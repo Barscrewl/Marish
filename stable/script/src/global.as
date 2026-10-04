@@ -248,6 +248,23 @@ namespace Global {
         float StepDownFraction = 0.7f;
         // and every step is held at least this long before the next change
         int MinStepSeconds = 60;
+
+        // Support escorts from the T2 bot lab: radar, jammer and T2 AA bots.
+        // At most this many of each kind are alive at once.
+        int SupportMax = 5;
+        // T2 AA costs 520-750 metal, so it grows with the army: SupportFirstAA,
+        // plus one per ArmyMetalPerAA of army metal, up to SupportMax.
+        int SupportFirstAA = 1;
+        float ArmyMetalPerAA = 2500.0f;
+        // Once scouted enemy bombers are worth ManyBombersMetal, T2 AA goes past
+        // SupportMax: SupportMax + 1, plus one per BomberMetalPerExtraAA beyond
+        // that, up to AAMaxVsBombers. 1500 is about ten T1 or five T2 bombers.
+        float ManyBombersMetal = 1500.0f;
+        float BomberMetalPerExtraAA = 600.0f;
+        int AAMaxVsBombers = 15;
+        // T2 AA bots guard the most valuable roster unit with fewer than this
+        // many AA guards (manager/land_army.as MakeAAGuardTask).
+        int AAPerVip = 2;
     }
 
     namespace Spam {

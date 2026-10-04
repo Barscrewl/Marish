@@ -824,6 +824,7 @@
 			},
 			"legadvaabot": {
 				"role": ["anti_air"],
+				"attribute": ["support"],
 				"threat": {"air": 1.0, "surf": 0.0, "water": 0.0, "default": 1.0},
 				"power": 1.0
 			},

@@ -142,8 +142,12 @@
 			// sensors go to the highest-tier squads first.
 			// See doc/sensor-escort.md.
 			"enabled": true,
-			"jammer": "jammer",     // the config roles that mark a rationed escort;
-			"radar": "radar",       // the same tags the "pulse" block hunts on the enemy side
+			// Radar bots only: a jammer sharing the radar's one slot per squad was
+			// turned away from every squad that already had a radar, so jammers escort
+			// unrationed (manager/land_army.as caps them). "jammer" must name a known
+			// role, hence "radar" twice; the "pulse" block keeps its own jammer tag.
+			"jammer": "radar",
+			"radar": "radar",       // the same tag the "pulse" block hunts on the enemy side
 			"max_per_squad": 1,     // "unless it dies": only live escorts are counted
 			"top_candidates": 3,    // aim at the nearest of the N most valuable uncovered squads
 			"rebalance": true       // release the surplus when two escorted squads merge
@@ -1491,6 +1495,7 @@
 			},
 			"armaak": {
 				"role": ["anti_air"],
+				"attribute": ["support"],
 				"threat": {"air": 1.0, "surf": 0.0, "water": 0.0, "default": 1.0},
 				"power": 1.0
 			},
@@ -2020,6 +2025,7 @@
 			},
 			"coraak": {
 				"role": ["anti_air"],
+				"attribute": ["support"],
 				"threat": {"air": 1.0, "surf": 0.0, "water": 0.0, "default": 1.0},
 				"power": 1.0
 			},

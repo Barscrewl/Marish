@@ -6,6 +6,7 @@
 #include "ferry.as"
 #include "amphibious_ops.as"
 #include "naval_waves.as"
+#include "land_army.as"
 
 namespace Military {
 
@@ -39,7 +40,9 @@ namespace Military {
 			return aiMilitaryMgr.DefaultMakeTask(u);
 		}
 
-		IUnitTask@ t = AmphibiousOps::MilitaryTask(u);
+		IUnitTask@ t = LandArmy::MakeAAGuardTask(u);   // T2 AA bots guard the army's best unit
+		if (t !is null) return t;
+		@t = AmphibiousOps::MilitaryTask(u);
         if (t !is null) return t;
         @t = TechFlank::MilitaryTask(u);
 		if (t !is null) return t;
@@ -84,6 +87,7 @@ namespace Military {
 	void AiUnitAdded(CCircuitUnit@ unit, Unit::UseAs usage)
 	{
 		Team::Ferry::OnUnitAdded(unit);   // claim a transport, ours or a gift
+		LandArmy::OnUnitAdded(unit);      // roster units are the T2 AA bots' vips
 
 		// Delegate to role-specific handler if registered
 		RoleConfig@ cfg = (Global::profileController is null) ? null : Global::profileController.RoleCfg;
@@ -95,6 +99,7 @@ namespace Military {
 	void AiUnitRemoved(CCircuitUnit@ unit, Unit::UseAs usage)
 	{
 		Team::Ferry::OnUnitRemoved(unit);
+		LandArmy::OnUnitRemoved(unit);
 		NavalWaves::OnUnitRemoved(unit);
 		TechFlank::UnitRemoved(unit);
         AmphibiousOps::UnitRemoved(unit);

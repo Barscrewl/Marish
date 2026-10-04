@@ -705,7 +705,7 @@
 			},
 			"legadvaabot": {
 				"role": ["anti_air"],
-				//"attribute": ["support"],
+				"attribute": ["support"],
 				"limit": 10
 			},
 
