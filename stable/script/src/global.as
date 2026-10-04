@@ -273,15 +273,19 @@ namespace Global {
 
     // Marish opening (manager/rush.as), NightmareAI's: the first T1 bot lab
     // builds builder, ScoutCount scouts, 2 builders, RaiderCount raiders,
-    // then LandArmy's income steps take over. Scouts go in one by one (native
-    // scout task each); raiders gather RallyDistance toward the nearest enemy
-    // start and leave RaidSquadSize at a time as one native raid squad.
+    // then LandArmy's income steps take over. Everything heads first for the
+    // enemy start closest to our spawn: scouts one by one, raiders gathered
+    // RallyDistance toward it and sent RaidSquadSize at a time; there they
+    // become native scouts and one native raid squad each.
     namespace Rush {
         bool Enabled = true;
         int ScoutCount = 10;        // Nightmare: 10
         int RaiderCount = 12;       // Nightmare: 12
         int RaidSquadSize = 4;
         float RallyDistance = 700.0f;
+        // Scouts and squads head first for the enemy start closest to our spawn;
+        // within this of it they are handed to native scouting / raiding.
+        float ArriveRadius = 400.0f;
         int FormMaxSeconds = 60;    // a squad that waits this long leaves with what it has
         int MaxSeconds = 420;       // the lab returns to the roster after this, done or not
     }
