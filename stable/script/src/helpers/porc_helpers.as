@@ -99,6 +99,21 @@ namespace PorcHelpers {
 		{"legion", "legperdition"}
 	};
 
+	// T2 flak and the long-range AA it is paired with. The JSON land order never
+	// reaches the flak (index 11 Armada / Cortex, 10 Legion: absent from "land"),
+	// while the long-range AA (index 18, every side) sits at positions 12, 14
+	// and 22. PairFlakWithLongRangeAA puts a flak right behind each of them.
+	dictionary T2Flak = {
+		{"armada", "armflak"},
+		{"cortex", "corflak"},
+		{"legion", "legflak"}
+	};
+	dictionary LongRangeAA = {
+		{"armada", "armmercury"},
+		{"cortex", "corscreamer"},
+		{"legion", "leglraa"}
+	};
+
 	// A side's entry from one of the tables above, or "" when the side is not
 	// listed. Callers treat "" as "this side has no such unit; change nothing".
 	string ForSide(const dictionary@ table, const string &in side)
@@ -162,7 +177,29 @@ namespace PorcHelpers {
 		if (Global::ModOptions::ScavUnitsForPlayers && !isWater) {
 			AppendTier(@chain, @ScavUnitsLand, side, "scavunitsforplayers");
 		}
+		if (!isWater) PairFlakWithLongRangeAA(@chain, side);
 		return chain;
+	}
+
+	// A T2 flak directly after every long-range AA of the land chain, so the
+	// flak is reached at the same budget point as the long-range AA (+820..850
+	// metal on top of it) on all three sides. Skipped where one already follows.
+	void PairFlakWithLongRangeAA(array<string>@ land, const string &in side)
+	{
+		const string flak = ForSide(@T2Flak, side);
+		const string lraa = ForSide(@LongRangeAA, side);
+		if (land is null || flak.length() == 0 || lraa.length() == 0) return;
+		uint added = 0;
+		for (uint i = 0; i < land.length(); ++i) {
+			if (land[i] != lraa) continue;
+			if (i + 1 < land.length() && land[i + 1] == flak) continue;
+			land.insertAt(i + 1, flak);
+			++added;
+			++i;   // past the flak just placed
+		}
+		if (added > 0) {
+			GenericHelpers::LogUtil("[Porc] " + side + ": " + added + " x " + flak + " paired with " + lraa, 1);
+		}
 	}
 
 	// Push the default chain for both terrains. Roles with no opinion use this.
