@@ -11,7 +11,7 @@ This document describes the shared implementation in `src/` and the difficulty p
 Each difficulty directory is a deployable script profile:
 
 - `init.as` returns `SInitInfo`, initializes armor/category masks, and selects JSON profile fragments. Legion, scavenger, and extra-unit fragments are conditional on mod options.
-- `experimental_balanced`, `experimental_hard`, and `experimental_terrible` include the shared graph through `src/setup.as`. Their `main.as` files register maps, select strategy weights, tag factory tiers, apply profile tuning, run periodic threat/cost updates, and receive Lua messages.
+- `warband` (Marish's default; formerly `experimental_balanced`), `experimental_hard`, and `experimental_terrible` include the shared graph through `src/setup.as`. Their `main.as` files register maps, select strategy weights, tag factory tiers, apply profile tuning, run periodic threat/cost updates, and receive Lua messages.
 - `easy`, `medium`, `hard`, and `hard_aggressive` are legacy/native-driven profiles. Their `main.as` hooks are empty or contain only commented examples, so behavior comes from CircuitAI's native defaults and their JSON configuration rather than the shared role framework.
 
 The experimental runtime sequence is:

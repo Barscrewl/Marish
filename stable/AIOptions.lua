@@ -74,8 +74,13 @@ local options = {
 		name    = 'Difficulty profile',
 		desc    = 'Difficulty or play-style of AI (see init.as).\nkey: profile',
 		type    = 'list',
-		def     = 'experimental_balanced',
+		def     = 'warband',
 		items   = {
+			{
+				key  = 'warband',
+				name = 'Warband',
+				desc = 'Marish default: aggressive ground army from bot labs |Playstyle: Role Based| Built on Experimental | Balanced by Centrifugal',
+			},
 			{
 				key  = 'experimental_terrible',
 				name = 'Everything is Terrible',
@@ -85,11 +90,6 @@ local options = {
 				key  = 'experimental_hard',
 				name = 'Experimental | Hard',
 				desc = 'Difficulty: Experimental |Playstyle: Role Based',
-			},
-			{
-				key  = 'experimental_balanced',
-				name = 'Experimental | Balanced',
-				desc = 'Difficulty: Experimental |Playstyle: Role Based| Made by Centrifugal',
 			},
 			{
 				key  = 'hard_aggressive',
