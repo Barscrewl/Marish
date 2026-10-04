@@ -10,7 +10,7 @@ namespace GlacialGap {
 	// isolated peninsulas requiring hover/amph first. Pass false for all for now.
 	// Start spots for Eight Horses map (converted from YAML, roles matched to AiRole enum)
 	StartSpot@[] spots = {
-		StartSpot(AIFloat3(  490, 0,  1140), AiRole::TECH, false),       
+		StartSpot(AIFloat3(  490, 0,  1140), AiRole::FRONT, false),       
 		StartSpot(AIFloat3(  1800, 0, 1400), AiRole::FRONT, false),       
 		StartSpot(AIFloat3(  430, 0, 2300), AiRole::FRONT, false),        
 		StartSpot(AIFloat3(  1800, 0, 2550), AiRole::FRONT, false),    
@@ -18,17 +18,17 @@ namespace GlacialGap {
 		StartSpot(AIFloat3(  1430, 0, 4000), AiRole::SEA, false),     
 		StartSpot(AIFloat3(  700, 0, 4600), AiRole::SEA, false),      
 		StartSpot(AIFloat3(  1900, 0, 5800), AiRole::SEA, false), 
-		StartSpot(AIFloat3(  880, 0, 6850), AiRole::TACTICAL, false), 
+		StartSpot(AIFloat3(  880, 0, 6850), AiRole::SEA, false), 
 		    
 		StartSpot(AIFloat3(  12572, 0,  1400), AiRole::FRONT, false),       
-		StartSpot(AIFloat3(  14000, 0, 1100), AiRole::TECH, false),       
+		StartSpot(AIFloat3(  14000, 0, 1100), AiRole::FRONT, false),       
 		StartSpot(AIFloat3(  12640, 0, 2500), AiRole::FRONT, false),        
 		StartSpot(AIFloat3(  13890, 0, 2246), AiRole::FRONT, false),    
 
 		StartSpot(AIFloat3(  12925, 0, 4000), AiRole::SEA, false),     
 		StartSpot(AIFloat3(  13700, 0, 4600), AiRole::SEA, false),      
 		StartSpot(AIFloat3(  12618, 0, 5800), AiRole::SEA, false), 
-		StartSpot(AIFloat3(  13454, 0, 6850), AiRole::TACTICAL, false)        
+		StartSpot(AIFloat3(  13454, 0, 6850), AiRole::SEA, false)        
 	};
 
 	// Role-specific unit limit overlays: for TACTICAL, disallow vehicle labs
@@ -38,7 +38,7 @@ namespace GlacialGap {
 		hoverSeaLimits.set("armvp", 0);
 		hoverSeaLimits.set("corvp", 0);
 		hoverSeaLimits.set("legvp", 0);
-		roleUnitLimits.set("TACTICAL", @hoverSeaLimits);
+		roleUnitLimits.set("SEA", @hoverSeaLimits);
 		return roleUnitLimits;
 	}
 
@@ -57,9 +57,9 @@ namespace GlacialGap {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

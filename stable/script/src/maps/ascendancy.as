@@ -27,7 +27,7 @@ namespace Ascendancy {
 	StartSpot@[] spots = {
 		StartSpot(AIFloat3( 1748, 0,   909), AiRole::FRONT, false), // P1  front
 		StartSpot(AIFloat3( 2313, 0,  3205), AiRole::FRONT, false), // P2  front
-		StartSpot(AIFloat3(  614, 0,  4435), AiRole::AIR,   false), // P3  air
+		StartSpot(AIFloat3(  614, 0,  4435), AiRole::FRONT,   false), // P3  front
 		StartSpot(AIFloat3( 2101, 0,  5940), AiRole::FRONT, false), // P4  front
 		StartSpot(AIFloat3( 1192, 0,  7152), AiRole::FRONT, false), // P5  front
 		StartSpot(AIFloat3( 2302, 0,  7786), AiRole::FRONT, false), // P6  front
@@ -35,7 +35,7 @@ namespace Ascendancy {
 		StartSpot(AIFloat3( 2188, 0, 11233), AiRole::FRONT, false), // P8  front
 		StartSpot(AIFloat3(10448, 0,   795), AiRole::FRONT, false), // P9  front
 		StartSpot(AIFloat3( 9870, 0,  3310), AiRole::FRONT, false), // P10 front
-		StartSpot(AIFloat3(11740, 0,  4872), AiRole::AIR,   false), // P11 air
+		StartSpot(AIFloat3(11740, 0,  4872), AiRole::FRONT,   false), // P11 front
 		StartSpot(AIFloat3(10068, 0,  6389), AiRole::FRONT, false), // P12 front
 		StartSpot(AIFloat3(11143, 0,  7314), AiRole::FRONT, false), // P13 front
 		StartSpot(AIFloat3( 9998, 0,  8078), AiRole::FRONT, false), // P14 front
@@ -54,9 +54,9 @@ namespace Ascendancy {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

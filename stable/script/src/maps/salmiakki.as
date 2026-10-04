@@ -29,7 +29,7 @@ namespace Salmiakki {
 		StartSpot(AIFloat3(1241, 0, 2300), AiRole::FRONT, false), // P2  front
 		StartSpot(AIFloat3(1596, 0, 3146), AiRole::FRONT, false), // P3  front
 		StartSpot(AIFloat3(2223, 0, 3999), AiRole::SEA,   false), // P4  sea
-		StartSpot(AIFloat3( 488, 0, 5227), AiRole::AIR,   false), // P5  air
+		StartSpot(AIFloat3( 488, 0, 5227), AiRole::FRONT,   false), // P5  front
 		StartSpot(AIFloat3(1745, 0, 5268), AiRole::FRONT, false), // P6  front
 		StartSpot(AIFloat3(1061, 0, 6546), AiRole::FRONT, false), // P7  front
 		StartSpot(AIFloat3(2153, 0, 7457), AiRole::FRONT, false), // P8  front
@@ -37,7 +37,7 @@ namespace Salmiakki {
 		StartSpot(AIFloat3(8912, 0, 5873), AiRole::FRONT, false), // P10 front
 		StartSpot(AIFloat3(8573, 0, 5037), AiRole::FRONT, false), // P11 front
 		StartSpot(AIFloat3(7907, 0, 4201), AiRole::SEA,   false), // P12 sea
-		StartSpot(AIFloat3(9651, 0, 2913), AiRole::AIR,   false), // P13 air
+		StartSpot(AIFloat3(9651, 0, 2913), AiRole::FRONT,   false), // P13 front
 		StartSpot(AIFloat3(8382, 0, 2889), AiRole::FRONT, false), // P14 front
 		StartSpot(AIFloat3(9077, 0, 1649), AiRole::FRONT, false), // P15 front
 		StartSpot(AIFloat3(7989, 0,  762), AiRole::FRONT, false) // P16 front
@@ -54,9 +54,9 @@ namespace Salmiakki {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

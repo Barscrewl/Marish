@@ -14,14 +14,14 @@ namespace SereneCaldera {
         StartSpot(AIFloat3( 6600, 0, 1000), AiRole::SEA, false), // P3 
         StartSpot(AIFloat3( 8000, 0,  2900), AiRole::SEA, false), // P4 
 
-        StartSpot(AIFloat3( 8800, 0,  1100), AiRole::AIR, false), // P5 
+        StartSpot(AIFloat3( 8800, 0,  1100), AiRole::FRONT, false), // P5 
         StartSpot(AIFloat3( 10100, 0,  3200), AiRole::SEA, false), // P6 
     	StartSpot(AIFloat3( 11000, 0,  1600), AiRole::SEA, false),   // P7 
     	StartSpot(AIFloat3( 12800, 0, 2700), AiRole::SEA, false),   // P8 
 
     	StartSpot(AIFloat3(  2800, 0,  12600), AiRole::SEA, false),
     	StartSpot(AIFloat3(  4500, 0, 13800), AiRole::SEA, false),
-        StartSpot(AIFloat3( 6600, 0, 14250), AiRole::AIR, false), 
+        StartSpot(AIFloat3( 6600, 0, 14250), AiRole::FRONT, false), 
         StartSpot(AIFloat3( 8000, 0,  13000), AiRole::SEA, false), 
 
         StartSpot(AIFloat3( 8800, 0,  14300), AiRole::SEA, false),

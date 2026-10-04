@@ -30,13 +30,13 @@ namespace Otago {
 		StartSpot(AIFloat3( 612, 0, 1709), AiRole::FRONT, false), // P2  front
 		StartSpot(AIFloat3(2422, 0, 2358), AiRole::FRONT, false), // P3  front
 		StartSpot(AIFloat3(1811, 0, 3375), AiRole::FRONT, false), // P4  front
-		StartSpot(AIFloat3( 432, 0, 4506), AiRole::TECH,  false), // P5  tech
-		StartSpot(AIFloat3( 849, 0, 5348), AiRole::AIR,   false), // P6  air
+		StartSpot(AIFloat3( 432, 0, 4506), AiRole::FRONT,  false), // P5  front
+		StartSpot(AIFloat3( 849, 0, 5348), AiRole::FRONT,   false), // P6  front
 		StartSpot(AIFloat3(1778, 0, 5912), AiRole::FRONT, false), // P7  front
 		StartSpot(AIFloat3(2243, 0, 3903), AiRole::FRONT, false), // P8  front
 		StartSpot(AIFloat3(7435, 0,  260), AiRole::FRONT, false), // P10 front
-		StartSpot(AIFloat3(8368, 0,  790), AiRole::AIR,   false), // P11 air
-		StartSpot(AIFloat3(8786, 0, 1631), AiRole::TECH,  false), // P12 tech
+		StartSpot(AIFloat3(8368, 0,  790), AiRole::FRONT,   false), // P11 front
+		StartSpot(AIFloat3(8786, 0, 1631), AiRole::FRONT,  false), // P12 front
 		StartSpot(AIFloat3(6934, 0, 5735), AiRole::FRONT, false), // P13 front
 		StartSpot(AIFloat3(8604, 0, 4421), AiRole::FRONT, false), // P14 front
 		StartSpot(AIFloat3(6853, 0, 3772), AiRole::FRONT, false), // P15 front
@@ -55,9 +55,9 @@ namespace Otago {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

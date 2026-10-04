@@ -35,7 +35,7 @@ namespace RustcrownCanyon {
 		StartSpot(AIFloat3(  690, 0, 1420), AiRole::FRONT, false), // P3  front
 		StartSpot(AIFloat3(  196, 0, 2532), AiRole::SEA,   false), // P4  sea
 		StartSpot(AIFloat3( 1741, 0, 3289), AiRole::FRONT, false), // P5  front
-		StartSpot(AIFloat3(  421, 0, 3876), AiRole::AIR,   false), // P6  air
+		StartSpot(AIFloat3(  421, 0, 3876), AiRole::FRONT,   false), // P6  front
 		StartSpot(AIFloat3(  513, 0, 4836), AiRole::FRONT, false), // P7  front
 		StartSpot(AIFloat3( 1518, 0, 4568), AiRole::FRONT, false), // P8  front
 		StartSpot(AIFloat3( 8645, 0,  394), AiRole::FRONT, false), // P9  front
@@ -43,7 +43,7 @@ namespace RustcrownCanyon {
 		StartSpot(AIFloat3( 9908, 0, 1406), AiRole::FRONT, false), // P11 front
 		StartSpot(AIFloat3(10065, 0, 2490), AiRole::SEA,   false), // P12 sea
 		StartSpot(AIFloat3( 8582, 0, 3070), AiRole::FRONT, false), // P13 front
-		StartSpot(AIFloat3( 9938, 0, 3637), AiRole::AIR,   false), // P14 air
+		StartSpot(AIFloat3( 9938, 0, 3637), AiRole::FRONT,   false), // P14 front
 		StartSpot(AIFloat3( 9962, 0, 4721), AiRole::FRONT, false), // P15 front
 		StartSpot(AIFloat3( 8772, 0, 4491), AiRole::FRONT, false) // P16 front
 	};
@@ -59,9 +59,9 @@ namespace RustcrownCanyon {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

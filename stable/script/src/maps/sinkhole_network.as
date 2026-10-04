@@ -14,11 +14,11 @@ namespace SinkholeNetwork {
         StartSpot(AIFloat3(  8200, 0,   2300), AiRole::FRONT, false), 
         StartSpot(AIFloat3( 9600, 0,   2200), AiRole::FRONT,   false), 
         StartSpot(AIFloat3( 8400, 0,   3700), AiRole::FRONT,  false), 
-        StartSpot(AIFloat3( 9600, 0,   3600), AiRole::TECH, false),
+        StartSpot(AIFloat3( 9600, 0,   3600), AiRole::FRONT, false),
 
         StartSpot(AIFloat3( 8200, 0,  5000), AiRole::FRONT, false),
         StartSpot(AIFloat3( 8000, 0,  6400), AiRole::FRONT, false), 
-		StartSpot(AIFloat3( 9300, 0,  6300), AiRole::SUPPORT, false), 
+		StartSpot(AIFloat3( 9300, 0,  6300), AiRole::FRONT, false), 
         StartSpot(AIFloat3( 8000, 0,  7800), AiRole::FRONT, false)
     };
 
@@ -31,9 +31,9 @@ namespace SinkholeNetwork {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

@@ -29,17 +29,17 @@ namespace SulphurSprings {
 		StartSpot(AIFloat3( 1753, 0,  7768), AiRole::FRONT, false), // P2  front
 		StartSpot(AIFloat3(  813, 0,  6729), AiRole::FRONT, false), // P3  front
 		StartSpot(AIFloat3( 2086, 0,  5487), AiRole::FRONT, false), // P4  front
-		StartSpot(AIFloat3(  498, 0,  4157), AiRole::TECH,  false), // P5  front/tech
+		StartSpot(AIFloat3(  498, 0,  4157), AiRole::FRONT,  false), // P5  front
 		StartSpot(AIFloat3( 1912, 0,  3169), AiRole::FRONT, false), // P6  front
-		StartSpot(AIFloat3(  443, 0,  1254), AiRole::AIR,   false), // P7  air
+		StartSpot(AIFloat3(  443, 0,  1254), AiRole::FRONT,   false), // P7  front
 		StartSpot(AIFloat3( 1071, 0,   408), AiRole::SEA,   false), // P8  sea
 		StartSpot(AIFloat3( 3290, 0, 11838), AiRole::FRONT, false), // P9  front
 		StartSpot(AIFloat3( 4566, 0, 10551), AiRole::FRONT, false), // P10 front
 		StartSpot(AIFloat3( 5593, 0, 11813), AiRole::FRONT, false), // P11 front
 		StartSpot(AIFloat3( 6925, 0, 10046), AiRole::FRONT, false), // P12 front
-		StartSpot(AIFloat3( 8161, 0, 11769), AiRole::TECH,  false), // P13 front/tech
+		StartSpot(AIFloat3( 8161, 0, 11769), AiRole::FRONT,  false), // P13 front
 		StartSpot(AIFloat3( 9258, 0, 10516), AiRole::FRONT, false), // P14 front
-		StartSpot(AIFloat3(10999, 0, 11795), AiRole::AIR,   false), // P15 air
+		StartSpot(AIFloat3(10999, 0, 11795), AiRole::FRONT,   false), // P15 front
 		StartSpot(AIFloat3(11945, 0, 11342), AiRole::SEA,   false) // P16 sea
 	};
 
@@ -54,9 +54,9 @@ namespace SulphurSprings {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

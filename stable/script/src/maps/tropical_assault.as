@@ -23,8 +23,8 @@ namespace TropicalAssault {
 	// landLocked heuristic: not yet surveyed on this map; every spot passes false.
 	StartSpot@[] spots = {
 		// South team
-		StartSpot(AIFloat3( 5974, 0,  8398), AiRole::TECH,  false), // P1  tech   (mapinfo 16)
-		StartSpot(AIFloat3( 2980, 0,  8400), AiRole::AIR,   false), // P2  air    (mapinfo 14)
+		StartSpot(AIFloat3( 5974, 0,  8398), AiRole::FRONT,  false), // P1  front   (mapinfo 16)
+		StartSpot(AIFloat3( 2980, 0,  8400), AiRole::FRONT,   false), // P2  front    (mapinfo 14)
 		StartSpot(AIFloat3( 7200, 0,  7200), AiRole::FRONT, false), // P3  front  (mapinfo 4)
 		StartSpot(AIFloat3( 5500, 0,  7500), AiRole::FRONT, false), // P4  front  (mapinfo 12)
 		StartSpot(AIFloat3( 3470, 0,  7425), AiRole::FRONT, false), // P5  front  (mapinfo 10)
@@ -32,8 +32,8 @@ namespace TropicalAssault {
 		StartSpot(AIFloat3( 6000, 0,  9900), AiRole::SEA,   false), // P7  sea    (mapinfo 8)
 		StartSpot(AIFloat3( 3150, 0,  9800), AiRole::SEA,   false), // P8  sea    (mapinfo 6)
 		// North team: P(n+8) mirrors P(n)
-		StartSpot(AIFloat3( 3203, 0,  1860), AiRole::TECH,  false), // P9  tech   (mapinfo 15) mirrors P1
-		StartSpot(AIFloat3( 6364, 0,  1886), AiRole::AIR,   false), // P10 air    (mapinfo 13) mirrors P2
+		StartSpot(AIFloat3( 3203, 0,  1860), AiRole::FRONT,  false), // P9  front   (mapinfo 15) mirrors P1
+		StartSpot(AIFloat3( 6364, 0,  1886), AiRole::FRONT,   false), // P10 front    (mapinfo 13) mirrors P2
 		StartSpot(AIFloat3( 2004, 0,  2986), AiRole::FRONT, false), // P11 front  (mapinfo 3)  mirrors P3
 		StartSpot(AIFloat3( 3679, 0,  2757), AiRole::FRONT, false), // P12 front  (mapinfo 11) mirrors P4
 		StartSpot(AIFloat3( 5741, 0,  2810), AiRole::FRONT, false), // P13 front  (mapinfo 9)  mirrors P5
@@ -53,9 +53,9 @@ namespace TropicalAssault {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

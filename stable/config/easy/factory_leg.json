@@ -8,39 +8,28 @@
 //########################################################################################################################
 
 	"leglab": {
+		// Marish roster, Legion T1 bot lab: goblins -> satyrs & karkinos.
+		// manager/land_army.as caps every combat unit outside the lab's active
+		// income step at 0, so one tier serves every income.
 		"importance": [1.0, 1.0],
-		"require_energy": false,	
-		"income_tier": [10, 25,  35],
-//Metal Cost
-		"unit":      ["legck",	"leglob",	"legrezbot",	"legbal",	"legcen",	"legkark",	"legaabot",	"leggob"],
-		"land": {			// 10	
-			"tier0": [ 0.10,    0.55,    	0.05,       0.00,		0.00,     	0.00,      	0.00,     	0.30],
-			"tier1": [ 0.10,    0.55,    	0.05,       0.00,		0.00,     	0.00,      	0.00,     	0.30],
-			"tier2": [ 0.10,    0.00,    	0.15,       0.40,		0.35,     	0.00,      	0.00,     	0.00],
-			"tier3": [ 0.10,    0.00,    	0.15,       0.30,		0.10,     	0.35,      	0.00,     	0.00]
+		"require_energy": false,
+		"income_tier": [],
+		"unit":      ["legck", "legrezbot", "leggob", "leglob", "legkark"],
+		"land": {
+			"tier0": [ 0.25, 0.05, 1.00, 1.00, 1.00]
 		},
-		"air": {
-			"tier0": [ 0.10,    0.55,    	0.05,       0.00,		0.00,     	0.00,      	0.00,     	0.30],
-			"tier1": [ 0.10,    0.55,    	0.05,       0.00,		0.00,     	0.00,      	0.00,     	0.30],
-			"tier2": [ 0.10,    0.00,    	0.15,       0.40,		0.35,     	0.00,      	0.00,     	0.00],
-			"tier3": [ 0.10,    0.00,    	0.15,       0.30,		0.10,     	0.35,      	0.00,     	0.00]
-		},
-
 		"caretaker": 1
 	},
 	"legalab": {
+		// Marish roster, Legion T2 bot lab: hoplites, arquebuses & thanatos.
+		// manager/land_army.as caps every combat unit outside the lab's active
+		// income step at 0, so one tier serves every income.
 		"importance": [0.0, 0.7],
-		"require_energy": false,	
-		"income_tier": [55, 75, 100, 125, 150],
-//Metal Cost		   410			310			750		  	165			99			75			360			600			550			300				900			450			2300		60				755			330			650
-		"unit":      [ "legack",  	"legaceb", 	"legdecom", "legaspy", 	"legaradk", 	"legajamk",  "legstr", 	"leghrk", 	"legbart", 	"leginfestor", 	"legsrail", "legshot", 	"leginc",	"legsnapper", 	"legamph", 	"legadvaabot"],
-		"land": {                                                                      // 10                                                        
-			"tier0": [ 0.05,     	0.02,      	0.00,      	0.01,     	0.00,      	0.00,      	0.61,     	0.01,     	0.00,		0.00,       	0.00,		0.30,		0.00,      	0.00,			0.00,		0.00],
-			"tier1": [ 0.05,     	0.02,      	0.00,      	0.01,     	0.00,      	0.00,      	0.31,     	0.21,     	0.10,		0.00,       	0.00,		0.30,		0.00,      	0.00,			0.00,		0.00],
-			"tier2": [ 0.05,     	0.02,      	0.00,      	0.01,     	0.00,      	0.00,      	0.11,     	0.31,     	0.10,		0.00,       	0.10,		0.30,		0.00,      	0.00,			0.00,		0.00],
-			"tier3": [ 0.05,     	0.02,      	0.00,      	0.01,     	0.00,      	0.00,      	0.00,     	0.20,     	0.00,		0.00,       	0.30,		0.00,		0.40,      	0.00,			0.00,		0.00],
-			"tier4": [ 0.05,     	0.02,      	0.00,      	0.01,     	0.01,      	0.01,      	0.00,     	0.20,     	0.00,		0.00,       	0.20,		0.00,		0.50,      	0.00,			0.00,		0.00],
-			"tier5": [ 0.05,     	0.02,      	0.00,      	0.01,     	0.01,      	0.01,      	0.00,     	0.20,     	0.00,		0.00,       	0.30,		0.00,		0.40,      	0.00,			0.00,		0.00]
+		"require_energy": false,
+		"income_tier": [],
+		"unit":      ["legack", "legstr", "legsrail", "leghrk"],
+		"land": {
+			"tier0": [ 0.25, 1.00, 1.00, 1.00]
 		},
 		"caretaker": 2
 	},
@@ -78,28 +67,16 @@
 		"caretaker": 2
 	},
 	"leggant": {
+		// Marish roster, Legion gantry: keres, daedalus & myrmidons -> sol invictus.
+		// manager/land_army.as caps every combat unit outside the lab's active
+		// income step at 0, so one tier serves every income.
 		"importance": [0.0, 1.0],
 		"require_energy": true,
-		"income_tier": [100, 150, 200, 250, 300],
-//Metal Cost		   	1200		2500		11000			2600		8000			7000				23500				20000		950
-		"unit":      [ 	"legjav", 	"legeallterrainmech", "legelrpcmech", 	"legkeres", "legerailtank", "legeshotgunmech", 	"legeheatraymech", 	"legehovertank"],
+		"income_tier": [],
+		"unit":      ["legkeres", "legerailtank", "legeallterrainmech", "legeheatraymech"],
 		"land": {
-			"tier0": [ 	0.80, 		0.10,      0.00,      		0.10,     	0.00,      		0.00,				0.00,				0.00],
-			"tier1": [ 	0.50,		0.20,      0.00,      		0.30,     	0.00,      		0.00,				0.00,				0.00],
-			"tier2": [ 	0.20,		0.10,      0.00,      		0.50,     	0.00,      		0.20,				0.00,				0.00],
-			"tier3": [ 	0.00,		0.00,      0.20,      		0.30,     	0.30,      		0.20,				0.00,				0.00],
-			"tier4": [ 	0.00,		0.00,      0.40,      		0.10,     	0.20,      		0.20,				0.10,				0.00],
-			"tier5": [ 	0.00,		0.00,      0.40,      		0.00,     	0.10,      		0.20,				0.30,				0.00]
+			"tier0": [ 1.00, 1.00, 1.00, 1.00]
 		},
-		"water": {
-			"tier0": [ 	0.80, 		0.00,      0.00,      		0.00,     	0.00,      		0.00,				0.00,				0.20],
-			"tier1": [ 	0.50,		0.00,      0.00,      		0.00,     	0.00,      		0.00,				0.00,				0.50],
-			"tier2": [ 	0.20,		0.00,      0.00,      		0.00,     	0.00,      		0.00,				0.00,				0.80],
-			"tier3": [ 	0.00,		0.00,      0.00,      		0.00,     	0.00,      		0.00,				0.10,				0.90],
-			"tier4": [ 	0.00,		0.00,      0.00,      		0.00,     	0.00,      		0.00,				0.20,				0.80],
-			"tier5": [ 	0.00,		0.00,      0.00,      		0.00,     	0.00,      		0.00,				0.40,				0.60]
-		},
-
 		"caretaker": 4
 	},
 

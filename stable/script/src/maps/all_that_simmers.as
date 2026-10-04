@@ -40,10 +40,10 @@ namespace AllThatSimmers {
 		StartSpot(AIFloat3(6300, 0, 9400), AiRole::FRONT, false), // P10 front
 		StartSpot(AIFloat3(6900, 0,  450), AiRole::FRONT, false), // P11 front
 		StartSpot(AIFloat3( 300, 0, 9770), AiRole::FRONT, false), // P12 front
-		StartSpot(AIFloat3(3322, 0,  750), AiRole::AIR,   false), // P13 air
-		StartSpot(AIFloat3(3850, 0, 9500), AiRole::AIR,   false), // P14 air
-		StartSpot(AIFloat3(5060, 0,  620), AiRole::TECH,  false), // P15 tech
-		StartSpot(AIFloat3(2100, 0, 9600), AiRole::TECH,  false) // P16 tech
+		StartSpot(AIFloat3(3322, 0,  750), AiRole::FRONT,   false), // P13 front
+		StartSpot(AIFloat3(3850, 0, 9500), AiRole::FRONT,   false), // P14 front
+		StartSpot(AIFloat3(5060, 0,  620), AiRole::FRONT,  false), // P15 front
+		StartSpot(AIFloat3(2100, 0, 9600), AiRole::FRONT,  false) // P16 front
 	};
 
 	// Base per-map unit limits
@@ -57,9 +57,9 @@ namespace AllThatSimmers {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

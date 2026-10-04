@@ -368,6 +368,10 @@ namespace Setup {
 	dictionary@ merged = LimitsHelpers::ComputeAndStoreMergedUnitLimits(Global::Map::Config, derivedRole);
 		UnitHelpers::ApplyUnitLimits(merged);
 
+		// Marish land roster and factory bans, before the first factory task:
+		// openers see only the first step's units, and no vehicle plant is chosen.
+		LandArmy::Apply(0.0f);
+
 		// Porcupine chain last: a role delegate sees its own caps already applied,
 		// and the content-option tiers depend on CheckModOptions having run.
 		PorcHelpers::ApplyForRole();

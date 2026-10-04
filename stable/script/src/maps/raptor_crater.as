@@ -13,11 +13,11 @@ namespace RaptorCrater {
     StartSpot@[] spots = {
         StartSpot(AIFloat3(  10200, 0,   400), AiRole::FRONT, false), 
         StartSpot(AIFloat3( 10700, 0,   3000), AiRole::FRONT,  false),
-        StartSpot(AIFloat3( 12000, 0,   3000), AiRole::TECH,  false), 
+        StartSpot(AIFloat3( 12000, 0,   3000), AiRole::FRONT,  false), 
         StartSpot(AIFloat3( 11700, 0,   5200), AiRole::FRONT, false), 
 
         StartSpot(AIFloat3( 11800, 0,  7100), AiRole::FRONT, false),
-        StartSpot(AIFloat3( 11900, 0,  9000), AiRole::AIR, false),
+        StartSpot(AIFloat3( 11900, 0,  9000), AiRole::FRONT, false),
         StartSpot(AIFloat3( 10700, 0,  9600), AiRole::FRONT, false),
         StartSpot(AIFloat3( 9800, 0,  11900), AiRole::FRONT, false)
     };
@@ -31,9 +31,9 @@ namespace RaptorCrater {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

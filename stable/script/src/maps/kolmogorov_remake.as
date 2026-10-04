@@ -28,7 +28,7 @@ namespace KolmogorovRemake {
 	// landLocked heuristic: not yet surveyed on this map; every spot passes false. A future
 	// pass may flag isolated starts that need hover/amphibious to break out.
 	StartSpot@[] spots = {
-		StartSpot(AIFloat3(1342, 0, 9049), AiRole::AIR,   false), // P1  air
+		StartSpot(AIFloat3(1342, 0, 9049), AiRole::FRONT,   false), // P1  front
 		StartSpot(AIFloat3(2281, 0, 6119), AiRole::FRONT, false), // P2  front
 		StartSpot(AIFloat3( 675, 0, 5286), AiRole::FRONT, false), // P3  front
 		StartSpot(AIFloat3(3886, 0, 6532), AiRole::FRONT, false), // P4  front
@@ -43,7 +43,7 @@ namespace KolmogorovRemake {
 		StartSpot(AIFloat3(9478, 0, 5145), AiRole::FRONT, false), // P13 front
 		StartSpot(AIFloat3(9309, 0, 3122), AiRole::FRONT, false), // P14 front
 		StartSpot(AIFloat3(7327, 0,  684), AiRole::FRONT, false), // P15 front
-		StartSpot(AIFloat3(9250, 0, 1160), AiRole::AIR,   false) // P16 air
+		StartSpot(AIFloat3(9250, 0, 1160), AiRole::FRONT,   false) // P16 front
 	};
 
 	// Base per-map unit limits
@@ -57,9 +57,9 @@ namespace KolmogorovRemake {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

@@ -32,16 +32,16 @@ namespace BismuthValley {
 	StartSpot@[] spots = {
 		StartSpot(AIFloat3( 2226, 0,  276), AiRole::FRONT, false), // P1  front
 		StartSpot(AIFloat3( 1603, 0, 1562), AiRole::FRONT, false), // P2  front
-		StartSpot(AIFloat3( 1288, 0, 3000), AiRole::TECH,  false), // P3  tech (was front at 2367,2852; mirror of P11)
-		StartSpot(AIFloat3( 1576, 0, 3978), AiRole::AIR,   false), // P4  air/front
+		StartSpot(AIFloat3( 1288, 0, 3000), AiRole::FRONT,  false), // P3  front (was front at 2367,2852; mirror of P11)
+		StartSpot(AIFloat3( 1576, 0, 3978), AiRole::FRONT,   false), // P4  front/front
 		StartSpot(AIFloat3( 2147, 0, 4736), AiRole::FRONT, false), // P5  front
 		StartSpot(AIFloat3( 1814, 0, 5865), AiRole::FRONT, false), // P6  front
 		StartSpot(AIFloat3( 2410, 0, 6918), AiRole::FRONT, false), // P7  front
 		StartSpot(AIFloat3( 2095, 0, 7881), AiRole::FRONT, false), // P8  front
 		StartSpot(AIFloat3(10042, 0,  352), AiRole::FRONT, false), // P9  front
 		StartSpot(AIFloat3(10465, 0, 1572), AiRole::FRONT, false), // P10 front
-		StartSpot(AIFloat3(11000, 0, 3000), AiRole::TECH,  false), // P11 tech (was front at 9946,2823)
-		StartSpot(AIFloat3(10588, 0, 3928), AiRole::AIR,   false), // P12 air/front
+		StartSpot(AIFloat3(11000, 0, 3000), AiRole::FRONT,  false), // P11 front (was front at 9946,2823)
+		StartSpot(AIFloat3(10588, 0, 3928), AiRole::FRONT,   false), // P12 front/front
 		StartSpot(AIFloat3(10174, 0, 4876), AiRole::FRONT, false), // P13 front
 		StartSpot(AIFloat3(10496, 0, 5834), AiRole::FRONT, false), // P14 front
 		StartSpot(AIFloat3( 9904, 0, 6719), AiRole::FRONT, false), // P15 front
@@ -59,9 +59,9 @@ namespace BismuthValley {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

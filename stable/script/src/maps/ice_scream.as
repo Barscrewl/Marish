@@ -33,7 +33,7 @@ namespace IceScream {
 		StartSpot(AIFloat3( 2174, 0, 2373), AiRole::FRONT, false), // P3  front
 		StartSpot(AIFloat3( 2979, 0, 1634), AiRole::FRONT, false), // P4  front
 		StartSpot(AIFloat3( 4134, 0,  497), AiRole::FRONT, false), // P5  front
-		StartSpot(AIFloat3(  589, 0, 2652), AiRole::AIR,   false), // P6  air
+		StartSpot(AIFloat3(  589, 0, 2652), AiRole::FRONT,   false), // P6  front
 		StartSpot(AIFloat3( 3952, 0, 4570), AiRole::FRONT, false), // P7  front
 		StartSpot(AIFloat3( 4320, 0, 3317), AiRole::FRONT, false), // P8  front
 		StartSpot(AIFloat3(14870, 0,  576), AiRole::FRONT, false), // P9  front
@@ -41,7 +41,7 @@ namespace IceScream {
 		StartSpot(AIFloat3(13223, 0, 2788), AiRole::FRONT, false), // P11 front
 		StartSpot(AIFloat3(12338, 0, 3462), AiRole::FRONT, false), // P12 front
 		StartSpot(AIFloat3(11223, 0, 4605), AiRole::FRONT, false), // P13 front
-		StartSpot(AIFloat3(14812, 0, 2688), AiRole::AIR,   false), // P14 air
+		StartSpot(AIFloat3(14812, 0, 2688), AiRole::FRONT,   false), // P14 front
 		StartSpot(AIFloat3(11416, 0,  533), AiRole::FRONT, false), // P15 front
 		StartSpot(AIFloat3(11073, 0, 1752), AiRole::FRONT, false) // P16 front
 	};
@@ -57,9 +57,9 @@ namespace IceScream {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

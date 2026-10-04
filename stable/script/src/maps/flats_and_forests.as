@@ -12,18 +12,18 @@ namespace FlatsAndForests {
 	StartSpot@[] spots = {
 		StartSpot(AIFloat3(  631, 0,   364), AiRole::FRONT, false), // P1
 		StartSpot(AIFloat3( 2052, 0,  1495), AiRole::FRONT, false), // P2
-		StartSpot(AIFloat3(  677, 0,  3458), AiRole::AIR, false), // P3
+		StartSpot(AIFloat3(  677, 0,  3458), AiRole::FRONT, false), // P3
 		StartSpot(AIFloat3( 2080, 0,  4490), AiRole::FRONT, false), // P4
 		StartSpot(AIFloat3( 2057, 0,  7456), AiRole::FRONT, false), // P5
 		StartSpot(AIFloat3(  696, 0,  8851), AiRole::FRONT, false), // P6
 		StartSpot(AIFloat3( 2058, 0, 10751), AiRole::FRONT, false), // P7
-		StartSpot(AIFloat3(  668, 0, 11601), AiRole::TECH, false), // P8
+		StartSpot(AIFloat3(  668, 0, 11601), AiRole::FRONT, false), // P8
 		StartSpot(AIFloat3(11630, 0, 11899), AiRole::FRONT, false), // P9
 		StartSpot(AIFloat3(10175, 0, 10706), AiRole::FRONT, false), // P10
-		StartSpot(AIFloat3(11570, 0,  8810), AiRole::AIR, false), // P11
+		StartSpot(AIFloat3(11570, 0,  8810), AiRole::FRONT, false), // P11
 		StartSpot(AIFloat3(10147, 0,  7687), AiRole::FRONT, false), // P12
 		StartSpot(AIFloat3(10114, 0,  4459), AiRole::FRONT, false), // P13
-		StartSpot(AIFloat3(11562, 0,  3471), AiRole::TECH, false), // P14
+		StartSpot(AIFloat3(11562, 0,  3471), AiRole::FRONT, false), // P14
 		StartSpot(AIFloat3(10191, 0,  1565), AiRole::FRONT, false), // P15
 		StartSpot(AIFloat3(11627, 0,   681), AiRole::FRONT, false)  // P16
 	};
@@ -41,9 +41,9 @@ namespace FlatsAndForests {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

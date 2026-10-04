@@ -13,10 +13,10 @@ namespace Mediterraneum {
     StartSpot@[] spots = {
 
 		//TOP
-        StartSpot(AIFloat3(  1300, 0,   1200), AiRole::AIR, false), 
+        StartSpot(AIFloat3(  1300, 0,   1200), AiRole::FRONT, false), 
         StartSpot(AIFloat3( 3200, 0,   2800), AiRole::FRONT,  false),
         StartSpot(AIFloat3( 5600, 0,   1500), AiRole::SEA,  false), 
-        StartSpot(AIFloat3( 7800, 0,   2500), AiRole::TECH, false), 
+        StartSpot(AIFloat3( 7800, 0,   2500), AiRole::FRONT, false), 
 
 		StartSpot(AIFloat3( 750, 0,   3800), AiRole::SEA, false), 
 		StartSpot(AIFloat3( 15600, 0,   700), AiRole::SEA, false), 
@@ -26,7 +26,7 @@ namespace Mediterraneum {
         StartSpot(AIFloat3( 10800, 0,   3600), AiRole::FRONT,  false), 
         StartSpot(AIFloat3( 14600, 0,   4500), AiRole::FRONT, false),
 
-		StartSpot(AIFloat3( 1180, 0,   7100), AiRole::TACTICAL, false),
+		StartSpot(AIFloat3( 1180, 0,   7100), AiRole::SEA, false),
 		StartSpot(AIFloat3( 3200, 0,   7100), AiRole::FRONT, false),
 		StartSpot(AIFloat3( 14800, 0,   6400), AiRole::FRONT, false),
 		StartSpot(AIFloat3( 15700, 0,   6900), AiRole::FRONT, false),
@@ -39,15 +39,15 @@ namespace Mediterraneum {
 
 		StartSpot(AIFloat3( 1040, 0,  10100), AiRole::SEA, false),
 
-		StartSpot(AIFloat3( 5800, 0,  12700), AiRole::TACTICAL, false),
+		StartSpot(AIFloat3( 5800, 0,  12700), AiRole::SEA, false),
         StartSpot(AIFloat3( 8800, 0,  14200), AiRole::SEA, false),
-        StartSpot(AIFloat3( 10600, 0,  11600), AiRole::AIR, false),
+        StartSpot(AIFloat3( 10600, 0,  11600), AiRole::FRONT, false),
         StartSpot(AIFloat3( 13200, 0,  13000), AiRole::FRONT, false),
 
-		StartSpot(AIFloat3( 1700, 0,  13200), AiRole::TACTICAL, false),
-		StartSpot(AIFloat3( 4500, 0,  15500), AiRole::TECH, false),
-        StartSpot(AIFloat3( 9800, 0,  15800), AiRole::TACTICAL, false),
-        StartSpot(AIFloat3( 15200, 0,  15500), AiRole::TACTICAL, false)
+		StartSpot(AIFloat3( 1700, 0,  13200), AiRole::SEA, false),
+		StartSpot(AIFloat3( 4500, 0,  15500), AiRole::FRONT, false),
+        StartSpot(AIFloat3( 9800, 0,  15800), AiRole::SEA, false),
+        StartSpot(AIFloat3( 15200, 0,  15500), AiRole::SEA, false)
     };
 
     // Base per-map unit limits
@@ -59,9 +59,9 @@ namespace Mediterraneum {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

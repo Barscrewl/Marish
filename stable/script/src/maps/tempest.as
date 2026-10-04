@@ -11,21 +11,21 @@ namespace Tempest {
 	// Start spots for Eight Horses map (converted from YAML, roles matched to AiRole enum)
 	StartSpot@[] spots = {
 		StartSpot(AIFloat3(  600, 0,  600), AiRole::FRONT, false),       
-		StartSpot(AIFloat3(  4600, 0, 400), AiRole::TECH, false),       
-		StartSpot(AIFloat3(  5700, 0, 400), AiRole::AIR, false),        
+		StartSpot(AIFloat3(  4600, 0, 400), AiRole::FRONT, false),       
+		StartSpot(AIFloat3(  5700, 0, 400), AiRole::FRONT, false),        
 		StartSpot(AIFloat3(  9600, 0, 400), AiRole::FRONT, false),    
 
-		StartSpot(AIFloat3(  4200, 0, 1700), AiRole::TACTICAL, false),     
+		StartSpot(AIFloat3(  4200, 0, 1700), AiRole::SEA, false),     
 		StartSpot(AIFloat3(  5800, 0, 1700), AiRole::SEA, false),      
 		StartSpot(AIFloat3(  4200, 0, 2600), AiRole::SEA, false), 
 		StartSpot(AIFloat3(  5700, 0, 2600), AiRole::SEA, false), 
 		    
 		StartSpot(AIFloat3(  600, 0,  9800), AiRole::FRONT, false),       
-		StartSpot(AIFloat3(  4600, 0, 9800), AiRole::TECH, false),       
-		StartSpot(AIFloat3(  5700, 0, 9800), AiRole::AIR, false),        
+		StartSpot(AIFloat3(  4600, 0, 9800), AiRole::FRONT, false),       
+		StartSpot(AIFloat3(  5700, 0, 9800), AiRole::FRONT, false),        
 		StartSpot(AIFloat3(  9600, 0, 9800), AiRole::FRONT, false),    
 
-		StartSpot(AIFloat3(  4200, 0, 8600), AiRole::TACTICAL, false),     
+		StartSpot(AIFloat3(  4200, 0, 8600), AiRole::SEA, false),     
 		StartSpot(AIFloat3(  5800, 0, 8600), AiRole::SEA, false),      
 		StartSpot(AIFloat3(  4200, 0, 7600), AiRole::SEA, false), 
 		StartSpot(AIFloat3(  5700, 0, 7600), AiRole::SEA, false)       
@@ -38,7 +38,7 @@ namespace Tempest {
 		hoverSeaLimits.set("armvp", 0);
 		hoverSeaLimits.set("corvp", 0);
 		hoverSeaLimits.set("legvp", 0);
-		roleUnitLimits.set("TACTICAL", @hoverSeaLimits);
+		roleUnitLimits.set("SEA", @hoverSeaLimits);
 		return roleUnitLimits;
 	}
 
@@ -57,9 +57,9 @@ namespace Tempest {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

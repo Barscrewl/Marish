@@ -29,7 +29,7 @@ namespace HadesPonds {
 		StartSpot(AIFloat3(1299, 0, 1339), AiRole::FRONT, false), // P2  front
 		StartSpot(AIFloat3(1349, 0, 2397), AiRole::FRONT, false), // P3  front
 		StartSpot(AIFloat3( 964, 0, 3363), AiRole::FRONT, false), // P4  front
-		StartSpot(AIFloat3( 475, 0, 4429), AiRole::AIR,   false), // P5  air/front
+		StartSpot(AIFloat3( 475, 0, 4429), AiRole::FRONT,   false), // P5  front/front
 		StartSpot(AIFloat3(1164, 0, 5560), AiRole::FRONT, false), // P6  front
 		StartSpot(AIFloat3(1654, 0, 6503), AiRole::FRONT, false), // P7  front
 		StartSpot(AIFloat3(1006, 0, 6992), AiRole::FRONT, false), // P8  front
@@ -37,7 +37,7 @@ namespace HadesPonds {
 		StartSpot(AIFloat3(6906, 0, 6836), AiRole::FRONT, false), // P10 front
 		StartSpot(AIFloat3(6856, 0, 5764), AiRole::FRONT, false), // P11 front
 		StartSpot(AIFloat3(7212, 0, 4828), AiRole::FRONT, false), // P12 front
-		StartSpot(AIFloat3(7728, 0, 3775), AiRole::AIR,   false), // P13 air/front
+		StartSpot(AIFloat3(7728, 0, 3775), AiRole::FRONT,   false), // P13 front/front
 		StartSpot(AIFloat3(7025, 0, 2652), AiRole::FRONT, false), // P14 front
 		StartSpot(AIFloat3(6522, 0, 1692), AiRole::FRONT, false), // P15 front
 		StartSpot(AIFloat3(7190, 0, 1195), AiRole::FRONT, false) // P16 front
@@ -54,9 +54,9 @@ namespace HadesPonds {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

@@ -29,7 +29,7 @@ namespace PawnRetreat {
 		StartSpot(AIFloat3(1973, 0,  996), AiRole::FRONT, false), // P2  front
 		StartSpot(AIFloat3(3116, 0, 2094), AiRole::FRONT, false), // P3  front
 		StartSpot(AIFloat3(5156, 0, 1043), AiRole::FRONT, false), // P4  front
-		StartSpot(AIFloat3(7082, 0,  344), AiRole::AIR,   false), // P5  air
+		StartSpot(AIFloat3(7082, 0,  344), AiRole::FRONT,   false), // P5  front
 		StartSpot(AIFloat3(7636, 0, 2654), AiRole::FRONT, false), // P6  front
 		StartSpot(AIFloat3(9383, 0, 1017), AiRole::FRONT, false), // P7  front
 		StartSpot(AIFloat3(9792, 0, 3036), AiRole::FRONT, false), // P8  front
@@ -37,7 +37,7 @@ namespace PawnRetreat {
 		StartSpot(AIFloat3(8289, 0, 9336), AiRole::FRONT, false), // P10 front
 		StartSpot(AIFloat3(7128, 0, 8200), AiRole::FRONT, false), // P11 front
 		StartSpot(AIFloat3(5092, 0, 9261), AiRole::FRONT, false), // P12 front
-		StartSpot(AIFloat3(3153, 0, 9959), AiRole::AIR,   false), // P13 air
+		StartSpot(AIFloat3(3153, 0, 9959), AiRole::FRONT,   false), // P13 front
 		StartSpot(AIFloat3(2636, 0, 7624), AiRole::FRONT, false), // P14 front
 		StartSpot(AIFloat3( 854, 0, 9249), AiRole::FRONT, false), // P15 front
 		StartSpot(AIFloat3( 476, 0, 7187), AiRole::FRONT, false) // P16 front
@@ -54,9 +54,9 @@ namespace PawnRetreat {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

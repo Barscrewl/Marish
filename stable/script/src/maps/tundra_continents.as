@@ -10,22 +10,22 @@ namespace TundraContinents {
 	// isolated peninsulas requiring hover/amph first. Pass false for all for now.
 	// Start spots for Eight Horses map (converted from YAML, roles matched to AiRole enum)
 	StartSpot@[] spots = {
-		StartSpot(AIFloat3(  300, 0,  460), AiRole::TACTICAL, true),       
-		StartSpot(AIFloat3(  1700, 0, 2300), AiRole::TACTICAL, false),       
-		StartSpot(AIFloat3(  2800, 0, 800), AiRole::TECH, true),        
+		StartSpot(AIFloat3(  300, 0,  460), AiRole::SEA, true),       
+		StartSpot(AIFloat3(  1700, 0, 2300), AiRole::SEA, false),       
+		StartSpot(AIFloat3(  2800, 0, 800), AiRole::FRONT, true),        
 		StartSpot(AIFloat3(  4100, 0, 2100), AiRole::SEA, false),
 
 		StartSpot(AIFloat3(  5400, 0, 800), AiRole::SEA, false),     
 		StartSpot(AIFloat3(  6400, 0, 800), AiRole::SEA, false),      
 		StartSpot(AIFloat3(  7800, 0, 1500), AiRole::SEA, false), 
-		StartSpot(AIFloat3(  9200, 0, 1500), AiRole::TACTICAL, false),
+		StartSpot(AIFloat3(  9200, 0, 1500), AiRole::SEA, false),
 
 		StartSpot(AIFloat3(  1504, 0,  12000), AiRole::SEA, false),       
 		StartSpot(AIFloat3(  1610, 0, 10300), AiRole::SEA, false),       
-		StartSpot(AIFloat3(  2800, 0, 11400), AiRole::TACTICAL, false),        
-		StartSpot(AIFloat3(  4600, 0, 11400), AiRole::AIR, true),
+		StartSpot(AIFloat3(  2800, 0, 11400), AiRole::SEA, false),        
+		StartSpot(AIFloat3(  4600, 0, 11400), AiRole::FRONT, true),
 
-		StartSpot(AIFloat3(  6000, 0, 11400), AiRole::TECH, true),     
+		StartSpot(AIFloat3(  6000, 0, 11400), AiRole::FRONT, true),     
 		StartSpot(AIFloat3(  6700, 0, 10600), AiRole::SEA, false),      
 		StartSpot(AIFloat3(  8200, 0, 10900), AiRole::SEA, false), 
 		StartSpot(AIFloat3(  9000, 0, 11400), AiRole::SEA, false)        
@@ -38,7 +38,7 @@ namespace TundraContinents {
 		hoverSeaLimits.set("armvp", 0);
 		hoverSeaLimits.set("corvp", 0);
 		hoverSeaLimits.set("legvp", 0);
-		roleUnitLimits.set("TACTICAL", @hoverSeaLimits);
+		roleUnitLimits.set("SEA", @hoverSeaLimits);
 		return roleUnitLimits;
 	}
 
@@ -57,9 +57,9 @@ namespace TundraContinents {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

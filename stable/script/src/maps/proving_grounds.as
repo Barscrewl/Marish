@@ -29,19 +29,19 @@ namespace ProvingGrounds {
 	// pass may flag isolated starts that need hover/amphibious to break out.
 	StartSpot@[] spots = {
 		StartSpot(AIFloat3( 2524, 0,  4194), AiRole::FRONT, false), // P1  front
-		StartSpot(AIFloat3(  921, 0,  5436), AiRole::TECH,  false), // P2  front/tech
+		StartSpot(AIFloat3(  921, 0,  5436), AiRole::FRONT,  false), // P2  front
 		StartSpot(AIFloat3( 2350, 0,  6070), AiRole::FRONT, false), // P3  front
-		StartSpot(AIFloat3(  980, 0,  7900), AiRole::AIR,   false), // P4  air
+		StartSpot(AIFloat3(  980, 0,  7900), AiRole::FRONT,   false), // P4  front
 		StartSpot(AIFloat3( 2900, 0,  8750), AiRole::FRONT, false), // P5  front
-		StartSpot(AIFloat3( 1570, 0, 10830), AiRole::TECH,  false), // P6  front/tech
+		StartSpot(AIFloat3( 1570, 0, 10830), AiRole::FRONT,  false), // P6  front
 		StartSpot(AIFloat3( 3270, 0, 10650), AiRole::FRONT, false), // P7  front
 		StartSpot(AIFloat3( 3470, 0, 12476), AiRole::FRONT, false), // P8  front
 		StartSpot(AIFloat3(11805, 0, 10125), AiRole::FRONT, false), // P9  front
-		StartSpot(AIFloat3(13400, 0,  8894), AiRole::TECH,  false), // P10 front/tech
+		StartSpot(AIFloat3(13400, 0,  8894), AiRole::FRONT,  false), // P10 front
 		StartSpot(AIFloat3(12000, 0,  8230), AiRole::FRONT, false), // P11 front
-		StartSpot(AIFloat3(13351, 0,  6412), AiRole::AIR,   false), // P12 air
+		StartSpot(AIFloat3(13351, 0,  6412), AiRole::FRONT,   false), // P12 front
 		StartSpot(AIFloat3(11458, 0,  5561), AiRole::FRONT, false), // P13 front
-		StartSpot(AIFloat3(12759, 0,  3496), AiRole::TECH,  false), // P14 front/tech
+		StartSpot(AIFloat3(12759, 0,  3496), AiRole::FRONT,  false), // P14 front
 		StartSpot(AIFloat3(11049, 0,  3668), AiRole::FRONT, false), // P15 front
 		StartSpot(AIFloat3(10816, 0,  1833), AiRole::FRONT, false) // P16 front
 	};
@@ -57,9 +57,9 @@ namespace ProvingGrounds {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

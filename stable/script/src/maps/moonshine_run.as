@@ -28,7 +28,7 @@ namespace MoonshineRun {
 		StartSpot(AIFloat3( 1662, 0,  855), AiRole::FRONT, false), // P1  front
 		StartSpot(AIFloat3( 2459, 0, 1818), AiRole::FRONT, false), // P2  front
 		StartSpot(AIFloat3( 2489, 0, 2670), AiRole::FRONT, false), // P3  front
-		StartSpot(AIFloat3( 1109, 0, 3590), AiRole::AIR,   false), // P4  air
+		StartSpot(AIFloat3( 1109, 0, 3590), AiRole::FRONT,   false), // P4  front
 		StartSpot(AIFloat3( 2498, 0, 4329), AiRole::FRONT, false), // P5  front
 		StartSpot(AIFloat3( 2323, 0, 5200), AiRole::FRONT, false), // P6  front
 		StartSpot(AIFloat3( 2419, 0, 6285), AiRole::FRONT, false), // P7  front
@@ -36,7 +36,7 @@ namespace MoonshineRun {
 		StartSpot(AIFloat3(10604, 0, 7300), AiRole::FRONT, false), // P9  front
 		StartSpot(AIFloat3( 9825, 0, 6373), AiRole::FRONT, false), // P10 front
 		StartSpot(AIFloat3( 9817, 0, 5514), AiRole::FRONT, false), // P11 front
-		StartSpot(AIFloat3(11165, 0, 4591), AiRole::AIR,   false), // P12 air
+		StartSpot(AIFloat3(11165, 0, 4591), AiRole::FRONT,   false), // P12 front
 		StartSpot(AIFloat3( 9820, 0, 3852), AiRole::FRONT, false), // P13 front
 		StartSpot(AIFloat3( 9964, 0, 2982), AiRole::FRONT, false), // P14 front
 		StartSpot(AIFloat3( 9867, 0, 1984), AiRole::FRONT, false), // P15 front
@@ -54,9 +54,9 @@ namespace MoonshineRun {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

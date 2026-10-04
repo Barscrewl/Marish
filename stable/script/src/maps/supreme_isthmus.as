@@ -13,21 +13,21 @@ namespace SupremeIsthmus {
 	// landLocked heuristic (initial): none flagged yet on this map; future pass may mark
 	// isolated peninsulas requiring hover/amph first. Pass false for all for now.
     StartSpot@[] spots = {
-    	StartSpot(AIFloat3(  711, 0,  7218), AiRole::TACTICAL, false), // P1 (sea)
-    	StartSpot(AIFloat3(  837, 0, 10407), AiRole::TECH, false), // P2 (tech)
-        StartSpot(AIFloat3( 2155, 0, 11747), AiRole::AIR, false), // P3 (air)
+    	StartSpot(AIFloat3(  711, 0,  7218), AiRole::SEA, false), // P1 (sea)
+    	StartSpot(AIFloat3(  837, 0, 10407), AiRole::FRONT, false), // P2 (front)
+        StartSpot(AIFloat3( 2155, 0, 11747), AiRole::FRONT, false), // P3 (front)
         StartSpot(AIFloat3( 2513, 0,  7983), AiRole::FRONT, false), // P4 (front)
         StartSpot(AIFloat3( 4595, 0,  7440), AiRole::FRONT, false), // P5 (front)
         StartSpot(AIFloat3( 4997, 0,  8570), AiRole::FRONT, false), // P6 (front)
-		StartSpot(AIFloat3( 4375, 0,  9800), AiRole::SUPPORT, false),   // P7 (front/tech -> SUPPORT)
+		StartSpot(AIFloat3( 4375, 0,  9800), AiRole::FRONT, false),   // P7 (front -> FRONT)
     	StartSpot(AIFloat3( 4814, 0, 11077), AiRole::SEA, false),   // P8 (sea)
-    	StartSpot(AIFloat3(11579, 0,  5063), AiRole::TACTICAL, false),   // P9 (sea)
-    	StartSpot(AIFloat3(11456, 0,  1901), AiRole::TECH, false),   // P10 (tech)
-        StartSpot(AIFloat3(10129, 0,   541), AiRole::AIR, false),   // P11 (air)
+    	StartSpot(AIFloat3(11579, 0,  5063), AiRole::SEA, false),   // P9 (sea)
+    	StartSpot(AIFloat3(11456, 0,  1901), AiRole::FRONT, false),   // P10 (front)
+        StartSpot(AIFloat3(10129, 0,   541), AiRole::FRONT, false),   // P11 (front)
         StartSpot(AIFloat3( 9764, 0,  4339), AiRole::FRONT, false), // P12 (front)
         StartSpot(AIFloat3( 7729, 0,  4835), AiRole::FRONT, false), // P13 (front)
         StartSpot(AIFloat3( 7292, 0,  3727), AiRole::FRONT, false), // P14 (front)
-		StartSpot(AIFloat3( 7925, 0,  2500), AiRole::SUPPORT, false),   // P15 (front/tech -> SUPPORT)
+		StartSpot(AIFloat3( 7925, 0,  2500), AiRole::FRONT, false),   // P15 (front -> FRONT)
     	StartSpot(AIFloat3( 7492, 0,  1220), AiRole::SEA, false)    // P16 (sea)
     };
 
@@ -64,7 +64,7 @@ namespace SupremeIsthmus {
 			o1.pos = AIFloat3(340.f, 0.f, 12700.f); // TODO precise
 			o1.radius = SQUARE_SIZE * 8.0f; // TODO tune: island build area ~5x5 squares
 			o1.objectiveBaseRange = 6000.0f; // gate by base distance
-			o1.roles = { AiRole::AIR };
+			o1.roles = { AiRole::FRONT };
 			o1.sides = { "armada", "cortex", "legion" };
 			o1.classes = { Objectives::ConstructorClass::AIR };
 			o1.tiers = { 1, 2 };
@@ -92,7 +92,7 @@ namespace SupremeIsthmus {
 			o2.pos = AIFloat3(11940.f, 0.f, 10400.f); // TODO precise
 			o2.radius = SQUARE_SIZE * 8.0f; // TODO tune
 			o2.objectiveBaseRange = 6000.0f; // gate by base distance
-			o2.roles = { AiRole::TACTICAL };
+			o2.roles = { AiRole::SEA };
 			o2.sides = { "armada", "cortex", "legion" };
 			o2.classes = { Objectives::ConstructorClass::HOVER };
 			o2.tiers = { 1 };
@@ -117,7 +117,7 @@ namespace SupremeIsthmus {
 			g1.pos = AIFloat3(10300.f, 0.f, 6670.f); // TODO precise geo hill
 			g1.radius = SQUARE_SIZE * 32.0f; // TODO tune: hill crest area
 			g1.objectiveBaseRange = 2500.0f; // gate by base distance
-			g1.roles = { AiRole::TACTICAL };
+			g1.roles = { AiRole::SEA };
 			g1.classes = { Objectives::ConstructorClass::HOVER };
 			g1.tiers = { 1, 2 };
 			g1.minMetalIncome = 0.0f; // gate seaplane platform on eco as requested
@@ -142,7 +142,7 @@ namespace SupremeIsthmus {
 			g2.pos = AIFloat3(2000.f, 0.f, 5500.f); // TODO precise
 			g2.radius = SQUARE_SIZE * 32.0f; // TODO tune
 			g2.objectiveBaseRange = 2500.0f; // gate by base distance
-			g2.roles = { AiRole::TACTICAL };
+			g2.roles = { AiRole::SEA };
 			g2.classes = { Objectives::ConstructorClass::HOVER };
 			g2.tiers = { 1, 2 };
 			g2.minMetalIncome = 20.0f; // gate seaplane platform on eco as requested
@@ -166,7 +166,7 @@ namespace SupremeIsthmus {
 			s1.pos = AIFloat3(9800.f, 0.f, 3500.f); // TODO precise safe coastal/midwater build point
 			s1.radius = 256.0f; // reasonable placement area for platform and tidals
 			s1.objectiveBaseRange = 4000.0f; // allow mid-range from base
-			s1.roles = { AiRole::TACTICAL };
+			s1.roles = { AiRole::SEA };
 			s1.sides = { "armada", "cortex", "legion" };
 			s1.classes = { Objectives::ConstructorClass::HOVER };
 			s1.tiers = { 1 };
@@ -190,7 +190,7 @@ namespace SupremeIsthmus {
 			s1.pos = AIFloat3(9800.f, 0.f, 3500.f); // TODO precise safe coastal/midwater build point
 			s1.radius = 256.0f; // reasonable placement area for platform and tidals
 			s1.objectiveBaseRange = 5000.0f; // allow mid-range from base
-			s1.roles = { AiRole::TACTICAL };
+			s1.roles = { AiRole::SEA };
 			s1.sides = { "armada", "cortex", "legion" };
 			s1.classes = { Objectives::ConstructorClass::HOVER };
 			s1.tiers = { 1 };
@@ -211,9 +211,9 @@ namespace SupremeIsthmus {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

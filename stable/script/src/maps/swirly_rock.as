@@ -13,20 +13,20 @@ namespace SwirlyRock {
     StartSpot@[] spots = {
         StartSpot(AIFloat3(  3200, 0,   550), AiRole::FRONT, false), 
         StartSpot(AIFloat3( 1700, 0,   600), AiRole::FRONT,   false), 
-        StartSpot(AIFloat3( 900, 0,   2700), AiRole::TECH,  false), 
+        StartSpot(AIFloat3( 900, 0,   2700), AiRole::FRONT,  false), 
         StartSpot(AIFloat3( 2200, 0,   3300), AiRole::FRONT, false), 
 
         StartSpot(AIFloat3( 400, 0,  4500), AiRole::FRONT, false),
-        StartSpot(AIFloat3( 2000, 0,  4700), AiRole::AIR, false), 
+        StartSpot(AIFloat3( 2000, 0,  4700), AiRole::FRONT, false), 
         StartSpot(AIFloat3( 1800, 0,  6200), AiRole::FRONT, false), 
         StartSpot(AIFloat3( 3000, 0,  6100), AiRole::FRONT, false), 
 
         StartSpot(AIFloat3(  10500, 0,   550), AiRole::FRONT, false), 
         StartSpot(AIFloat3( 9100, 0,   3500), AiRole::FRONT,   false), 
         StartSpot(AIFloat3( 10000, 0,   3500), AiRole::FRONT,  false), 
-        StartSpot(AIFloat3( 11500, 0,   3000), AiRole::TECH, false), 
+        StartSpot(AIFloat3( 11500, 0,   3000), AiRole::FRONT, false), 
 
-        StartSpot(AIFloat3( 10300, 0,  4800), AiRole::AIR, false), 
+        StartSpot(AIFloat3( 10300, 0,  4800), AiRole::FRONT, false), 
         StartSpot(AIFloat3( 12000, 0,  4800), AiRole::FRONT, false),
         StartSpot(AIFloat3( 10000, 0,  6000), AiRole::FRONT, false), 
         StartSpot(AIFloat3( 10500, 0,  6200), AiRole::FRONT, false)
@@ -42,9 +42,9 @@ namespace SwirlyRock {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

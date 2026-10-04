@@ -36,7 +36,7 @@ namespace TheRock3 {
 		StartSpot(AIFloat3(2090, 0, 3267), AiRole::FRONT, false), // P3  front
 		StartSpot(AIFloat3( 369, 0, 4034), AiRole::SEA,   false), // P4  sea
 		StartSpot(AIFloat3( 485, 0, 5871), AiRole::FRONT, false), // P5  front
-		StartSpot(AIFloat3( 535, 0, 7018), AiRole::AIR,   false), // P6  air
+		StartSpot(AIFloat3( 535, 0, 7018), AiRole::FRONT,   false), // P6  front
 		StartSpot(AIFloat3( 466, 0, 7906), AiRole::FRONT, false), // P7  front
 		StartSpot(AIFloat3(2018, 0, 6709), AiRole::FRONT, false), // P8  front
 		StartSpot(AIFloat3(9740, 0, 7684), AiRole::FRONT, false), // P9  front
@@ -44,7 +44,7 @@ namespace TheRock3 {
 		StartSpot(AIFloat3(8152, 0, 4428), AiRole::FRONT, false), // P11 front
 		StartSpot(AIFloat3(9817, 0, 3826), AiRole::SEA,   false), // P12 sea
 		StartSpot(AIFloat3(9750, 0, 2216), AiRole::FRONT, false), // P13 front
-		StartSpot(AIFloat3(9760, 0, 1116), AiRole::AIR,   false), // P14 air
+		StartSpot(AIFloat3(9760, 0, 1116), AiRole::FRONT,   false), // P14 front
 		StartSpot(AIFloat3(9554, 0,  282), AiRole::FRONT, false), // P15 front
 		StartSpot(AIFloat3(8500, 0, 1395), AiRole::FRONT, false) // P16 front
 	};
@@ -60,9 +60,9 @@ namespace TheRock3 {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

@@ -29,8 +29,8 @@ namespace HellasBasin {
 	// pass may flag isolated starts that need hover/amphibious to break out.
 	StartSpot@[] spots = {
 		StartSpot(AIFloat3(  989, 0,  4882), AiRole::SEA,   false), // P1  sea
-		StartSpot(AIFloat3( 1259, 0,  2683), AiRole::TECH,  false), // P2  tech
-		StartSpot(AIFloat3( 1893, 0,   912), AiRole::AIR,   false), // P3  air
+		StartSpot(AIFloat3( 1259, 0,  2683), AiRole::FRONT,  false), // P2  front
+		StartSpot(AIFloat3( 1893, 0,   912), AiRole::FRONT,   false), // P3  front
 		StartSpot(AIFloat3( 4942, 0,   987), AiRole::SEA,   false), // P4  sea
 		StartSpot(AIFloat3( 3704, 0,  3892), AiRole::FRONT, false), // P5  front
 		StartSpot(AIFloat3( 4259, 0,  3767), AiRole::SEA,   false), // P6  sea
@@ -41,8 +41,8 @@ namespace HellasBasin {
 		StartSpot(AIFloat3( 8370, 0,  8565), AiRole::FRONT, false), // P11 front
 		StartSpot(AIFloat3( 8495, 0,  8007), AiRole::SEA,   false), // P12 sea
 		StartSpot(AIFloat3( 7389, 0, 11250), AiRole::SEA,   false), // P13 sea
-		StartSpot(AIFloat3( 9553, 0, 11008), AiRole::TECH,  false), // P14 tech
-		StartSpot(AIFloat3(11411, 0, 10397), AiRole::AIR,   false), // P15 air
+		StartSpot(AIFloat3( 9553, 0, 11008), AiRole::FRONT,  false), // P14 front
+		StartSpot(AIFloat3(11411, 0, 10397), AiRole::FRONT,   false), // P15 front
 		StartSpot(AIFloat3(11274, 0,  7312), AiRole::SEA,   false) // P16 sea
 	};
 
@@ -57,9 +57,9 @@ namespace HellasBasin {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

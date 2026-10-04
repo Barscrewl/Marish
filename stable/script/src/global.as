@@ -230,8 +230,27 @@ namespace Global {
         float AttackScale = 0.8f;
     }
 
+    // Marish land roster (manager/land_army.as). Metal income (sliding 10 s
+    // minimum) at which a lab moves on to its next step; the T2 lab and the
+    // gantry themselves come from FRONT's MinimumMetalIncomeForFirstT2Lab and
+    // MetalIncomeForGantry.
+    namespace LandArmy {
+        float ArmadaPawnIncome = 10.0f;      // ticks -> pawns
+        float ArmadaMaceIncome = 20.0f;      // pawns -> maces & rocketeers
+        float CortexT1Income = 15.0f;        // grunts -> thugs & aggravators
+        float LegionT1Income = 15.0f;        // goblins -> satyrs & karkinos
+        float CortexMammothIncome = 100.0f;  // fiends, sheldons & arbiters -> mammoths
+        // Gantry: razorbacks / shivas & karganeths / keres, daedalus & myrmidons
+        // below this, titans / juggernauts / sol invictus from it on
+        float GantryHeavyIncome = 300.0f;
+        // A step already reached is left only below this fraction of its threshold
+        float StepDownFraction = 0.85f;
+    }
+
     namespace Spam {
-        bool Enabled = true;
+        // Off in Marish: spam repeats one T1 unit, which would break the land
+        // roster's income steps (manager/land_army.as).
+        bool Enabled = false;
         // Both sliding-minimum incomes must clear these to activate ...
         //
         // These are deliberately fusion-era. Below this economy the units spam
@@ -1461,7 +1480,7 @@ namespace Global {
 
             // Economy Scaling Limits
             float MetalIncomePerLab = 35.0f;
-            float MetalIncomeForGantry = 250.0f;
+            float MetalIncomeForGantry = 150.0f;
             float MetalIncomePerT1Builder = 20.0f;
             int MinBuilderCap = 5;
             float MetalIncomePerT2Builder = 40.0f;
@@ -1496,7 +1515,7 @@ namespace Global {
             float RequiredMetalCurrentForT2VehiclePlant = 200.0f;
 
             int MaxT2BotLabs = 1;
-            int MaxT2VehicleLabs = 1;
+            int MaxT2VehicleLabs = 0;   // Marish: no vehicle plants (manager/land_army.as)
 
             /******************** DYNAMIC FACTORY PRODUCTION ********************/
             // Toggle for role-based dynamic factory production system (replaces factory.json logic)

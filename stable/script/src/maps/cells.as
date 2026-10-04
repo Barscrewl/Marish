@@ -31,7 +31,7 @@ namespace Cells {
 		StartSpot(AIFloat3(2319, 0, 4371), AiRole::FRONT, false), // P4  front
 		StartSpot(AIFloat3(2426, 0, 6093), AiRole::FRONT, false), // P5  front
 		StartSpot(AIFloat3( 929, 0, 7226), AiRole::FRONT, false), // P6  front
-		StartSpot(AIFloat3( 644, 0, 9556), AiRole::TECH, false), // P7  front
+		StartSpot(AIFloat3( 644, 0, 9556), AiRole::FRONT, false), // P7  front
 		StartSpot(AIFloat3(2463, 0, 9643), AiRole::FRONT, false), // P8  front
 		StartSpot(AIFloat3(7731, 0,  581), AiRole::FRONT, false), // P9  front
 		StartSpot(AIFloat3(9568, 0,  640), AiRole::FRONT, false), // P10 front
@@ -54,9 +54,9 @@ namespace Cells {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

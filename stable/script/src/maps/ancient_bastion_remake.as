@@ -13,8 +13,8 @@ namespace AncientBastionRemake {
     StartSpot@[] spots = {
         StartSpot(AIFloat3(  4000, 0,   1500), AiRole::FRONT, false), 
         StartSpot(AIFloat3( 2600, 0,   2800), AiRole::FRONT,   false), 
-        StartSpot(AIFloat3( 450, 0,   4100), AiRole::AIR,  false), 
-        StartSpot(AIFloat3( 2100, 0,   4000), AiRole::TECH, false),
+        StartSpot(AIFloat3( 450, 0,   4100), AiRole::FRONT,  false), 
+        StartSpot(AIFloat3( 2100, 0,   4000), AiRole::FRONT, false),
 
         StartSpot(AIFloat3( 4600, 0,  4000), AiRole::FRONT, false),
         StartSpot(AIFloat3( 900, 0,  5100), AiRole::FRONT, false), 
@@ -33,9 +33,9 @@ namespace AncientBastionRemake {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

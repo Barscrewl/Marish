@@ -25,19 +25,19 @@ namespace FailedNegotiations {
 	// landLocked heuristic: not yet surveyed on this map; every spot passes false. A future
 	// pass may flag isolated starts that need hover/amphibious to break out.
 	StartSpot@[] spots = {
-		StartSpot(AIFloat3(  761, 0, 11039), AiRole::AIR,   false), // P1  air
+		StartSpot(AIFloat3(  761, 0, 11039), AiRole::FRONT,   false), // P1  front
 		StartSpot(AIFloat3( 2467, 0,  8622), AiRole::FRONT, false), // P2  front
 		StartSpot(AIFloat3( 3830, 0, 10036), AiRole::SEA,   false), // P3  sea
 		StartSpot(AIFloat3( 4051, 0,  8581), AiRole::FRONT, false), // P4  front
-		StartSpot(AIFloat3( 5231, 0, 10216), AiRole::TECH,  false), // P5  tech
+		StartSpot(AIFloat3( 5231, 0, 10216), AiRole::FRONT,  false), // P5  front
 		StartSpot(AIFloat3( 7053, 0,  9956), AiRole::FRONT, false), // P6  front
 		StartSpot(AIFloat3( 7875, 0,  9045), AiRole::FRONT, false), // P7  front
 		StartSpot(AIFloat3( 9018, 0, 10528), AiRole::SEA,   false), // P8  sea
-		StartSpot(AIFloat3(11493, 0,  1201), AiRole::AIR,   false), // P9  air
+		StartSpot(AIFloat3(11493, 0,  1201), AiRole::FRONT,   false), // P9  front
 		StartSpot(AIFloat3( 9815, 0,  3676), AiRole::FRONT, false), // P10 front
 		StartSpot(AIFloat3( 8206, 0,  3718), AiRole::FRONT, false), // P11 front
 		StartSpot(AIFloat3( 8455, 0,  2232), AiRole::SEA,   false), // P12 sea
-		StartSpot(AIFloat3( 7040, 0,  2057), AiRole::TECH,  false), // P13 tech
+		StartSpot(AIFloat3( 7040, 0,  2057), AiRole::FRONT,  false), // P13 front
 		StartSpot(AIFloat3( 5236, 0,  2320), AiRole::FRONT, false), // P14 front
 		StartSpot(AIFloat3( 4387, 0,  3228), AiRole::FRONT, false), // P15 front
 		StartSpot(AIFloat3( 3277, 0,  1749), AiRole::SEA,   false) // P16 sea
@@ -54,9 +54,9 @@ namespace FailedNegotiations {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

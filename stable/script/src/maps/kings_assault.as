@@ -25,7 +25,7 @@ namespace KingsAssault {
 	// landLocked heuristic: not yet surveyed on this map; every spot passes false. A future
 	// pass may flag isolated starts that need hover/amphibious to break out.
 	StartSpot@[] spots = {
-		StartSpot(AIFloat3( 718, 0,  529), AiRole::AIR,   false), // P1  air
+		StartSpot(AIFloat3( 718, 0,  529), AiRole::FRONT,   false), // P1  front
 		StartSpot(AIFloat3(2143, 0, 1148), AiRole::FRONT, false), // P2  front
 		StartSpot(AIFloat3(2118, 0, 2561), AiRole::FRONT, false), // P3  front
 		StartSpot(AIFloat3( 729, 0, 2819), AiRole::FRONT, false), // P4  front
@@ -33,7 +33,7 @@ namespace KingsAssault {
 		StartSpot(AIFloat3( 557, 0, 5052), AiRole::FRONT, false), // P6  front
 		StartSpot(AIFloat3(1392, 0, 6723), AiRole::FRONT, false), // P7  front
 		StartSpot(AIFloat3(1592, 0, 7585), AiRole::FRONT, false), // P8  front
-		StartSpot(AIFloat3(9570, 0,  758), AiRole::AIR,   false), // P9  air
+		StartSpot(AIFloat3(9570, 0,  758), AiRole::FRONT,   false), // P9  front
 		StartSpot(AIFloat3(8074, 0, 1107), AiRole::FRONT, false), // P10 front
 		StartSpot(AIFloat3(8131, 0, 2555), AiRole::FRONT, false), // P11 front
 		StartSpot(AIFloat3(9507, 0, 2806), AiRole::FRONT, false), // P12 front
@@ -54,9 +54,9 @@ namespace KingsAssault {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

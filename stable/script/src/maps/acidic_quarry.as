@@ -12,10 +12,10 @@ namespace AcidicQuarry {
     // Start positions sourced from resources/data/maps/all_that_glitters.yaml (springName: All That Glitters v2.2)
     // Role mapping: front->FRONT, air->AIR, tech->TECH
     StartSpot@[] spots = {
-        StartSpot(AIFloat3(  1200, 0,   1200), AiRole::AIR, false), 
-        StartSpot(AIFloat3( 1200, 0,   4800), AiRole::AIR,   false), 
-        StartSpot(AIFloat3( 5100, 0,   1200), AiRole::AIR,  false), 
-        StartSpot(AIFloat3( 5000, 0,   4800), AiRole::AIR, false)     
+        StartSpot(AIFloat3(  1200, 0,   1200), AiRole::FRONT, false), 
+        StartSpot(AIFloat3( 1200, 0,   4800), AiRole::FRONT,   false), 
+        StartSpot(AIFloat3( 5100, 0,   1200), AiRole::FRONT,  false), 
+        StartSpot(AIFloat3( 5000, 0,   4800), AiRole::FRONT, false)     
     };
 
 	// Construct per-map unit limits

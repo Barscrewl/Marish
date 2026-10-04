@@ -27,7 +27,7 @@ namespace TheRockJungle {
 	StartSpot@[] spots = {
 		StartSpot(AIFloat3( 926, 0,  693), AiRole::FRONT, false), // P1  front
 		StartSpot(AIFloat3(2460, 0, 1110), AiRole::FRONT, false), // P2  front
-		StartSpot(AIFloat3( 499, 0, 2882), AiRole::AIR,   false), // P3  air
+		StartSpot(AIFloat3( 499, 0, 2882), AiRole::FRONT,   false), // P3  front
 		StartSpot(AIFloat3(2539, 0, 3394), AiRole::FRONT, false), // P4  front
 		StartSpot(AIFloat3(1417, 0, 4801), AiRole::SEA,   false), // P5  sea
 		StartSpot(AIFloat3( 338, 0, 5953), AiRole::FRONT, false), // P6  front
@@ -38,7 +38,7 @@ namespace TheRockJungle {
 		StartSpot(AIFloat3(9816, 0, 2368), AiRole::FRONT, false), // P11 front
 		StartSpot(AIFloat3(8789, 0, 3363), AiRole::SEA,   false), // P12 sea
 		StartSpot(AIFloat3(7599, 0, 4671), AiRole::FRONT, false), // P13 front
-		StartSpot(AIFloat3(9725, 0, 5196), AiRole::AIR,   false), // P14 air
+		StartSpot(AIFloat3(9725, 0, 5196), AiRole::FRONT,   false), // P14 front
 		StartSpot(AIFloat3(7954, 0, 7130), AiRole::FRONT, false), // P15 front
 		StartSpot(AIFloat3(9313, 0, 7536), AiRole::FRONT, false) // P16 front
 	};
@@ -54,9 +54,9 @@ namespace TheRockJungle {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

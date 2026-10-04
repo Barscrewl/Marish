@@ -1,3 +1,20 @@
+# Marish
+
+Marish is SMRTBARb's `legion-sea` branch (Barscrewl/SMRTBARb, e20ed68) with a
+fixed land roster. Same DLL, scripts and configs otherwise; the SMRTBARb notes
+below still apply.
+
+- Roles: every map start spot and objective is FRONT or SEA (TECH, AIR and
+  SUPPORT became FRONT, TACTICAL became SEA). `RoleHelpers::DefaultRoleForFactory`
+  gives FRONT for any land start on an unknown map.
+- Factories: bot labs only. Vehicle plants are capped at 0 for every role;
+  FRONT also never builds hover plants, amphibious complexes or underwater
+  gantries (`manager/land_army.as`). FRONT's gantry comes at 150 metal income.
+- Units: `manager/land_army.as` steps each lab through its roster by metal
+  income, capping everything outside the active step at 0; the lab and gantry
+  entries in every `factory.json` / `factory_leg.json` list only those units
+  plus constructors and rez bots. Thresholds: `Global::LandArmy`. Spam is off.
+
 # SMRTBARb
 
 A Beyond All Reason skirmish AI profile: AngelScript (`stable/script/`) layered

@@ -16,7 +16,7 @@
 local infos = {
 	{
 		key    = 'shortName',
-		value  = 'SMRTBARb', -- AI name - !This comment is used for parsing!
+		value  = 'Marish', -- AI name - !This comment is used for parsing!
 		desc   = 'machine conform name.',
 	},
 	{
@@ -25,7 +25,7 @@ local infos = {
 	},
 	{
 		key    = 'name',
-		value  = 'SMRTBARb',
+		value  = 'Marish',
 		desc   = 'human readable name.',
 	},
 	{

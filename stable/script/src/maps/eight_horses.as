@@ -12,19 +12,19 @@ namespace EightHorses {
 	// Roles set to match YAML team roles: FRONT everywhere except SEA at P3 and P11
 	StartSpot@[] spots = {
 		StartSpot(AIFloat3(  795, 0,  211), AiRole::FRONT, false), // P1
-		StartSpot(AIFloat3(  683, 0, 2016), AiRole::AIR, false), // P2
+		StartSpot(AIFloat3(  683, 0, 2016), AiRole::FRONT, false), // P2
 		StartSpot(AIFloat3(  320, 0, 3580), AiRole::SEA,   false), // P3
 		StartSpot(AIFloat3(  331, 0, 5162), AiRole::FRONT, false), // P4
 		StartSpot(AIFloat3(  671, 0, 6122), AiRole::FRONT, false), // P5
-		StartSpot(AIFloat3(  905, 0, 7170), AiRole::SUPPORT, false), // P6
+		StartSpot(AIFloat3(  905, 0, 7170), AiRole::FRONT, false), // P6
 		StartSpot(AIFloat3(  718, 0, 8383), AiRole::FRONT, false), // P7
 		StartSpot(AIFloat3(  970, 0, 9829), AiRole::FRONT, false), // P8
 		StartSpot(AIFloat3(11492, 0,  226), AiRole::FRONT, false), // P9
-		StartSpot(AIFloat3(11598, 0, 2013), AiRole::AIR, false), // P10
+		StartSpot(AIFloat3(11598, 0, 2013), AiRole::FRONT, false), // P10
 		StartSpot(AIFloat3(11883, 0, 3555), AiRole::SEA,   false), // P11
 		StartSpot(AIFloat3(11934, 0, 5164), AiRole::FRONT, false), // P12
 		StartSpot(AIFloat3(11619, 0, 6116), AiRole::FRONT, false), // P13
-		StartSpot(AIFloat3(11380, 0, 7138), AiRole::SUPPORT, false), // P14
+		StartSpot(AIFloat3(11380, 0, 7138), AiRole::FRONT, false), // P14
 		StartSpot(AIFloat3(11541, 0, 8370), AiRole::FRONT, false), // P15
 		StartSpot(AIFloat3(11289, 0, 9831), AiRole::FRONT, false)  // P16
 	};
@@ -47,9 +47,9 @@ namespace EightHorses {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

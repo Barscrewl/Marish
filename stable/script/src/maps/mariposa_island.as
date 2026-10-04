@@ -35,14 +35,14 @@ namespace MariposaIsland {
 		StartSpot(AIFloat3(7228, 0, 6193), AiRole::FRONT, false), // P5  front
 		StartSpot(AIFloat3(6858, 0, 5455), AiRole::FRONT, false), // P6  front
 		StartSpot(AIFloat3(8801, 0, 5537), AiRole::SEA,   false), // P7  sea
-		StartSpot(AIFloat3(7710, 0, 8362), AiRole::AIR,   false), // P8  air
+		StartSpot(AIFloat3(7710, 0, 8362), AiRole::FRONT,   false), // P8  front
 		StartSpot(AIFloat3(3330, 0,  359), AiRole::SEA,   false), // P9  sea
 		StartSpot(AIFloat3(3116, 0, 1673), AiRole::FRONT, false), // P10 front
 		StartSpot(AIFloat3(2498, 0, 2270), AiRole::FRONT, false), // P11 front
 		StartSpot(AIFloat3(3668, 0, 2289), AiRole::FRONT, false), // P12 front
 		StartSpot(AIFloat3(1997, 0, 3060), AiRole::FRONT, false), // P13 front
 		StartSpot(AIFloat3(2350, 0, 3763), AiRole::FRONT, false), // P14 front
-		StartSpot(AIFloat3(1439, 0,  865), AiRole::AIR,   false), // P15 air
+		StartSpot(AIFloat3(1439, 0,  865), AiRole::FRONT,   false), // P15 front
 		StartSpot(AIFloat3( 389, 0, 3691), AiRole::SEA,   false) // P16 sea
 	};
 
@@ -57,9 +57,9 @@ namespace MariposaIsland {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

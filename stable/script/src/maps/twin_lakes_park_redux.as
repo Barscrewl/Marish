@@ -28,7 +28,7 @@ namespace TwinLakesParkRedux {
 		StartSpot(AIFloat3( 2054, 0,  393), AiRole::FRONT, false), // P1  front
 		StartSpot(AIFloat3( 2004, 0, 1551), AiRole::FRONT, false), // P2  front
 		StartSpot(AIFloat3( 2503, 0, 3380), AiRole::FRONT, false), // P3  front
-		StartSpot(AIFloat3(  429, 0, 4393), AiRole::AIR,   false), // P4  air
+		StartSpot(AIFloat3(  429, 0, 4393), AiRole::FRONT,   false), // P4  front
 		StartSpot(AIFloat3( 1740, 0, 5131), AiRole::FRONT, false), // P5  front
 		StartSpot(AIFloat3( 1379, 0, 6570), AiRole::FRONT, false), // P6  front
 		StartSpot(AIFloat3( 1009, 0, 8149), AiRole::FRONT, false), // P7  front
@@ -36,7 +36,7 @@ namespace TwinLakesParkRedux {
 		StartSpot(AIFloat3(10250, 0, 9836), AiRole::FRONT, false), // P9  front
 		StartSpot(AIFloat3(10313, 0, 8702), AiRole::FRONT, false), // P10 front
 		StartSpot(AIFloat3( 9777, 0, 6856), AiRole::FRONT, false), // P11 front
-		StartSpot(AIFloat3(11900, 0, 5844), AiRole::AIR,   false), // P12 air
+		StartSpot(AIFloat3(11900, 0, 5844), AiRole::FRONT,   false), // P12 front
 		StartSpot(AIFloat3(10563, 0, 5113), AiRole::FRONT, false), // P13 front
 		StartSpot(AIFloat3(10908, 0, 3656), AiRole::FRONT, false), // P14 front
 		StartSpot(AIFloat3(11267, 0, 2053), AiRole::FRONT, false), // P15 front
@@ -54,9 +54,9 @@ namespace TwinLakesParkRedux {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

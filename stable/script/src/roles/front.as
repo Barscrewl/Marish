@@ -743,8 +743,8 @@ namespace RoleFront {
         array<string> t2VehLabs = UnitHelpers::GetT2VehicleLabs(side);
         UnitHelpers::BatchApplyUnitCaps(t2VehLabs, maxT2Veh);
 
-        // Gantries
-        array<string> gantries = UnitHelpers::GetAllGantries();
+        // Land gantries only; LandArmy keeps the underwater ones at 0 for FRONT
+        array<string> gantries = UnitHelpers::GetAllLandGantries();
         int gantryCap = (metalIncome >= Global::RoleSettings::Front::MetalIncomeForGantry) ? 1 : 0;
         UnitHelpers::BatchApplyUnitCaps(gantries, gantryCap);
     }
@@ -853,13 +853,7 @@ namespace RoleFront {
                 }
             }
 
-            // Transition to vehicles if metal income > threshold and no vehicle plant
-            int t1VehLabCount = UnitDefHelpers::SumUnitDefCounts(UnitHelpers::GetAllT1VehicleLabs());
-            if (metalIncome > Global::RoleSettings::Front::MinimumMetalIncomeForT1FactoryTransition && t1VehLabCount < 1) {
-                AIFloat3 pos = Factory::GetPreferredFactoryPos();
-                IUnitTask@ tVeh = Builder::EnqueueT1VehiclePlant(unitSide, pos, SQUARE_SIZE * 24, 600 * SECOND);
-                if (tVeh !is null) return tVeh;
-            }
+            // Marish: no transition to vehicles; bot labs only (manager/land_army.as)
 
             // Try T2 lab if eco allows
             bool shouldT2Lab = EconomyHelpers::ShouldBuildT2BotLab(

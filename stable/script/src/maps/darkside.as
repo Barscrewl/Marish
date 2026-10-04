@@ -36,9 +36,9 @@ namespace Darkside {
 		StartSpot(AIFloat3(11203, 0, 11001), AiRole::FRONT, false), // P9  front
 		StartSpot(AIFloat3(10357, 0,  9304), AiRole::FRONT, false), // P10 front
 		StartSpot(AIFloat3(11097, 0,  8405), AiRole::FRONT, false), // P11 front
-		StartSpot(AIFloat3(10753, 0,  6800), AiRole::AIR, false), // P12 front
+		StartSpot(AIFloat3(10753, 0,  6800), AiRole::FRONT, false), // P12 front
 		StartSpot(AIFloat3( 9978, 0,  4969), AiRole::FRONT, false), // P13 front
-		StartSpot(AIFloat3(11329, 0,  3971), AiRole::TECH, false), // P14 tech
+		StartSpot(AIFloat3(11329, 0,  3971), AiRole::FRONT, false), // P14 front
 		StartSpot(AIFloat3(10682, 0,  2126), AiRole::FRONT, false), // P15 front
 		StartSpot(AIFloat3( 9901, 0,   587), AiRole::FRONT, false) // P16 front
 	};
@@ -54,9 +54,9 @@ namespace Darkside {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

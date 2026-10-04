@@ -26,17 +26,17 @@ namespace DeltaSiegeDry {
 	// pass may flag isolated starts that need hover/amphibious to break out.
 	StartSpot@[] spots = {
 		StartSpot(AIFloat3(2457, 0,  414), AiRole::FRONT, false), // P1  front
-		StartSpot(AIFloat3( 821, 0, 1014), AiRole::AIR,   false), // P2  air
+		StartSpot(AIFloat3( 821, 0, 1014), AiRole::FRONT,   false), // P2  front
 		StartSpot(AIFloat3(2545, 0, 2379), AiRole::FRONT, false), // P3  front
-		StartSpot(AIFloat3( 703, 0, 2489), AiRole::TECH,  false), // P4  tech
+		StartSpot(AIFloat3( 703, 0, 2489), AiRole::FRONT,  false), // P4  front
 		StartSpot(AIFloat3(2894, 0, 3505), AiRole::FRONT, false), // P5  front
 		StartSpot(AIFloat3( 467, 0, 4130), AiRole::FRONT, false), // P6  front
 		StartSpot(AIFloat3( 419, 0, 5803), AiRole::FRONT, false), // P7  front
 		StartSpot(AIFloat3(2540, 0, 5666), AiRole::FRONT, false), // P8  front
 		StartSpot(AIFloat3(7968, 0,  438), AiRole::FRONT, false), // P9  front
-		StartSpot(AIFloat3(9623, 0,  917), AiRole::AIR,   false), // P10 air
+		StartSpot(AIFloat3(9623, 0,  917), AiRole::FRONT,   false), // P10 front
 		StartSpot(AIFloat3(7765, 0, 2323), AiRole::FRONT, false), // P11 front
-		StartSpot(AIFloat3(9402, 0, 2470), AiRole::TECH,  false), // P12 tech
+		StartSpot(AIFloat3(9402, 0, 2470), AiRole::FRONT,  false), // P12 front
 		StartSpot(AIFloat3(7282, 0, 3343), AiRole::FRONT, false), // P13 front
 		StartSpot(AIFloat3(9856, 0, 3718), AiRole::FRONT, false), // P14 front
 		StartSpot(AIFloat3(9902, 0, 5645), AiRole::FRONT, false), // P15 front
@@ -54,9 +54,9 @@ namespace DeltaSiegeDry {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

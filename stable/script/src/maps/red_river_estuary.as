@@ -13,7 +13,7 @@ namespace RedRiverEstuary {
 		StartSpot(AIFloat3(  2000, 0,  900), AiRole::FRONT, false),       
 		StartSpot(AIFloat3(  2100, 0, 2300), AiRole::FRONT, false),       
 		StartSpot(AIFloat3(  2000, 0, 4000), AiRole::FRONT, false),        
-		StartSpot(AIFloat3(  500, 0, 5200), AiRole::TECH, false),    
+		StartSpot(AIFloat3(  500, 0, 5200), AiRole::FRONT, false),    
 
 		StartSpot(AIFloat3(  1900, 0, 7200), AiRole::FRONT, false),     
 		StartSpot(AIFloat3(  300, 0, 7800), AiRole::FRONT, false),      
@@ -23,7 +23,7 @@ namespace RedRiverEstuary {
 		StartSpot(AIFloat3(  8060, 0,  900), AiRole::FRONT, false),       
 		StartSpot(AIFloat3(  8000, 0, 2300), AiRole::FRONT, false),       
 		StartSpot(AIFloat3(  9500, 0, 4500), AiRole::FRONT, false),        
-		StartSpot(AIFloat3(  8200, 0, 5000), AiRole::TECH, false),    
+		StartSpot(AIFloat3(  8200, 0, 5000), AiRole::FRONT, false),    
 
 		StartSpot(AIFloat3(  8300, 0, 6700), AiRole::FRONT, false),     
 		StartSpot(AIFloat3(  9800, 0, 7100), AiRole::FRONT, false),      
@@ -48,9 +48,9 @@ namespace RedRiverEstuary {
 		dictionary root; // role -> sideDict
 
 		// FRONT role: side specific dictionaries
-		dictionary frontArm; frontArm.set("armlab",2); frontArm.set("armvp",5);
-		dictionary frontCor; frontCor.set("corlab",2); frontCor.set("corvp",5);
-		dictionary frontLeg; frontLeg.set("leglab",2); frontLeg.set("legvp",5);
+		dictionary frontArm; frontArm.set("armlab",2);
+		dictionary frontCor; frontCor.set("corlab",2);
+		dictionary frontLeg; frontLeg.set("leglab",2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 

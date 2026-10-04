@@ -1,4 +1,5 @@
-// Generic factory selection helpers (extracted from Supreme Isthmus specific logic)
+// Generic factory selection helpers (extracted from Supreme Isthmus specific logic).
+// Marish: every land role opens on the T1 bot lab; only SEA opens on a shipyard.
 #include "../types/start_spot.as"
 
 namespace FactoryMapping {
@@ -6,23 +7,14 @@ namespace FactoryMapping {
 		if (role == "") return "";
 		if (side == "armada") {
 			if (role == "sea") return "armsy";
-			if (role == "air") return "armap";
-			if (role == "tech" || role == "front/tech") return landLocked ? "armhp" : "armlab";
-			if (role == "front") return landLocked ? "armhp" : "armvp";
 			return "armlab";
 		}
 		if (side == "cortex") {
 			if (role == "sea") return "corsy";
-			if (role == "air") return "corap";
-			if (role == "tech" || role == "front/tech") return landLocked ? "corhp" : "corlab";
-			if (role == "front") return landLocked ? "corhp" : "corvp";
 			return "corlab";
 		}
 		if (side == "legion") {
 			if (role == "sea") return "legsy";
-			if (role == "air") return "legap";
-			if (role == "tech" || role == "front/tech") return landLocked ? "leghp" : "leglab";
-			if (role == "front") return landLocked ? "leghp" : "legvp";
 			return "leglab";
 		}
 		return "";

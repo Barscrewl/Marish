@@ -14,17 +14,17 @@ namespace ShoreToShore {
 	// Start spots for Shore_to_Shore_V3 (converted from YAML, roles matched to AiRole enum)
 	// landLocked heuristic: currently false for all
 	StartSpot@[] spots = {
-		StartSpot(AIFloat3(  560, 0,  730), AiRole::TECH,      false),
-		StartSpot(AIFloat3(  550, 0, 1740), AiRole::AIR,       false),
-		StartSpot(AIFloat3(  340, 0, 2700), AiRole::TACTICAL, false),
+		StartSpot(AIFloat3(  560, 0,  730), AiRole::FRONT,      false),
+		StartSpot(AIFloat3(  550, 0, 1740), AiRole::FRONT,       false),
+		StartSpot(AIFloat3(  340, 0, 2700), AiRole::SEA, false),
 
 		StartSpot(AIFloat3( 2000, 0,  730), AiRole::SEA,       false),
 		StartSpot(AIFloat3( 2000, 0, 1740), AiRole::SEA,       false),
 		StartSpot(AIFloat3( 2000, 0, 2700), AiRole::SEA,       false),
 
-		StartSpot(AIFloat3(14800, 0,  550), AiRole::TECH,      false),
-		StartSpot(AIFloat3(14800, 0, 1450), AiRole::AIR,       false),
-		StartSpot(AIFloat3(14800, 0, 2300), AiRole::TACTICAL, false),
+		StartSpot(AIFloat3(14800, 0,  550), AiRole::FRONT,      false),
+		StartSpot(AIFloat3(14800, 0, 1450), AiRole::FRONT,       false),
+		StartSpot(AIFloat3(14800, 0, 2300), AiRole::SEA, false),
 
 		StartSpot(AIFloat3(13250, 0,  730), AiRole::SEA,       false),
 		StartSpot(AIFloat3(13250, 0, 1740), AiRole::SEA,       false),
@@ -95,9 +95,9 @@ namespace ShoreToShore {
 		dictionary root; // role -> sideDict
 
 		// FRONT role
-		dictionary frontArm; frontArm.set("armlab", 2); frontArm.set("armvp", 5);
-		dictionary frontCor; frontCor.set("corlab", 2); frontCor.set("corvp", 5);
-		dictionary frontLeg; frontLeg.set("leglab", 2); frontLeg.set("legvp", 5);
+		dictionary frontArm; frontArm.set("armlab", 2);
+		dictionary frontCor; frontCor.set("corlab", 2);
+		dictionary frontLeg; frontLeg.set("leglab", 2);
 		dictionary frontRole; frontRole.set("armada", @frontArm); frontRole.set("cortex", @frontCor); frontRole.set("legion", @frontLeg);
 		root.set("FRONT", @frontRole);
 
