@@ -8,7 +8,7 @@
 		"behaviour": {
 			"legcom": {
 				"role": ["builder"],
-				"attribute": ["commander"],
+				"attribute": ["commander", "dg_cost"],
 				"build_speed": 5.0,
 				"power": 0.4
 			},

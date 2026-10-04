@@ -66,8 +66,20 @@ namespace Rush {
     class Squad {
         array<int> ids;
         CRouteTask@ route = null;   // the way to the target
-        IUnitTask@ raid = null;     // native raid squad, once there
+        IUnitTask@ raid = null;     // native raid (rush) or attack (wave) squad, once there
+        Task::FightType fight = Task::FightType::RAID;
+        string label = "raid squad";
     }
+
+    // Early waves: the T1 lab's first-tier units after the rush (Armada ticks
+    // and pawns, Cortex grunts, Legion goblins) gather at the rally and leave
+    // together. See WaveTarget and LandArmy::ApplyRoster's final-wave gate.
+    array<int> waveForming;
+    int waveFormingSince = -1;
+    int waves = 0;
+    bool finalRequested = false;   // LandArmy wants the next tier: one last full wave first
+    bool finalSent = false;
+    int finalSince = -1;
 
     dictionary seen;      // unit id -> true: counted once
     dictionary scouts;    // unit id -> true: on the way to the target
@@ -247,16 +259,19 @@ namespace Rush {
         return scoutRoute;
     }
 
-    // Sends the waiting raiders out together along a route to the target; the
+    // Sends the units waiting in `members` out together along a route to the
+    // target; at the target they become one native `fight` squad. The
     // newcomer (if any) is assigned by the caller through the returned task.
-    IUnitTask@ Launch(CCircuitUnit@ newcomer, const string &in why)
+    IUnitTask@ Launch(array<int>@ members, CCircuitUnit@ newcomer, Task::FightType fight, const string &in label, const string &in why)
     {
         Squad@ sq = Squad();
         @sq.route = NewRoute(Target(), false);
         if (sq.route is null) return null;
+        sq.fight = fight;
+        sq.label = label;
         const int idx = int(squadList.length());
-        for (uint i = 0; i < forming.length(); ++i) {
-            CCircuitUnit@ m = ai.GetTeamUnit(forming[i]);
+        for (uint i = 0; i < members.length(); ++i) {
+            CCircuitUnit@ m = ai.GetTeamUnit(members[i]);
             if (m is null) continue;
             if (!(newcomer !is null && m is newcomer) && !aiMilitaryMgr.TransferUnit(m, sq.route)) continue;
             sq.ids.insertLast(int(m.id));
@@ -264,13 +279,64 @@ namespace Rush {
             raiders.delete("" + m.id);
         }
         squadList.insertLast(sq);
-        forming.resize(0);
-        formingSince = -1;
-        ++squads;
-        GenericHelpers::LogUtil("[Rush] raid squad " + squads + " of " + sq.ids.length() + " leaves for the enemy start ("
-            + why + ")", 1);
+        members.resize(0);
+        GenericHelpers::LogUtil("[Rush] " + label + " of " + sq.ids.length() + " leaves for the enemy start (" + why + ")", 1);
         return sq.route;
     }
+
+    IUnitTask@ LaunchRaid(CCircuitUnit@ newcomer, const string &in why)
+    {
+        ++squads;
+        formingSince = -1;
+        return Launch(forming, newcomer, Task::FightType::RAID, "raid squad " + squads, why);
+    }
+
+    // The first-tier units of our side's T1 lab, the early waves' units.
+    bool IsEarlyUnit(const CCircuitDef@ d)
+    {
+        if (d is null) return false;
+        const string n = d.GetName();
+        const string side = Global::AISettings::Side;
+        if (side == "armada") return n == "armflea" || n == "armpw";
+        if (side == "cortex") return n == "corak";
+        return n == "leggob";
+    }
+
+    // Wave size: WaveMinSize at no income, rising to WaveMaxSize as metal
+    // income nears the next tier's threshold (LandArmy::NextTierIncome); the
+    // last wave before the switch is FinalWaveSize.
+    int WaveTarget()
+    {
+        if (finalRequested && !finalSent) return Global::Rush::FinalWaveSize;
+        const float next = LandArmy::NextTierIncome();
+        float p = (next > 0.0f) ? Economy::GetMinMetalIncomeLast10s() / next : 1.0f;
+        p = AiMax(0.0f, AiMin(1.0f, p));
+        return Global::Rush::WaveMinSize + int(float(Global::Rush::WaveMaxSize - Global::Rush::WaveMinSize) * p + 0.5f);
+    }
+
+    IUnitTask@ LaunchWave(CCircuitUnit@ newcomer, const string &in why)
+    {
+        const int size = int(waveForming.length());
+        ++waves;
+        waveFormingSince = -1;
+        if (finalRequested && !finalSent && size >= Global::Rush::FinalWaveSize) {
+            finalSent = true;
+            GenericHelpers::LogUtil("[Rush] the final early wave (" + size + ") is away: the next tier may start", 1);
+        }
+        return Launch(waveForming, newcomer, Task::FightType::ATTACK, "wave " + waves, why);
+    }
+
+    // LandArmy::ApplyRoster: the lab is due for the next tier; it switches
+    // once FinalWaveSent (one last full early wave) or FinalWaveMaxSeconds
+    // after the rush is over.
+    void RequestFinalWave()
+    {
+        if (finalRequested) return;
+        finalRequested = true;
+        GenericHelpers::LogUtil("[Rush] income reached the next tier: one last wave of " + Global::Rush::FinalWaveSize
+            + " before the switch", 1);
+    }
+    bool FinalWaveSent() { return finalSent || !Enabled(); }
 
     // Military::AiMakeTask, before the role's policy.
     IUnitTask@ MakeTask(CCircuitUnit@ u)
@@ -287,15 +353,24 @@ namespace Rush {
             squadOf.delete(key);   // the squad is over: native takes it from here
             return null;
         }
-        if (!raiders.exists(key)) return null;
-        if (forming.find(int(u.id)) < 0) forming.insertLast(int(u.id));
-        if (formingSince < 0) formingSince = ai.frame;
-        if (int(forming.length()) >= Global::Rush::RaidSquadSize) return Launch(u, "squad of " + Global::Rush::RaidSquadSize + " gathered");
+        if (raiders.exists(key)) {
+            if (forming.find(int(u.id)) < 0) forming.insertLast(int(u.id));
+            if (formingSince < 0) formingSince = ai.frame;
+            if (int(forming.length()) >= Global::Rush::RaidSquadSize) return LaunchRaid(u, "squad of " + Global::Rush::RaidSquadSize + " gathered");
+            return RallyTask();
+        }
+        // An early wave unit: our side's first tier (the rush's own scouts and
+        // raiders were handled above), while the lab is still on that tier.
+        if (!Enabled() || !IsEarlyUnit(u.circuitDef) || !LandArmy::EarlyTier()) return null;
+        if (waveForming.find(int(u.id)) < 0) waveForming.insertLast(int(u.id));
+        if (waveFormingSince < 0) waveFormingSince = ai.frame;
+        const int target = WaveTarget();
+        if (int(waveForming.length()) >= target) return LaunchWave(u, target + " gathered");
         return RallyTask();
     }
 
     // At the target a scout gets a native scout task, and a squad (as soon as
-    // one of it arrives) one native raid task for all of it.
+    // one of it arrives) one native raid or attack task for all of it.
     void Arrivals()
     {
         if (scoutRoute !is null && !scoutRoute.IsDead()) {
@@ -322,20 +397,29 @@ namespace Rush {
                 arrived = m !is null && m.task is routeTask && sq.route.IsAtEnd(m);
             }
             if (!arrived) continue;
-            @sq.raid = aiMilitaryMgr.Enqueue(TaskF::Common(Task::FightType::RAID));
+            @sq.raid = aiMilitaryMgr.Enqueue(TaskF::Common(sq.fight));
             if (sq.raid is null) continue;
             int n = 0;
             for (uint i = 0; i < sq.ids.length(); ++i) {
                 CCircuitUnit@ m = ai.GetTeamUnit(sq.ids[i]);
                 if (m !is null && aiMilitaryMgr.TransferUnit(m, sq.raid)) ++n;
             }
-            GenericHelpers::LogUtil("[Rush] raid squad " + (s + 1) + " reached the enemy start: " + n + " raiding", 1);
+            GenericHelpers::LogUtil("[Rush] " + sq.label + " reached the enemy start: " + n
+                + ((sq.fight == Task::FightType::RAID) ? " raiding" : " attacking"), 1);
         }
     }
 
-    // LandArmy::Apply (economy update): arrivals at the target, and a squad
+    void Prune(array<int>@ ids)
+    {
+        for (uint i = 0; i < ids.length(); )
+            if (ai.GetTeamUnit(ids[i]) is null) ids.removeAt(i); else ++i;
+    }
+
+    // LandArmy::Apply (economy update): arrivals at the target; a rush squad
     // that has waited too long (or the rush's last raiders) leaves with what
-    // it has.
+    // it has; an early wave that has waited WaveFormMaxSeconds leaves at
+    // WaveMinSize or more, and what is left of the early tier leaves once the
+    // lab has moved on.
     void Tick()
     {
         if (Active() && labId >= 0) {
@@ -344,10 +428,27 @@ namespace Rush {
         }
         if (!Enabled()) return;
         Arrivals();
-        if (forming.length() == 0 || formingSince < 0) return;
-        const bool late = ai.frame - formingSince > Global::Rush::FormMaxSeconds * SECOND;
-        const bool last = done || (stepIdx < steps.length() && steps[stepIdx].kind != "raider"
-            && stepIdx > 0 && steps[stepIdx - 1].kind == "raider");
-        if (late || last) Launch(null, late ? "waited " + Global::Rush::FormMaxSeconds + " s" : "the last raiders");
+        if (forming.length() > 0 && formingSince >= 0) {
+            const bool late = ai.frame - formingSince > Global::Rush::FormMaxSeconds * SECOND;
+            const bool last = done || (stepIdx < steps.length() && steps[stepIdx].kind != "raider"
+                && stepIdx > 0 && steps[stepIdx - 1].kind == "raider");
+            if (late || last) LaunchRaid(null, late ? "waited " + Global::Rush::FormMaxSeconds + " s" : "the last raiders");
+        }
+        if (finalRequested && !finalSent && !Active()) {
+            if (finalSince < 0) finalSince = ai.frame;
+            else if (ai.frame - finalSince > Global::Rush::FinalWaveMaxSeconds * SECOND) {
+                finalSent = true;
+                GenericHelpers::LogUtil("[Rush] the final early wave did not fill in " + Global::Rush::FinalWaveMaxSeconds
+                    + " s: the next tier starts anyway", 1);
+                if (waveForming.length() > 0) LaunchWave(null, "the tier switch");
+            }
+        }
+        Prune(waveForming);
+        if (waveForming.length() == 0) { waveFormingSince = -1; return; }
+        if (waveFormingSince < 0) waveFormingSince = ai.frame;
+        if (!LandArmy::EarlyTier()) LaunchWave(null, "the lab moved to the next tier");
+        else if (ai.frame - waveFormingSince > Global::Rush::WaveFormMaxSeconds * SECOND
+            && int(waveForming.length()) >= Global::Rush::WaveMinSize && !(finalRequested && !finalSent))
+            LaunchWave(null, "waited " + Global::Rush::WaveFormMaxSeconds + " s");
     }
 }

@@ -14,9 +14,9 @@
 		"importance": [1.0, 0.2],
 		"require_energy": false,
 		"income_tier": [],
-		"unit":      ["legck", "legrezbot", "leggob", "leglob", "legkark"],
+		"unit":      ["legck", "legrezbot", "leggob", "leglob", "legkark", "legbal"],
 		"land": {
-			"tier0": [ 0.25, 0.05, 1.00, 1.00, 1.00]
+			"tier0": [ 0.25, 0.05, 1.00, 1.00, 1.00, 1.00]
 		},
 		"caretaker": 3
 	},

@@ -13,7 +13,7 @@
 		"behaviour": {
 			"legcom": {
 				"role": ["builder"],
-				"attribute": ["commander"],
+				"attribute": ["commander", "dg_cost"],
 				"build_speed": 5.0,
 				"retreat": 0.6,
 				"threat": {"air": 1.0, "surf": 1.0, "water": 1.0, "default": 1.0},
@@ -21,7 +21,7 @@
 			},
 			"legcomlvl2": {
 				"role": ["builder"],
-				"attribute": ["commander"],
+				"attribute": ["commander", "dg_cost"],
 				"build_speed": 10.0,
 				"retreat": 0.6,
 				"threat": {"air": 1.0, "surf": 1.0, "water": 1.0, "default": 1.0},
@@ -29,7 +29,7 @@
 			},
 			"legcomlvl3": {
 				"role": ["builder"],
-				"attribute": ["commander"],
+				"attribute": ["commander", "dg_cost"],
 				"build_speed": 15.0,
 				"retreat": 0.6,
 				"threat": {"air": 1.0, "surf": 1.0, "water": 1.0, "default": 1.0},
@@ -37,7 +37,7 @@
 			},
 			"legcomlvl4": {
 				"role": ["builder"],
-				"attribute": ["commander"],
+				"attribute": ["commander", "dg_cost"],
 				"build_speed": 20.0,
 				"retreat": 0.6,
 				"threat": {"air": 1.0, "surf": 1.0, "water": 1.0, "default": 1.0},
@@ -45,7 +45,7 @@
 			},
 			"legcomlvl5": {
 				"role": ["builder"],
-				"attribute": ["commander"],
+				"attribute": ["commander", "dg_cost"],
 				"build_speed": 25.0,
 				"retreat": 0.6,
 				"threat": {"air": 1.0, "surf": 1.0, "water": 1.0, "default": 1.0},
@@ -53,7 +53,7 @@
 			},
 			"legcomlvl6": {
 				"role": ["builder"],
-				"attribute": ["commander"],
+				"attribute": ["commander", "dg_cost"],
 				"build_speed": 30.0,
 				"retreat": 0.6,
 				"threat": {"air": 1.0, "surf": 1.0, "water": 1.0, "default": 1.0},
@@ -61,7 +61,7 @@
 			},
 			"legcomlvl7": {
 				"role": ["builder"],
-				"attribute": ["commander"],
+				"attribute": ["commander", "dg_cost"],
 				"build_speed": 35.0,
 				"retreat": 0.6,
 				"threat": {"air": 1.0, "surf": 1.0, "water": 1.0, "default": 1.0},
@@ -69,7 +69,7 @@
 			},
 			"legcomlvl8": {
 				"role": ["builder"],
-				"attribute": ["commander"],
+				"attribute": ["commander", "dg_cost"],
 				"build_speed": 40.0,
 				"retreat": 0.6,
 				"threat": {"air": 1.0, "surf": 1.0, "water": 1.0, "default": 1.0},
@@ -77,7 +77,7 @@
 			},
 			"legcomlvl9": {
 				"role": ["builder"],
-				"attribute": ["commander"],
+				"attribute": ["commander", "dg_cost"],
 				"build_speed": 45.0,
 				"retreat": 0.6,
 				"threat": {"air": 1.0, "surf": 1.0, "water": 1.0, "default": 1.0},
@@ -85,7 +85,7 @@
 			},
 			"legcomlvl10": {
 				"role": ["builder"],
-				"attribute": ["commander"],
+				"attribute": ["commander", "dg_cost"],
 				"build_speed": 50.0,
 				"retreat": 0.6,
 				"threat": {"air": 1.0, "surf": 1.0, "water": 1.0, "default": 1.0},

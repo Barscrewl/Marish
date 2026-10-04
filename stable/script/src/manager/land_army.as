@@ -25,9 +25,14 @@ active step. factory.json lists nothing but these units and constructors.
   Cortex   T1  grunts -> thugs & aggravators
            T2  fiends, sheldons & arbiters -> mammoths
            T3  shivas & karganeths -> juggernauts
-  Legion   T1  goblins -> satyrs & karkinos
+  Legion   T1  goblins -> satyrs, karkinos & ballistas
            T2  hoplites, arquebuses & thanatos -> incinerators
            T3  keres, daedalus & myrmidons -> sol invictus
+
+Each T1 lab's first tier (ticks and pawns, grunts, goblins) leaves in early
+waves (manager/rush.as), and the lab moves to the next tier only after one
+last wave of Global::Rush::FinalWaveSize: ApplyRoster holds it before
+Sequence.waveGate until Rush::FinalWaveSent.
 
 The T2 lab and the gantry come from FRONT's own income triggers
 (MinimumMetalIncomeForFirstT2Lab, MetalIncomeForGantry). Thresholds live in
@@ -60,10 +65,15 @@ namespace LandArmy {
 
     class Sequence {
         string label;
+        string side;
         array<Step@> steps;
         int active = -1;
         int changedFrame = 0;   // ai.frame of the last step change
-        Sequence(const string &in l) { label = l; }
+        // First step of the next tier past the scouts/raiders (T1 labs only):
+        // the lab moves to it once the final early wave is away (Rush).
+        int waveGate = -1;
+        bool gateLogged = false;
+        Sequence(const string &in l) { label = l; side = l.substr(0, l.findFirst(" ")); }
         void Add(float minIncome, const array<string> &in units) { steps.insertLast(Step(minIncome, units)); }
     }
 
@@ -90,6 +100,7 @@ namespace LandArmy {
         s.Add(0.0f, array<string> = {"armflea"});
         s.Add(Global::LandArmy::ArmadaPawnIncome, array<string> = {"armpw"});
         s.Add(Global::LandArmy::ArmadaMaceIncome, array<string> = {"armham", "armrock"});
+        s.waveGate = 2;
         @s = NewSequence("armada T2");
         s.Add(0.0f, array<string> = {"armfboy", "armsnipe"});
         @s = NewSequence("armada T3");
@@ -99,6 +110,7 @@ namespace LandArmy {
         @s = NewSequence("cortex T1");
         s.Add(0.0f, array<string> = {"corak"});
         s.Add(Global::LandArmy::CortexT1Income, array<string> = {"corthud", "corstorm"});
+        s.waveGate = 1;
         @s = NewSequence("cortex T2");
         s.Add(0.0f, array<string> = {"corpyro", "cormort", "corhrk"});
         s.Add(Global::LandArmy::CortexMammothIncome, array<string> = {"corsumo"});
@@ -108,7 +120,8 @@ namespace LandArmy {
 
         @s = NewSequence("legion T1");
         s.Add(0.0f, array<string> = {"leggob"});
-        s.Add(Global::LandArmy::LegionT1Income, array<string> = {"leglob", "legkark"});
+        s.Add(Global::LandArmy::LegionT1Income, array<string> = {"leglob", "legkark", "legbal"});
+        s.waveGate = 1;
         @s = NewSequence("legion T2");
         s.Add(0.0f, array<string> = {"legstr", "legsrail", "leghrk"});
         s.Add(Global::LandArmy::LegionIncineratorIncome, array<string> = {"leginc"});
@@ -158,12 +171,48 @@ namespace LandArmy {
         return target;
     }
 
+    // Our side's T1 lab sequence (the one with a wave gate), or null.
+    Sequence@ OwnT1()
+    {
+        Load();
+        for (uint i = 0; i < sequences.length(); ++i)
+            if (sequences[i].waveGate > 0 && sequences[i].side == Global::AISettings::Side) return sequences[i];
+        return null;
+    }
+
+    // The T1 lab is still on the scout/raider tier (Rush's early waves).
+    bool EarlyTier()
+    {
+        Sequence@ s = OwnT1();
+        return s !is null && s.active >= 0 && s.active < s.waveGate;
+    }
+
+    // Metal income at which our T1 lab moves past the scout/raider tier.
+    float NextTierIncome()
+    {
+        Sequence@ s = OwnT1();
+        return (s is null) ? 0.0f : s.steps[s.waveGate].minIncome;
+    }
+
     void ApplyRoster(float income)
     {
         Load();
         for (uint i = 0; i < sequences.length(); ++i) {
             Sequence@ s = sequences[i];
-            const int target = TargetStep(s, income);
+            int target = TargetStep(s, income);
+            // Our side's T1 lab leaves the scout/raider tier only after one
+            // last full early wave (manager/rush.as); until then it stays on
+            // the last step before the gate.
+            if (s.waveGate > 0 && s.side == Global::AISettings::Side && s.active >= 0 && s.active < s.waveGate
+                && target >= s.waveGate && !Rush::FinalWaveSent()) {
+                Rush::RequestFinalWave();
+                target = s.waveGate - 1;
+                if (!s.gateLogged) {
+                    s.gateLogged = true;
+                    GenericHelpers::LogUtil("[LandArmy] " + s.label + " holds before step " + s.waveGate
+                        + " (income " + int(income) + "): the final early wave goes first", 1);
+                }
+            }
             const bool held = (s.active >= 0) && (ai.frame - s.changedFrame < Global::LandArmy::MinStepSeconds * SECOND);
             if (target != s.active && !held) {
                 GenericHelpers::LogUtil("[LandArmy] " + s.label + " step " + target + " (income " + int(income) + "): "

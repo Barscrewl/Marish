@@ -131,13 +131,13 @@
 
 	"armcom": {
 		"role": ["builder"],
-		"attribute": ["commander"],
+		"attribute": ["commander", "dg_cost"],
 		"power": 0.4,
 		"build_speed": 5.0
 	},
 	"corcom": {
 		"role": ["builder"],
-		"attribute": ["commander"],
+		"attribute": ["commander", "dg_cost"],
 		"power": 0.4,
 		"build_speed": 5.0
 	},

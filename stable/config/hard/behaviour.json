@@ -75,7 +75,7 @@
 	"legcluster": {"build": false}, // construction veto also applies without the Legion profile fragment
 		"armcom": {
 			"role": ["builder"],
-			"attribute": ["commander"],
+			"attribute": ["commander", "dg_cost"],
 			"build_speed": 10.0, //bp 200?
 			"threat": {
            	 	"air": 0.3,  
@@ -89,7 +89,7 @@
 		},
 		"corcom": {
 			"role": ["builder"],
-			"attribute": ["commander"],
+			"attribute": ["commander", "dg_cost"],
 			"build_speed": 10.0,  //bp 200?
         	"threat": {
             "air": 0.3,  

@@ -235,7 +235,7 @@ namespace Global {
     // gantry themselves come from FRONT's MinimumMetalIncomeForFirstT2Lab and
     // MetalIncomeForGantry.
     namespace LandArmy {
-        float ArmadaPawnIncome = 10.0f;      // ticks -> pawns
+        float ArmadaPawnIncome = 14.0f;      // ticks -> pawns (10 switched to pawns too soon after the rush)
         float ArmadaMaceIncome = 20.0f;      // pawns -> maces & rocketeers
         float CortexT1Income = 15.0f;        // grunts -> thugs & aggravators
         float LegionT1Income = 15.0f;        // goblins -> satyrs & karkinos
@@ -288,6 +288,17 @@ namespace Global {
         float ArriveRadius = 400.0f;
         int FormMaxSeconds = 60;    // a squad that waits this long leaves with what it has
         int MaxSeconds = 420;       // the lab returns to the roster after this, done or not
+        // Early waves (the first tier after the rush: ticks and pawns, grunts,
+        // goblins): WaveMinSize gather before leaving at no income, rising to
+        // WaveMaxSize as metal income nears the next tier. When income reaches
+        // it, one last wave of FinalWaveSize leaves before the lab switches
+        // (or FinalWaveMaxSeconds after the rush, whichever comes first). A
+        // wave that has waited WaveFormMaxSeconds leaves at WaveMinSize or more.
+        int WaveMinSize = 5;
+        int WaveMaxSize = 10;
+        int FinalWaveSize = 10;
+        int WaveFormMaxSeconds = 120;
+        int FinalWaveMaxSeconds = 180;
     }
 
     namespace Spam {
