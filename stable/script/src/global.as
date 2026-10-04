@@ -244,7 +244,9 @@ namespace Global {
         // below this, titans / juggernauts / sol invictus from it on
         float GantryHeavyIncome = 300.0f;
         // A step already reached is left only below this fraction of its threshold
-        float StepDownFraction = 0.85f;
+        float StepDownFraction = 0.7f;
+        // and every step is held at least this long before the next change
+        int MinStepSeconds = 60;
     }
 
     namespace Spam {

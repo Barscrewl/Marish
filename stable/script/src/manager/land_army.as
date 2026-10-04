@@ -49,6 +49,7 @@ namespace LandArmy {
         string label;
         array<Step@> steps;
         int active = -1;
+        int changedFrame = 0;   // ai.frame of the last step change
         Sequence(const string &in l) { label = l; }
         void Add(float minIncome, const array<string> &in units) { steps.insertLast(Step(minIncome, units)); }
     }
@@ -129,7 +130,8 @@ namespace LandArmy {
 
     // Highest step the income reaches. A step already reached is kept until
     // income falls below StepDownFraction of its threshold, so a dip at the
-    // boundary does not flip the lab back and forth.
+    // boundary does not flip the lab back and forth. ApplyRoster also holds
+    // every step for at least MinStepSeconds.
     int TargetStep(const Sequence@ s, float income)
     {
         int target = 0;
@@ -148,13 +150,15 @@ namespace LandArmy {
         for (uint i = 0; i < sequences.length(); ++i) {
             Sequence@ s = sequences[i];
             const int target = TargetStep(s, income);
-            if (target != s.active) {
+            const bool held = (s.active >= 0) && (ai.frame - s.changedFrame < Global::LandArmy::MinStepSeconds * SECOND);
+            if (target != s.active && !held) {
                 GenericHelpers::LogUtil("[LandArmy] " + s.label + " step " + target + " (income " + int(income) + "): "
                     + Join(s.steps[target].units), 1);
                 s.active = target;
+                s.changedFrame = ai.frame;
             }
             for (uint j = 0; j < s.steps.length(); ++j) {
-                const bool allowed = (int(j) == target);
+                const bool allowed = (int(j) == s.active);
                 for (uint k = 0; k < s.steps[j].units.length(); ++k) {
                     SetAllowed(s.steps[j].units[k], allowed);
                 }

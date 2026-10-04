@@ -1,0 +1,34 @@
+[GAME]
+{
+	GameType=Beyond All Reason test-31450-6562fb1;
+	MapName=Starwatcher 1.0;
+	StartPosType=3;
+	IsHost=1;
+	HostIP=127.0.0.1;
+	HostPort=0;
+	MyPlayerName=Viewer;
+	NumPlayers=1;
+	GameStartDelay=0;
+	[MODOPTIONS]
+	{
+		experimentallegionfaction=1;
+		allowuserwidgets=1;
+	}
+	[ALLYTEAM0] { NumAllies=0; }
+	[ALLYTEAM1] { NumAllies=0; }
+	[ALLYTEAM2] { NumAllies=0; }
+	[PLAYER0] { Name=Viewer; Spectator=1; Team=6; IsFromDemo=0; Rank=0; }
+	[TEAM6] { AllyTeam=2; TeamLeader=0; Side=armada; RgbColor=0.5 0.5 0.5; StartPosX=64; StartPosZ=64; Handicap=0; }
+	[TEAM0] { AllyTeam=0; TeamLeader=0; Side=armada; RgbColor=0 0.3 1; StartPosX=2552; StartPosZ=597; Handicap=0; }
+	[TEAM1] { AllyTeam=0; TeamLeader=0; Side=cortex; RgbColor=0.3 0.9 0.3; StartPosX=578; StartPosZ=1101; Handicap=0; }
+	[TEAM2] { AllyTeam=0; TeamLeader=0; Side=legion; RgbColor=0.4 0.9 0.9; StartPosX=811; StartPosZ=2694; Handicap=0; }
+	[TEAM3] { AllyTeam=1; TeamLeader=0; Side=cortex; RgbColor=1 0.2 0; StartPosX=9733; StartPosZ=7582; Handicap=0; }
+	[TEAM4] { AllyTeam=1; TeamLeader=0; Side=legion; RgbColor=0.9 0.9 0.2; StartPosX=11712; StartPosZ=7089; Handicap=0; }
+	[TEAM5] { AllyTeam=1; TeamLeader=0; Side=armada; RgbColor=0.9 0.3 0.9; StartPosX=11453; StartPosZ=5487; Handicap=0; }
+	[AI0] { ShortName=MarishTest; Version=test; Name=Marish-arm-0; Team=0; Host=0; IsFromDemo=0; }
+	[AI1] { ShortName=MarishTest; Version=test; Name=Marish-cor-1; Team=1; Host=0; IsFromDemo=0; }
+	[AI2] { ShortName=MarishTest; Version=test; Name=Marish-leg-2; Team=2; Host=0; IsFromDemo=0; }
+	[AI3] { ShortName=MarishTest; Version=test; Name=Marish-cor-3; Team=3; Host=0; IsFromDemo=0; }
+	[AI4] { ShortName=MarishTest; Version=test; Name=Marish-leg-4; Team=4; Host=0; IsFromDemo=0; }
+	[AI5] { ShortName=MarishTest; Version=test; Name=Marish-arm-5; Team=5; Host=0; IsFromDemo=0; }
+}
