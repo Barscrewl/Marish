@@ -60,7 +60,8 @@
 		"defence": {
 			"leglht": {
 				"hub": [[
-					{"unit": "legnanotc", "category": "nano", "offset": {"back": 5}, "priority": "normal"}
+					{"unit": "legnanotc", "category": "nano", "offset": {"back": 5}, "priority": "normal"},
+					{"unit": "legrl", "category": "defence", "offset": {"front": 64}, "priority": "normal"}
 				]]
 			},
 			"legbastion" : {

@@ -206,7 +206,8 @@
 		"defence": {
 			"armllt": {
 				"hub": [[
-					{"unit": "armnanotc", "category": "nano", "offset": {"back": 5}, "priority": "normal"}
+					{"unit": "armnanotc", "category": "nano", "offset": {"back": 5}, "priority": "normal"},
+					{"unit": "armrl", "category": "defence", "offset": {"front": 64}, "priority": "normal"}
 				]]
 			},
 			"armanni": {
@@ -232,7 +233,8 @@
 			,
 			"corllt": {
 				"hub": [[
-					{"unit": "cornanotc", "category": "nano", "offset": {"back": 5}, "priority": "normal"}
+					{"unit": "cornanotc", "category": "nano", "offset": {"back": 5}, "priority": "normal"},
+					{"unit": "corrl", "category": "defence", "offset": {"front": 64}, "priority": "normal"}
 				]]
 			},
 			"cortoast": {
