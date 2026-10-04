@@ -62,10 +62,10 @@ namespace BotConfigs {
             cfg.AddRole("builder",   array<string> = {"armack"});
             cfg.AddRole("scout",     array<string> = {"armfast"});
             cfg.AddRole("raider",    array<string> = {"armfast", "armspy"});
-            cfg.AddRole("riot",      array<string> = {"armfboy"});
+            cfg.AddRole("riot",      array<string> = {});
             cfg.AddRole("skirmish",  array<string> = {"armfido", "armsptk", "armsnipe"});
             cfg.AddRole("assault",   array<string> = {"armzeus", "armmav"});
-            cfg.AddRole("artillery", array<string> = {});
+            cfg.AddRole("artillery", array<string> = {"armfboy"});   // Marish: fatboys are artillery + siege
             cfg.AddRole("anti_air",  array<string> = {"armaak"});
             cfg.AddRole("support",   array<string> = {"armfark", "armmark", "armamph"});
             cfg.AddRole("heavy",     array<string> = {});

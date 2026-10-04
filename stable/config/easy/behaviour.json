@@ -444,7 +444,8 @@
 		"role": ["assault"]
 	},
 	"armfboy": {
-		"role": ["assault", "heavy"]
+		"role": ["artillery"],
+		"attribute": ["siege"]
 	},
 	"armmav": {
 		"role": ["riot"],

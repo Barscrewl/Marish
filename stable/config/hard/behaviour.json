@@ -1012,7 +1012,8 @@
 			}
 		},
 		"armfboy": {
-			"role": ["heavy"],
+			"role": ["artillery"],
+			"attribute": ["siege"],
 			"threat":{"air": 0.0, "water": 0.0, "surf": 1.5,
 				"vs":{"artillery": 2.0, "anti_air": 2.0, "vy": 0.7}
 			}
