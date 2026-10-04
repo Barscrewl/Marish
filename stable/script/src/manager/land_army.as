@@ -385,6 +385,20 @@ namespace LandArmy {
     array<int> retiredT1Labs;
     int reclaimDeferLog = -100000;
     int turretsPulledAt = -100000;
+    int pullTurretsFor = -1;   // a retired lab whose reclaim the turrets should join
+
+    // Economy update: the turrets in reach join a retired lab's reclaim (once
+    // per 30 s at most).
+    void PullTurrets()
+    {
+        if (pullTurretsFor < 0 || ai.frame - turretsPulledAt < 30 * SECOND) return;
+        const int id = pullTurretsFor;
+        pullTurretsFor = -1;
+        if (ai.GetTeamUnit(id) is null) return;
+        turretsPulledAt = ai.frame;
+        const int n = aiBuilderMgr.TurretsOnReclaim(id, Global::RoleSettings::Tech::ReclaimTurretMargin, true);
+        GenericHelpers::LogUtil("[LandArmy] reclaiming T1 lab " + id + " for the T2 lab; " + n + " turret(s) join", 1);
+    }
     bool t2GateLogged = false;
 
     // The T2 lab's income: the sliding 10 s minimum averaged over the last
@@ -445,7 +459,9 @@ namespace LandArmy {
             CCircuitUnit@ lab = ai.GetTeamUnit(ids[i]);
             if (lab is null || lab.circuitDef is null || !UnitHelpers::IsT1BotLab(lab.circuitDef.GetName())
                 || Lifecycle::IsRetiring(lab)) continue;
-            if (lab.task !is null) aiFactoryMgr.AbortTask(lab.task);   // native's recruit task would re-issue the build on idle
+            // native's recruit task would re-issue the build on idle; only a
+            // recruit order is aborted (never the module's shared idle or wait task)
+            if (lab.task !is null && Task::Type(lab.task.GetType()) == Task::Type::FACTORY) aiFactoryMgr.AbortTask(lab.task);
             Lifecycle::Retire(lab, "the T2 lab is under way; the T1 lab is reclaimed for its metal");
             retiredT1Labs.insertLast(int(lab.id));
         }
@@ -473,11 +489,10 @@ namespace LandArmy {
                 return null;
             }
             IUnitTask@ t = aiBuilderMgr.Enqueue(TaskB::Reclaim(Task::Priority::HIGH, lab, 180 * SECOND));
-            if (t !is null && ai.frame - turretsPulledAt >= 30 * SECOND) {
-                turretsPulledAt = ai.frame;
-                const int n = aiBuilderMgr.TurretsOnReclaim(lab.id, Global::RoleSettings::Tech::ReclaimTurretMargin, true);
-                GenericHelpers::LogUtil("[LandArmy] reclaiming T1 lab " + lab.id + " for the T2 lab; " + n + " turret(s) join", 1);
-            }
+            // The turrets join from the economy update (PullTurrets), never from
+            // here: this runs inside a builder's AiMakeTask, and moving other
+            // builders' tasks there is how SMRTBARb's access violations began.
+            if (t !is null) pullTurretsFor = int(lab.id);
             return t;
         }
         return null;
@@ -488,6 +503,7 @@ namespace LandArmy {
     {
         ApplyFactoryBans();
         ApplyLabGates(income);
+        PullTurrets();
         ApplyRoster(income);
         // The opening (manager/rush.as) builds its scouts and raiders whatever the step says
         Rush::Tick();

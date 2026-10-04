@@ -80,6 +80,8 @@ namespace Rush {
     bool finalRequested = false;   // LandArmy wants the next tier: one last full wave first
     bool finalSent = false;
     int finalSince = -1;
+    bool raidDue = false;   // a full raid squad waits for Tick to launch it
+    bool waveDue = false;   // a full early wave waits for Tick to launch it
 
     dictionary seen;      // unit id -> true: counted once
     dictionary scouts;    // unit id -> true: on the way to the target
@@ -356,7 +358,10 @@ namespace Rush {
         if (raiders.exists(key)) {
             if (forming.find(int(u.id)) < 0) forming.insertLast(int(u.id));
             if (formingSince < 0) formingSince = ai.frame;
-            if (int(forming.length()) >= Global::Rush::RaidSquadSize) return LaunchRaid(u, "squad of " + Global::Rush::RaidSquadSize + " gathered");
+            // The launch moves the other members' tasks, so it waits for Tick:
+            // never change other units' tasks inside AiMakeTask (SMRTBARb's
+            // access violations, CLAUDE.md "Never abort a task inside AiMakeTask").
+            if (int(forming.length()) >= Global::Rush::RaidSquadSize) raidDue = true;
             return RallyTask();
         }
         // An early wave unit: our side's first tier (the rush's own scouts and
@@ -364,8 +369,7 @@ namespace Rush {
         if (!Enabled() || !IsEarlyUnit(u.circuitDef) || !LandArmy::EarlyTier()) return null;
         if (waveForming.find(int(u.id)) < 0) waveForming.insertLast(int(u.id));
         if (waveFormingSince < 0) waveFormingSince = ai.frame;
-        const int target = WaveTarget();
-        if (int(waveForming.length()) >= target) return LaunchWave(u, target + " gathered");
+        if (int(waveForming.length()) >= WaveTarget()) waveDue = true;   // launched from Tick, as above
         return RallyTask();
     }
 
@@ -428,6 +432,12 @@ namespace Rush {
         }
         if (!Enabled()) return;
         Arrivals();
+        Prune(forming);
+        if (raidDue) {
+            raidDue = false;
+            if (int(forming.length()) >= Global::Rush::RaidSquadSize)
+                LaunchRaid(null, "squad of " + Global::Rush::RaidSquadSize + " gathered");
+        }
         if (forming.length() > 0 && formingSince >= 0) {
             const bool late = ai.frame - formingSince > Global::Rush::FormMaxSeconds * SECOND;
             const bool last = done || (stepIdx < steps.length() && steps[stepIdx].kind != "raider"
@@ -444,8 +454,13 @@ namespace Rush {
             }
         }
         Prune(waveForming);
-        if (waveForming.length() == 0) { waveFormingSince = -1; return; }
+        if (waveForming.length() == 0) { waveFormingSince = -1; waveDue = false; return; }
         if (waveFormingSince < 0) waveFormingSince = ai.frame;
+        if (waveDue) {
+            waveDue = false;
+            const int target = WaveTarget();
+            if (int(waveForming.length()) >= target) { LaunchWave(null, target + " gathered"); return; }
+        }
         if (!LandArmy::EarlyTier()) LaunchWave(null, "the lab moved to the next tier");
         else if (ai.frame - waveFormingSince > Global::Rush::WaveFormMaxSeconds * SECOND
             && int(waveForming.length()) >= Global::Rush::WaveMinSize && !(finalRequested && !finalSent))
