@@ -440,6 +440,12 @@ namespace LandArmy {
         ApplyFactoryBans();
         ApplyLabGates(income);
         ApplyRoster(income);
+        // The opening (manager/rush.as) builds its scouts and raiders whatever the step says
+        Rush::Tick();
+        if (Rush::Active()) {
+            array<string> rush = Rush::Units();
+            for (uint i = 0; i < rush.length(); ++i) SetAllowed(rush[i], true);
+        }
         ApplySupportCaps();
     }
 }

@@ -340,6 +340,11 @@ namespace RoleFront {
         string factoryName = facDef.GetName();
         string side = UnitHelpers::GetSideForUnitName(factoryName);
 
+        // Marish: the first T1 bot lab runs NightmareAI's opening (manager/rush.as)
+        // before anything else, constructors included (the queue has three)
+        IUnitTask@ rush = Rush::FactoryTask(u);
+        if (rush !is null) return rush;
+
         // T1 Bot Lab enforcement
         if (UnitHelpers::IsT1BotLab(factoryName)) {
             array<string> botConstructorNames = UnitHelpers::GetT1BotConstructors(side);
@@ -358,12 +363,15 @@ namespace RoleFront {
             }
 
             // After constructor enforcement, try one-time scout rush for T1 bot lab
-            IUnitTask@ rushTask = Front_TryScoutRush(u, factoryName, side);
-            if (rushTask !is null) return rushTask;
+            // (the legacy openers stand down while manager/rush.as runs Marish's)
+            if (!Rush::Enabled()) {
+                IUnitTask@ rushTask = Front_TryScoutRush(u, factoryName, side);
+                if (rushTask !is null) return rushTask;
 
-            // After scout rush, try one-time T1 raider opener for T1 bot lab
-            IUnitTask@ raiderTask = Front_TryT1RaiderOpener(u, factoryName, side);
-            if (raiderTask !is null) return raiderTask;
+                // After scout rush, try one-time T1 raider opener for T1 bot lab
+                IUnitTask@ raiderTask = Front_TryT1RaiderOpener(u, factoryName, side);
+                if (raiderTask !is null) return raiderTask;
+            }
         }
 
         // T1 Vehicle Plant enforcement
@@ -608,10 +616,16 @@ namespace RoleFront {
                 if (t1 !is defaultTask) return t1;
             }
             // Marish: every other T1 constructor, and the primary when it had
-            // nothing of its own: the retired T1 lab's metal, then the nearest
+            // nothing of its own: the retired T1 lab's metal, then the early
+            // crew's jobs (the first CrewSize constructors), then the nearest
             // open home spot, before native's assist/defence/radar default
             IUnitTask@ rec = LandArmy::ReclaimT1LabTask(builder);
             if (rec !is null) return rec;
+            const int slot = Front_CrewSlot(builder);
+            if (slot >= 0) {
+                IUnitTask@ job = Front_CrewTask(builder, slot, defaultTask);
+                if (job !is null) return job;
+            }
             IUnitTask@ mex = Front_ExpandMex(builder, Global::RoleSettings::Front::ConstructorMexRadius);
             if (mex !is null) return mex;
         } else if (ctorTier == 2) {
@@ -653,6 +667,138 @@ namespace RoleFront {
             GenericHelpers::LogUtil("[FRONT][Mex] " + u.circuitDef.GetName() + " " + u.id + " -> spot "
                 + int(sqrt(MapHelpers::SqDist(at, Global::Map::StartPos))) + " from start", 2);
         }
+        return t;
+    }
+
+    /******************************************************************************
+
+    EARLY CONSTRUCTOR CREW (Marish)
+
+    The first CrewSize T1 constructors (the opening's three builders, and any
+    replacement for one that dies) work the early economy: nanos, mexes, porc
+    and the T1 energy (wind, solar, advanced solar). Each starts its ladder on
+    a different job so the four run side by side, and falls through to the
+    rest when its own has nothing to do:
+
+      slot 0  mex     energy  nano    porc
+      slot 1  energy  nano    mex     porc
+      slot 2  porc    mex     energy  nano
+
+    ******************************************************************************/
+    array<int> crew;   // unit id per slot; -1 = open
+
+    int Front_CrewSlot(CCircuitUnit@ u)
+    {
+        if (u is null || u.circuitDef is null || UnitHelpers::GetConstructorTier(u.circuitDef) != 1) return -1;
+        for (uint i = 0; i < crew.length(); ++i)
+            if (crew[i] >= 0 && ai.GetTeamUnit(crew[i]) is null) crew[i] = -1;
+        const int at = crew.find(int(u.id));
+        if (at >= 0) return at;
+        int slot = crew.find(-1);
+        if (slot < 0 && int(crew.length()) < Global::RoleSettings::Front::CrewSize) {
+            crew.insertLast(-1);
+            slot = int(crew.length()) - 1;
+        }
+        if (slot < 0) return -1;
+        crew[slot] = int(u.id);
+        GenericHelpers::LogUtil("[FRONT][Crew] " + u.circuitDef.GetName() + " " + u.id + " joins the early crew, slot " + slot, 1);
+        return slot;
+    }
+
+    IUnitTask@ Front_CrewTask(CCircuitUnit@ u, int slot, IUnitTask@ defaultTask)
+    {
+        array<string> ladder = {"porc", "mex", "energy", "nano"};
+        if (slot == 0) ladder = array<string> = {"mex", "energy", "nano", "porc"};
+        else if (slot == 1) ladder = array<string> = {"energy", "nano", "mex", "porc"};
+        for (uint i = 0; i < ladder.length(); ++i) {
+            IUnitTask@ t = null;
+            if (ladder[i] == "mex") @t = Front_ExpandMex(u, Global::RoleSettings::Front::ConstructorMexRadius);
+            else if (ladder[i] == "energy") @t = Front_CrewEnergy(u);
+            else if (ladder[i] == "nano") @t = Front_TryBuildNano(Economy::GetMinMetalIncomeLast10s());
+            else @t = Front_CrewPorc(u, defaultTask);
+            if (t !is null) return t;
+        }
+        return null;
+    }
+
+    bool Front_IsBuilding(CCircuitUnit@ u, Task::BuildType type)
+    {
+        IBuilderTask@ cur = (u.task is null) ? null : cast<IBuilderTask>(u.task);
+        return cur !is null && Task::BuildType(cur.GetBuildType()) == type;
+    }
+
+    // T1 energy while energy income is under CrewEnergyPerMetal per metal, the
+    // store is low or energy stalls: whichever of wind, solar and (from
+    // CrewAdvSolarMinIncome) advanced solar gives the most energy per metal on
+    // this map, at most CrewEnergyParallel orders waiting at once.
+    IUnitTask@ Front_CrewEnergy(CCircuitUnit@ u)
+    {
+        if (Front_IsBuilding(u, Task::BuildType::ENERGY)) return u.task;
+        const float mi = Economy::GetMinMetalIncomeLast10s();
+        const float ei = Economy::GetMinEnergyIncomeLast10s();
+        const bool need = aiEconomyMgr.isEnergyStalling
+            || ei < mi * Global::RoleSettings::Front::CrewEnergyPerMetal
+            || aiEconomyMgr.energy.current < aiEconomyMgr.energy.storage * 0.25f;
+        if (!need) return null;
+        if (aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::ENERGY), null) >= Global::RoleSettings::Front::CrewEnergyParallel) return null;
+        const string side = Global::AISettings::Side;
+        array<string> names = {UnitHelpers::GetWindNameForSide(side), UnitHelpers::GetSolarNameForSide(side)};
+        if (mi >= Global::RoleSettings::Front::CrewAdvSolarMinIncome) names.insertLast(UnitHelpers::GetAdvSolarNameForSide(side));
+        string best = "";
+        float bestScore = 0.0f;
+        for (uint i = 0; i < names.length(); ++i) {
+            CCircuitDef@ d = ai.GetCircuitDef(names[i]);
+            if (d is null || !d.IsAvailable(ai.frame) || !u.circuitDef.CanBuild(d) || d.costM <= 0.0f) continue;
+            if (Global::energyAllowed !is null && !Global::energyAllowed(names[i])) continue;   // D-077
+            const float score = aiEconomyMgr.GetEnergyMake(d) / d.costM;
+            if (score > bestScore) { bestScore = score; best = names[i]; }
+        }
+        if (best == "") return null;
+        IUnitTask@ t = Builder::_EnqueueGenericByName(Task::BuildType::ENERGY, best, Economy::GetEnergyCenter(),
+            SQUARE_SIZE * 16, 60 * SECOND, Task::Priority::HIGH);
+        if (t !is null)
+            GenericHelpers::LogUtil("[FRONT][Crew] " + u.id + " energy: " + best + " (E " + int(ei) + " for M " + int(mi) + ")", 2);
+        return t;
+    }
+
+    // Porc: native's own defence order when it offers one; otherwise an LLT at
+    // the outermost mex (beyond CrewPorcMinDistance from the start) with no LLT
+    // within CrewPorcCover. The LLT's build chain adds its nano and light AA.
+    IUnitTask@ Front_CrewPorc(CCircuitUnit@ u, IUnitTask@ defaultTask)
+    {
+        if (Front_IsBuilding(u, Task::BuildType::DEFENCE)) return u.task;
+        IBuilderTask@ def = (defaultTask is null) ? null : cast<IBuilderTask>(defaultTask);
+        if (def !is null && Task::BuildType(def.GetBuildType()) == Task::BuildType::DEFENCE) return defaultTask;
+        if (aiEconomyMgr.isEnergyStalling || Economy::GetMinMetalIncomeLast10s() < Global::RoleSettings::Front::CrewPorcMinIncome) return null;
+        if (aiBuilderMgr.GetQueuedBuildCount(int(Task::BuildType::DEFENCE), null) > 0) return null;
+        const string side = Global::AISettings::Side;
+        const string llt = UnitHelpers::GetStaticLLTNameForSide(side);
+        array<AIFloat3> mexes, turrets;
+        array<Id>@ ids = ai.GetOwnedUnitIds();
+        for (uint i = 0; i < ids.length(); ++i) {
+            CCircuitUnit@ v = ai.GetTeamUnit(ids[i]);
+            if (v is null || v.circuitDef is null) continue;
+            if (v.circuitDef.GetName() == llt) turrets.insertLast(v.GetPos(ai.frame));
+            else if (v.circuitDef.GetExtractsMetal() > 0.0f && v.GetBuildProgress() >= 1.0f) mexes.insertLast(v.GetPos(ai.frame));
+        }
+        const float cover = Global::RoleSettings::Front::CrewPorcCover;
+        const float minSq = Global::RoleSettings::Front::CrewPorcMinDistance * Global::RoleSettings::Front::CrewPorcMinDistance;
+        float bestSq = -1.0f;
+        AIFloat3 at;
+        for (uint i = 0; i < mexes.length(); ++i) {
+            const float sq = MapHelpers::SqDist(mexes[i], Global::Map::StartPos);
+            if (sq < minSq || sq <= bestSq) continue;
+            bool covered = false;
+            for (uint j = 0; j < turrets.length() && !covered; ++j)
+                covered = MapHelpers::SqDist(mexes[i], turrets[j]) < cover * cover;
+            if (covered) continue;
+            bestSq = sq;
+            at = mexes[i];
+        }
+        if (bestSq < 0.0f) return null;
+        IUnitTask@ t = Builder::EnqueueStaticLLT(side, at, SQUARE_SIZE * 8, 60 * SECOND, Task::Priority::HIGH);
+        if (t !is null)
+            GenericHelpers::LogUtil("[FRONT][Crew] " + u.id + " porc: " + llt + " at the mex " + int(sqrt(bestSq)) + " from start", 2);
         return t;
     }
 
@@ -906,18 +1052,8 @@ namespace RoleFront {
                 if (tLab !is null) return tLab;
             }
 
-            // Marish: the retired T1 lab's metal, then the nearest open home spot,
-            // before any nano
-            IUnitTask@ tRec = LandArmy::ReclaimT1LabTask(u);
-            if (tRec !is null) return tRec;
-            IUnitTask@ tMex = Front_ExpandMex(u, Global::RoleSettings::Front::ConstructorMexRadius);
-            if (tMex !is null) return tMex;
-
-            // After T2 lab attempt: build a T1 nano caretaker when either reserves allow
-            // it or we're early-game with sufficient income and zero existing nanos.
-            // Route through centralized per-factory nano selection and enqueue helpers.
-            IUnitTask@ tNano = Front_TryBuildNano(metalIncome);
-            if (tNano !is null) return tNano;
+            // Marish: nanos, mexes, porc and energy are the early crew's
+            // (Front_CrewTask), the primary's after the T2 lab
 
         }
 

@@ -271,6 +271,21 @@ namespace Global {
         int T2LabIncomeWindowSeconds = 60;
     }
 
+    // Marish opening (manager/rush.as), NightmareAI's: the first T1 bot lab
+    // builds builder, ScoutCount scouts, 2 builders, RaiderCount raiders,
+    // then LandArmy's income steps take over. Scouts go in one by one (native
+    // scout task each); raiders gather RallyDistance toward the nearest enemy
+    // start and leave RaidSquadSize at a time as one native raid squad.
+    namespace Rush {
+        bool Enabled = true;
+        int ScoutCount = 10;        // Nightmare: 10
+        int RaiderCount = 12;       // Nightmare: 12
+        int RaidSquadSize = 4;
+        float RallyDistance = 700.0f;
+        int FormMaxSeconds = 60;    // a squad that waits this long leaves with what it has
+        int MaxSeconds = 420;       // the lab returns to the roster after this, done or not
+    }
+
     namespace Spam {
         // Off in Marish: spam repeats one T1 unit, which would break the land
         // roster's income steps (manager/land_army.as).
@@ -1473,7 +1488,7 @@ namespace Global {
             float NanoBuildWhenOverMetal = 1000.0f;
 
             // Minimum constructor maintenance targets for factory recruitment
-            int MinT1BotConstructorCount = 1;
+            int MinT1BotConstructorCount = 3;   // Marish: the early crew (CrewSize) is kept at strength
             int MinT1VehicleConstructorCount = 1;
 
             // Minimum T2 constructor targets for FRONT role.
@@ -1527,6 +1542,20 @@ namespace Global {
             float CommanderMexRadius = 1000.0f;
             int CommanderMexSeconds = 300;
             float ConstructorMexRadius = 1800.0f;
+            // Marish early crew (roles/front.as Front_CrewTask): the first CrewSize
+            // T1 constructors run nanos, mexes, porc and T1 energy. Energy is built
+            // while its income is under CrewEnergyPerMetal per metal (advanced
+            // solar from CrewAdvSolarMinIncome metal), at most CrewEnergyParallel
+            // orders waiting. Porc puts an LLT on the outermost mex beyond
+            // CrewPorcMinDistance with none within CrewPorcCover, from
+            // CrewPorcMinIncome metal.
+            int CrewSize = 3;
+            float CrewEnergyPerMetal = 12.0f;
+            int CrewEnergyParallel = 2;
+            float CrewAdvSolarMinIncome = 10.0f;
+            float CrewPorcMinIncome = 6.0f;
+            float CrewPorcMinDistance = 600.0f;
+            float CrewPorcCover = 350.0f;
             // Marish: the T1 bot labs standing when the T2 lab's frame appears are
             // retired and reclaimed by builders within this distance of them.
             float T1LabReclaimRadius = 1500.0f;

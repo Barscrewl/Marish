@@ -7,6 +7,7 @@
 #include "amphibious_ops.as"
 #include "naval_waves.as"
 #include "land_army.as"
+#include "rush.as"
 
 namespace Military {
 
@@ -41,6 +42,8 @@ namespace Military {
 		}
 
 		IUnitTask@ t = LandArmy::MakeAAGuardTask(u);   // T2 AA bots guard the army's best unit
+		if (t !is null) return t;
+		@t = Rush::MakeTask(u);   // the opening's scouts go in alone, its raiders in squads
 		if (t !is null) return t;
 		@t = AmphibiousOps::MilitaryTask(u);
         if (t !is null) return t;
@@ -88,6 +91,7 @@ namespace Military {
 	{
 		Team::Ferry::OnUnitAdded(unit);   // claim a transport, ours or a gift
 		LandArmy::OnUnitAdded(unit);      // roster units are the T2 AA bots' vips
+		Rush::OnUnitAdded(unit);          // the opening counts its lab's output
 
 		// Delegate to role-specific handler if registered
 		RoleConfig@ cfg = (Global::profileController is null) ? null : Global::profileController.RoleCfg;
@@ -100,6 +104,7 @@ namespace Military {
 	{
 		Team::Ferry::OnUnitRemoved(unit);
 		LandArmy::OnUnitRemoved(unit);
+		Rush::OnUnitRemoved(unit);
 		NavalWaves::OnUnitRemoved(unit);
 		TechFlank::UnitRemoved(unit);
         AmphibiousOps::UnitRemoved(unit);

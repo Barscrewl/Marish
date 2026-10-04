@@ -2511,6 +2511,7 @@ namespace Builder {
 		// its construction ships here, TACTICAL unlocks its shipyard caps the
 		// moment it owns one. Each branch checks its own AiRole.
 		Team::SeaAssist::OnUnitAdded(unit);
+		Rush::OnUnitAdded(unit);   // the opening's builders are counted like its scouts and raiders
 
 		const CCircuitDef@ cdef = unit.circuitDef;
 		// Construction turrets are the layout's biggest reservation and the one
