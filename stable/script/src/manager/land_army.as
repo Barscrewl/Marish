@@ -24,7 +24,7 @@ active step. factory.json lists nothing but these units and constructors.
            T2  fiends, sheldons & arbiters -> mammoths
            T3  shivas & karganeths -> juggernauts
   Legion   T1  goblins -> satyrs & karkinos
-           T2  hoplites, arquebuses & thanatos
+           T2  hoplites, arquebuses & thanatos -> incinerators
            T3  keres, daedalus & myrmidons -> sol invictus
 
 The T2 lab and the gantry come from FRONT's own income triggers
@@ -98,6 +98,7 @@ namespace LandArmy {
         s.Add(Global::LandArmy::LegionT1Income, array<string> = {"leglob", "legkark"});
         @s = NewSequence("legion T2");
         s.Add(0.0f, array<string> = {"legstr", "legsrail", "leghrk"});
+        s.Add(Global::LandArmy::LegionIncineratorIncome, array<string> = {"leginc"});
         @s = NewSequence("legion T3");
         s.Add(0.0f, array<string> = {"legkeres", "legerailtank", "legeallterrainmech"});
         s.Add(Global::LandArmy::GantryHeavyIncome, array<string> = {"legeheatraymech"});

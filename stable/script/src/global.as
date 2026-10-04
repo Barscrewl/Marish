@@ -240,6 +240,7 @@ namespace Global {
         float CortexT1Income = 15.0f;        // grunts -> thugs & aggravators
         float LegionT1Income = 15.0f;        // goblins -> satyrs & karkinos
         float CortexMammothIncome = 100.0f;  // fiends, sheldons & arbiters -> mammoths
+        float LegionIncineratorIncome = 100.0f;  // hoplites, arquebuses & thanatos -> incinerators
         // Gantry: razorbacks / shivas & karganeths / keres, daedalus & myrmidons
         // below this, titans / juggernauts / sol invictus from it on
         float GantryHeavyIncome = 300.0f;

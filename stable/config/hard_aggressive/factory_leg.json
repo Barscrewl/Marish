@@ -21,15 +21,15 @@
 		"caretaker": 3
 	},
 	"legalab": {
-		// Marish roster, Legion T2 bot lab: hoplites, arquebuses & thanatos.
+		// Marish roster, Legion T2 bot lab: hoplites, arquebuses & thanatos -> incinerators.
 		// manager/land_army.as caps every combat unit outside the lab's active
 		// income step at 0, so one tier serves every income.
 		"importance": [0.0, 1.0],
 		"require_energy": false,
 		"income_tier": [],
-		"unit":      ["legack", "legstr", "legsrail", "leghrk"],
+		"unit":      ["legack", "legstr", "legsrail", "leghrk", "leginc"],
 		"land": {
-			"tier0": [ 0.25, 1.00, 1.00, 1.00]
+			"tier0": [ 0.25, 1.00, 1.00, 1.00, 1.00]
 		},
 		"caretaker": 6
 	},
