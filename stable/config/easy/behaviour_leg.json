@@ -701,7 +701,8 @@
 				"role": ["heavy"]
 			},
 			"legamcluster": {
-				"role": ["artillery"]
+				"role": ["artillery"],
+				"attribute": ["siege"]
 			},
 			"legavroc": {
 				"role": ["artillery"]

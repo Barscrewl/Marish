@@ -1504,7 +1504,8 @@
 				"retreat": 0
 			},
 			"armfboy": {
-				"role": ["assault", "heavy"],
+				"role": ["artillery"],
+				"attribute": ["siege"],
 				"threat": {"air": 0.0, "surf": 0.0, "water": 0.0, "default": 0.0},
 				"power": 1.0
 			},
@@ -1515,7 +1516,8 @@
 				"power": 1.0
 			},
 			"armfido": {
-				"role": ["skirmish"],
+				"role": ["artillery"],
+				"attribute": ["siege"],
 				"threat": {"air": 0.0, "surf": 0.0, "water": 0.0, "default": 0.0},
 				"power": 1.0
 			},
@@ -2038,7 +2040,7 @@
 			},
 			"cormort": {
 				"role": ["artillery"],
-				"attribute":["skirmish", "siege"],
+				"attribute": ["siege"],
 				"threat": {"air": 0.0, "surf": 0.0, "water": 0.0, "default": 0.0},
 				"power": 1.0
 			},
@@ -2236,7 +2238,7 @@
 				"power": 1.0
 			},
 			"corban": {
-				"role":	["skirmish"],
+				"role": ["artillery"],
 				"attribute": ["siege"],
 				"threat": {"air": 0.0, "surf": 0.0, "water": 0.0, "default": 0.0,
 					"vs": { "spam": 0}
