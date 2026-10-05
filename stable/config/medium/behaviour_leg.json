@@ -590,10 +590,10 @@
 			},
 			"legsrail": {
 				"standoff": 0.90, // retain railgun range, including on specialist routes
-				"role": ["anti_heavy"]
+				"role": ["artillery"], "attribute": ["siege"]
 			},
 			"leghrk": {
-				"role": ["artillery"]
+				"role": ["artillery"], "attribute": ["siege"]
 			},
 			"legamph": {
 				"role": ["raider", "anti_air"]

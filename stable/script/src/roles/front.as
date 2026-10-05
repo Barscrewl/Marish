@@ -345,6 +345,9 @@ namespace RoleFront {
         IUnitTask@ rush = Rush::FactoryTask(u);
         if (rush !is null) return rush;
         // then a rezbot now and then (LandArmy::RezFactoryTask)
+        // the scout lab before the gantry makes scouts only (LandArmy::ScoutLabFactoryTask)
+        IUnitTask@ scoutLab = LandArmy::ScoutLabFactoryTask(u);
+        if (scoutLab !is null) return scoutLab;
         IUnitTask@ rez = LandArmy::RezFactoryTask(u);
         if (rez !is null) return rez;
 
@@ -560,6 +563,19 @@ namespace RoleFront {
         IUnitTask@ rezJob = LandArmy::RezBotTask(builder);
         if (rezJob !is null) return rezJob;
 
+        // Marish: the commander goes home while an enemy group is on it
+        // (LandArmy::CommanderTick), whatever native would hand it
+        if (builder.circuitDef !is null && UnitHelpers::IsCommander(builder.circuitDef)) {
+            LandArmy::NoteCommander(builder);
+            if (LandArmy::CommanderFleeing()) {
+                IUnitTask@ home = LandArmy::CommanderHomeTask();
+                if (home !is null) return home;
+            }
+        }
+        // Marish: an LLT by a forward mex this builder took, once the mex stands
+        IUnitTask@ porcJob = Front_MexLLTTask(builder);
+        if (porcJob !is null) return porcJob;
+
         // Pre-create and cache a single default task instance; never recreate.
         IUnitTask@ defaultTask = Builder::MakeDefaultTaskWithLog(builder.id, "FRONT");
 
@@ -574,6 +590,9 @@ namespace RoleFront {
                 dbt == Task::BuildType::GEO || dbt == Task::BuildType::GEOUP ||
                 dbt == Task::BuildType::ENERGY) {
                 GenericHelpers::LogUtil("[FRONT] defaultTask is MEX/MEXUP/GEO/GEOUP/ENERGY; returning early", 3);
+                // native's own mex jobs get their LLT too (commander and T1 constructors)
+                if (dbt == Task::BuildType::MEX && (UnitHelpers::IsCommander(udef) || UnitHelpers::GetConstructorTier(udef) == 1))
+                    Front_NoteMexForLLT(builder, defaultBuilderTask.GetBuildPos());
                 return defaultTask;
             }
 
@@ -633,12 +652,15 @@ namespace RoleFront {
                 IUnitTask@ job = Front_CrewTask(builder, slot, defaultTask);
                 if (job !is null) return job;
             }
+            // the scout lab, and nanos while metal piles up (LandArmy::ProductionTask)
+            IUnitTask@ prodT1 = LandArmy::ProductionTask(builder, UnitHelpers::GetSideForUnitName(udef.GetName()), false);
+            if (prodT1 !is null) return prodT1;
             IUnitTask@ mex = Front_ExpandMex(builder, Global::RoleSettings::Front::ConstructorMexRadius);
             if (mex !is null) return mex;
         } else if (ctorTier == 2) {
             // Marish: floating metal becomes production first, for every T2
             // constructor: gantry, more T2 labs, nanos at them (LandArmy::ProductionTask)
-            IUnitTask@ prod = LandArmy::ProductionTask(builder, UnitHelpers::GetSideForUnitName(udef.GetName()));
+            IUnitTask@ prod = LandArmy::ProductionTask(builder, UnitHelpers::GetSideForUnitName(udef.GetName()), true);
             if (prod !is null) return prod;
             // Mirror TECH role routing: handle primary/secondary T2 bot constructors explicitly
             bool isEnergyFull = aiEconomyMgr.isEnergyFull;
@@ -677,8 +699,75 @@ namespace RoleFront {
             const AIFloat3 at = (order is null) ? Global::Map::StartPos : order.GetBuildPos();
             GenericHelpers::LogUtil("[FRONT][Mex] " + u.circuitDef.GetName() + " " + u.id + " -> spot "
                 + int(sqrt(MapHelpers::SqDist(at, Global::Map::StartPos))) + " from start", 2);
+            if (order !is null) Front_NoteMexForLLT(u, at);
         }
         return t;
+    }
+
+    // Mex porc (Global::LandArmy::MexLLTMinDistance): the commander puts an LLT
+    // by every forward mex it takes, a T1 constructor by every MexLLTEveryNth
+    // one. Played: both walked forward taking mexes with nothing left behind,
+    // and the commander died to the first counterattack. A builder asks again
+    // before its mex is finished, so each noted spot waits (up to
+    // MexLLTWaitSeconds) until the mex stands.
+    array<int> lltOwner, lltFrame;
+    array<float> lltX, lltZ;
+    dictionary mexTakenBy;         // builder id -> forward mexes ordered (T1 constructors)
+    const int MexLLTWaitSeconds = 120;
+
+    void Front_NoteMexForLLT(CCircuitUnit@ u, const AIFloat3 &in at)
+    {
+        const bool comm = UnitHelpers::IsCommander(u.circuitDef);
+        const float minD = comm ? Global::LandArmy::CommanderMexLLTMinDistance : Global::LandArmy::MexLLTMinDistance;
+        if (MapHelpers::SqDist(at, Global::Map::StartPos) < minD * minD) return;
+        const string key = "" + u.id;
+        if (!comm) {
+            int n = 0;
+            mexTakenBy.get(key, n);
+            mexTakenBy.set(key, ++n);
+            if (n % Global::LandArmy::MexLLTEveryNth != 0) return;
+        }
+        for (uint i = 0; i < lltX.length(); ++i)
+            if (lltOwner[i] == int(u.id) && lltX[i] == at.x && lltZ[i] == at.z) return;   // noted already
+        lltOwner.insertLast(int(u.id));
+        lltFrame.insertLast(ai.frame);
+        lltX.insertLast(at.x);
+        lltZ.insertLast(at.z);
+    }
+
+    void Front_DropMexLLT(uint i)
+    {
+        lltOwner.removeAt(i);
+        lltFrame.removeAt(i);
+        lltX.removeAt(i);
+        lltZ.removeAt(i);
+    }
+
+    // An LLT by one of this builder's forward mexes that now stands with
+    // nothing of ours guarding it; null when none is due yet.
+    IUnitTask@ Front_MexLLTTask(CCircuitUnit@ u)
+    {
+        if (u is null) return null;
+        const string side = Global::AISettings::Side;
+        const string mexName = (side == "armada") ? "armmex" : (side == "cortex") ? "cormex" : "legmex";
+        CCircuitDef@ mexDef = ai.GetCircuitDef(mexName);
+        CCircuitDef@ llt = ai.GetCircuitDef(UnitHelpers::GetStaticLLTNameForSide(side));
+        if (llt is null || !u.circuitDef.CanBuild(llt)) return null;
+        for (uint i = 0; i < lltX.length(); ) {
+            if (ai.GetTeamUnit(lltOwner[i]) is null || ai.frame - lltFrame[i] > MexLLTWaitSeconds * SECOND) { Front_DropMexLLT(i); continue; }
+            if (lltOwner[i] != int(u.id)) { ++i; continue; }
+            CCircuitUnit@ mex = aiBuilderMgr.FindOwnNear(AIFloat3(lltX[i], 0.0f, lltZ[i]), 150.0f, mexDef);
+            if (mex is null) { ++i; continue; }   // not finished yet
+            Front_DropMexLLT(i);
+            const AIFloat3 at = mex.GetPos(ai.frame);
+            if (aiBuilderMgr.FindOwnNear(at, Global::RoleSettings::Front::CrewPorcCover, llt) !is null) continue;
+            IUnitTask@ t = Builder::EnqueueStaticLLT(side, at, SQUARE_SIZE * 8, 60 * SECOND, Task::Priority::HIGH);
+            if (t is null) continue;
+            GenericHelpers::LogUtil("[FRONT][Mex] " + u.circuitDef.GetName() + " " + u.id + " porcs its mex "
+                + int(sqrt(MapHelpers::SqDist(at, Global::Map::StartPos))) + " from start with " + llt.GetName(), 1);
+            return t;
+        }
+        return null;
     }
 
     /******************************************************************************

@@ -1,7 +1,9 @@
 function widget:GetInfo()
 	return { name = "Marish watch", desc = "test: speed, per-minute census, first-finish times", author = "test", layer = 10, enabled = true }
 end
-local FPS, SPEED, END_MIN = 30, 20, 16
+local FPS, END_MIN = 30, 16
+-- owner: 5x for runs of 5 minutes or longer, 10x for 20 minutes or longer
+local SPEED = (END_MIN >= 20) and 10 or 5
 local KIND = {
 	armlab="T1lab", corlab="T1lab", leglab="T1lab",
 	armalab="T2lab", coralab="T2lab", legalab="T2lab",

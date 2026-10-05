@@ -1069,8 +1069,7 @@
 			
 		},
 		"armsnipe": {
-			"role": ["anti_heavy_ass"],
-			"attribute": ["siege"],
+			"role": ["artillery"], "attribute": ["siege"],
 			"threat": {"air": 0.0, "water": 0.0,"vs": {"scout":0.5, "raider":0.5}},
             "retreat": 0.6
 		},

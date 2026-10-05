@@ -58,8 +58,12 @@ After the rush, waves (Tick):
              its squad broke up: it leaves the squad and waits at the rally
              for the next wave, so repaired units no longer stream back into
              the fight one by one.
-  alarm      an enemy group of BaseAlarmMinCost within BaseAlarmRadius of our
-             start sends whatever is at the rally straight at it.
+  defence    an enemy group of DefendMinCost within DefendRadius of our
+             start: the rally, and every wave unit that asks, joins one native
+             defend squad until none has been seen for DefendClearSeconds;
+             then they go back to the rally and the wave carries on.
+  scouts     LandArmy's scout lab (before the gantry) sends each tick,
+             grunt or goblin it makes alone at an enemy start, in turn.
 
 Settings live in Global::Rush.
 
@@ -99,7 +103,6 @@ namespace Rush {
     int waveFormingSince = -1;
     int waves = 0;
     int returners = 0;
-    int alarmLog = -100000;
     bool finalRequested = false;   // LandArmy wants the next tier: one last full wave first
     bool finalSent = false;
     int finalSince = -1;
@@ -211,6 +214,7 @@ namespace Rush {
         if (u is null) return;
         const string key = "" + u.id;
         scouts.delete(key);
+        lateScout.delete(key);
         roaming.delete(key);
         raiders.delete(key);
         int s = -1;
@@ -282,6 +286,41 @@ namespace Rush {
     {
         if (scoutRoute is null || scoutRoute.IsDead()) @scoutRoute = NewRoute(Target(), false);
         return scoutRoute;
+    }
+
+    // Late scouts (LandArmy's scout lab): each goes alone at an enemy start,
+    // the starts in turn, so they bring sight of more than one base.
+    array<CRouteTask@> lateRoutes;    // one per enemy start
+    array<AIFloat3> lateTargets;
+    dictionary lateScout;             // unit id -> index into lateRoutes
+    int lateTurn = 0;
+    int lateSent = 0;
+
+    void AddLateScout(CCircuitUnit@ u)
+    {
+        if (u is null) return;
+        if (lateTargets.length() == 0) {
+            lateTargets = Lanes::EnemyStarts();
+            if (lateTargets.length() == 0) lateTargets.insertLast(Target());
+            lateRoutes.resize(lateTargets.length());
+        }
+        const string key = "" + u.id;
+        scouts.set(key, true);
+        lateScout.set(key, lateTurn % int(lateTargets.length()));
+        ++lateTurn;
+        if (++lateSent % 10 == 1)
+            GenericHelpers::LogUtil("[Rush] late scout " + lateSent + " (" + u.circuitDef.GetName() + ") heads for enemy start "
+                + ((lateTurn - 1) % int(lateTargets.length()) + 1) + " of " + lateTargets.length(), 1);
+    }
+
+    // create: AiMakeTask only, where the asking unit is assigned to it at once
+    // (a native task left empty can crash the engine)
+    CRouteTask@ ScoutRouteOf(const string &in key, bool create = false)
+    {
+        int idx = -1;
+        if (!lateScout.get(key, idx) || idx < 0 || idx >= int(lateRoutes.length())) return scoutRoute;
+        if (create && (lateRoutes[idx] is null || lateRoutes[idx].IsDead())) @lateRoutes[idx] = NewRoute(lateTargets[idx], false);
+        return lateRoutes[idx];
     }
 
     // Sends the units waiting in `members` out together along a route to the
@@ -408,7 +447,10 @@ namespace Rush {
         if (u is null) return null;
         const string key = "" + u.id;
         if (roaming.exists(key)) return aiMilitaryMgr.Enqueue(TaskF::Common(Task::FightType::SCOUT));
-        if (scouts.exists(key)) return ScoutTask();
+        if (scouts.exists(key)) {
+            if (lateScout.exists(key)) return ScoutRouteOf(key, true);
+            return ScoutTask();
+        }
         int s = -1;
         if (squadOf.get(key, s) && s >= 0 && s < int(squadList.length())) {
             Squad@ sq = squadList[s];
@@ -441,6 +483,18 @@ namespace Rush {
         // rush's own scouts and raiders were handled above), and with army
         // waves every roster combat unit after that.
         if (!Enabled() || !IsWaveUnit(u.circuitDef)) return null;
+        // A push at our base: every wave unit that asks joins the defence until it is gone
+        if (Defending() || defendDue) {
+            // A native squad task must never be empty (an empty CDefendTask
+            // crashed the engine): with nobody at the rally, the first unit
+            // to ask creates the defence, as its own task.
+            if (!Defending()) {
+                @defendTask = NewDefendTask();
+                if (defendTask is null) return RallyTask();
+            }
+            if (defenders.find(int(u.id)) < 0) defenders.insertLast(int(u.id));
+            return defendTask;
+        }
         if (waveForming.find(int(u.id)) < 0) waveForming.insertLast(int(u.id));
         if (waveFormingSince < 0) waveFormingSince = ai.frame;
         if (int(waveForming.length()) >= WaveTarget()) waveDue = true;   // launched from Tick, as above
@@ -451,19 +505,20 @@ namespace Rush {
     // one of it arrives) one native raid or attack task for all of it.
     void Arrivals()
     {
-        if (scoutRoute !is null && !scoutRoute.IsDead()) {
-            IUnitTask@ scoutTask = scoutRoute;
-            array<string>@ keys = scouts.getKeys();
-            for (uint i = 0; i < keys.length(); ++i) {
-                CCircuitUnit@ u = ai.GetTeamUnit(int(parseInt(keys[i])));
-                if (u is null || u.task !is scoutTask || !scoutRoute.IsAtEnd(u)) continue;
-                IUnitTask@ scout = aiMilitaryMgr.Enqueue(TaskF::Common(Task::FightType::SCOUT));
-                if (scout is null || !aiMilitaryMgr.TransferUnit(u, scout)) continue;
-                scouts.delete(keys[i]);
-                roaming.set(keys[i], true);
-                if (roaming.getSize() == 1)
-                    GenericHelpers::LogUtil("[Rush] first scout reached the enemy start; scouts there go native", 1);
-            }
+        array<string>@ keys = scouts.getKeys();
+        for (uint i = 0; i < keys.length(); ++i) {
+            CRouteTask@ route = ScoutRouteOf(keys[i]);
+            if (route is null || route.IsDead()) continue;
+            IUnitTask@ scoutTask = route;
+            CCircuitUnit@ u = ai.GetTeamUnit(int(parseInt(keys[i])));
+            if (u is null || u.task !is scoutTask || !route.IsAtEnd(u)) continue;
+            IUnitTask@ scout = aiMilitaryMgr.Enqueue(TaskF::Common(Task::FightType::SCOUT));
+            if (scout is null || !aiMilitaryMgr.TransferUnit(u, scout)) continue;
+            scouts.delete(keys[i]);
+            lateScout.delete(keys[i]);
+            roaming.set(keys[i], true);
+            if (roaming.getSize() == 1)
+                GenericHelpers::LogUtil("[Rush] first scout reached the enemy start; scouts there go native", 1);
         }
         for (uint s = 0; s < squadList.length(); ++s) {
             Squad@ sq = squadList[s];
@@ -487,12 +542,94 @@ namespace Rush {
         }
     }
 
-    bool BaseAlarm()
+    // ---- Base defence ------------------------------------------------------
+    // See Global::Rush::DefendMinCost. One native CDefendTask holds the base:
+    // it finds every enemy inside our structures' influence and engages it.
+    // check MELEE (nothing enqueues one) and power 1e9 keep it from promoting
+    // to an attack on its own; promote AH keeps native's 5 s threshold rewrite
+    // and attack-wait off it, and keeps native's own ATTACK-promoting defend
+    // squads from merging into it (CDefendTask::CanAssignTo compares promote).
+    IUnitTask@ defendTask = null;
+    array<int> defenders;
+    int threatSeen = -100000;
+    int defences = 0;
+    int formingSinceBeforeDefence = -1;
+
+    bool defendDue = false;   // a push is on but nobody was at the rally to start the defence
+
+    bool Defending() { return defendTask !is null && !defendTask.IsDead(); }
+
+    // Callers assign a unit to it at once (returned from AiMakeTask, or moved
+    // by Tick in the same call): an empty squad task crashes native.
+    IUnitTask@ NewDefendTask()
+    {
+        IUnitTask@ t = aiMilitaryMgr.Enqueue(TaskF::Defend(Task::FightType::MELEE, Task::FightType::AH, 1.0e9f));
+        if (t is null) return null;
+        ++defences;
+        defendDue = false;
+        defenders.resize(0);
+        return t;
+    }
+
+    // An enemy group of DefendMinCost within DefendRadius of our start.
+    bool BaseThreat(AIFloat3 &out at)
     {
         const AIFloat3 home = Global::Map::StartPos;
-        const AIFloat3 g = aiEnemyMgr.GetNearestGroupPos(home, Global::Rush::BaseAlarmMinCost);
-        const float r = Global::Rush::BaseAlarmRadius;
+        const AIFloat3 g = aiEnemyMgr.GetNearestGroupPos(home, Global::Rush::DefendMinCost);
+        const float r = Global::Rush::DefendRadius;
+        at = g;
         return g.x >= 0.0f && MapHelpers::SqDist(g, home) < r * r;
+    }
+
+    // Tick: a push puts the rally into the defence; once nothing has been seen
+    // for DefendClearSeconds the defenders go back to the rally and the wave
+    // they were forming carries on where it was.
+    void Defence()
+    {
+        Prune(defenders);
+        AIFloat3 at;
+        const bool threat = BaseThreat(at);
+        if (threat) threatSeen = ai.frame;
+        if (!Defending()) {
+            if (defendTask !is null) {   // ended by its losses: survivors ask again and regroup
+                @defendTask = null;
+                defenders.resize(0);
+            }
+            if (!threat) { defendDue = false; return; }
+            Prune(waveForming);
+            if (waveForming.length() == 0) {   // nobody to defend with yet: the first unit that asks starts it
+                if (!defendDue) GenericHelpers::LogUtil("[Rush] enemy group " + int(sqrt(MapHelpers::SqDist(at, Global::Map::StartPos)))
+                    + " from our start: the next unit to ask starts the defence", 1);
+                defendDue = true;
+                return;
+            }
+            @defendTask = NewDefendTask();
+            if (defendTask is null) return;
+            formingSinceBeforeDefence = waveFormingSince;
+            for (uint i = 0; i < waveForming.length(); ++i) {
+                CCircuitUnit@ m = ai.GetTeamUnit(waveForming[i]);
+                if (m !is null && aiMilitaryMgr.TransferUnit(m, defendTask)) defenders.insertLast(int(m.id));
+            }
+            waveForming.resize(0);
+            waveDue = false;
+            GenericHelpers::LogUtil("[Rush] defence " + defences + ": enemy group " + int(sqrt(MapHelpers::SqDist(at, Global::Map::StartPos)))
+                + " from our start; " + defenders.length() + " unit(s) from the rally hold the base, and every unit that asks meanwhile", 1);
+            return;
+        }
+        if (threat || ai.frame - threatSeen <= Global::Rush::DefendClearSeconds * SECOND) return;
+        IUnitTask@ rallyTask = RallyTask();
+        IUnitTask@ held = defendTask;
+        int back = 0;
+        for (uint i = 0; i < defenders.length(); ++i) {
+            CCircuitUnit@ m = ai.GetTeamUnit(defenders[i]);
+            if (m is null || m.task !is held || !aiMilitaryMgr.TransferUnit(m, rallyTask)) continue;
+            if (waveForming.find(int(m.id)) < 0) waveForming.insertLast(int(m.id));
+            ++back;
+        }
+        defenders.resize(0);
+        @defendTask = null;   // empty now: CDefendTask aborts itself without a leader
+        waveFormingSince = (formingSinceBeforeDefence >= 0) ? formingSinceBeforeDefence : ai.frame;
+        GenericHelpers::LogUtil("[Rush] defence " + defences + " over: " + back + " unit(s) back to the rally; the wave carries on", 1);
     }
 
     void Prune(array<int>@ ids)
@@ -535,20 +672,13 @@ namespace Rush {
                 if (waveForming.length() > 0) LaunchWave(null, "the tier switch");
             }
         }
+        Defence();
+        if (Defending()) return;   // no wave leaves while the base is under attack
         Prune(waveForming);
         if (waveForming.length() == 0) { waveFormingSince = -1; waveDue = false; return; }
         if (waveFormingSince < 0) waveFormingSince = ai.frame;
         const int n = int(waveForming.length());
         const int waited = ai.frame - waveFormingSince;
-        // The rally holds its ground; an enemy group at our base gets what is there
-        if (n >= Global::Rush::BaseAlarmMinUnits && BaseAlarm()) {
-            if (ai.frame - alarmLog > 30 * SECOND) {
-                alarmLog = ai.frame;
-                GenericHelpers::LogUtil("[Rush] enemy group near our start: the " + n + " unit(s) at the rally go now", 1);
-            }
-            LaunchArmyWave("enemy near our start");
-            return;
-        }
         if (ArmyPhase()) {
             waveDue = false;
             const int maxWait = Global::Rush::ArmyWaveFormMaxSeconds * SECOND;

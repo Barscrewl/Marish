@@ -3,7 +3,7 @@ namespace TeamShareMath {
     float Budget(float current, float storage, float threshold, float fraction, bool ready)
     {
         if (!ready || storage <= 0.0f || current <= 0.0f || current < threshold * storage) return 0.0f;
-        const float amount = fraction * storage;
+        const float amount = fraction * current;   // Marish owner: a share of our metal
         if (amount <= 0.0f) return 0.0f;
         return amount < current ? amount : current;
     }

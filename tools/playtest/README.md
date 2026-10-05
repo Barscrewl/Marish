@@ -2,7 +2,7 @@
 
 `marish_watch.lua` is a LuaUI widget for an isolated test game. It:
 
-- runs the game at up to 20x (`SPEED`) from frame 1 and quits at minute 16 (`END_MIN`)
+- runs the game at 5x, or 10x when `END_MIN` is 20 or more (`SPEED`), from frame 1 and quits at minute 16 (`END_MIN`)
 - logs every team's metal/energy income and its factories and combat units once a game minute
   (`[Marish] min N team T m=.. e=.. | unit=count ...`)
 - logs the first time each team finishes each factory or combat unit, with game time and income

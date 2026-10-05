@@ -258,11 +258,16 @@ namespace Global {
         int T2ConMin = 2;
         float IncomePerT2Con = 50.0f;
         int T2ConMax = 6;
-        // Radar and jammer bots each: SupportFirstSensor, plus one per
-        // ArmyMetalPerSensor of army metal, at most SupportMax.
-        int SupportFirstSensor = 1;
-        float ArmyMetalPerSensor = 3000.0f;
-        // and at most one of each kind per SensorGapSeconds: they die fast at
+        // Radar, jammer and T2 AA bots (owner, 2026-10-04): each kind is
+        // capped by the heavies alive - mammoths, fatboys and incinerators -
+        // one until two heavies stand, then as many as the heavies, at most
+        // SupportMax; T2 AA alone may go past that against bombers (below).
+        // While one of a kind is alive the T2 lab's weight for that kind drops
+        // from SupportWeight to SupportWeightHave, so fighting units come first.
+        array<string> HeavyUnits = {"corsumo", "armfboy", "leginc"};
+        float SupportWeight = 0.30f;
+        float SupportWeightHave = 0.05f;
+        // and at most one radar or jammer bot per SensorGapSeconds: they die fast at
         // the front, and the lab rebuilt Armada's radar bot 95 times in 24 min
         int SensorGapSeconds = 60;
         int RezFirst = 1;
@@ -283,18 +288,42 @@ namespace Global {
         int MinStepSeconds = 60;
 
         // Support escorts from the T2 bot lab: radar, jammer and T2 AA bots.
-        // At most this many of each kind are alive at once.
+        // At most this many of each kind are alive at once (see HeavyUnits).
         int SupportMax = 5;
-        // T2 AA costs 520-750 metal, so it grows with the army: SupportFirstAA,
-        // plus one per ArmyMetalPerAA of army metal, up to SupportMax.
-        int SupportFirstAA = 1;
-        float ArmyMetalPerAA = 2500.0f;
         // Once scouted enemy bombers are worth ManyBombersMetal, T2 AA goes past
         // SupportMax: SupportMax + 1, plus one per BomberMetalPerExtraAA beyond
-        // that, up to AAMaxVsBombers. 1500 is about ten T1 or five T2 bombers.
+        // that, up to AAMaxVsBombers (10 at 4300 metal of bombers).
         float ManyBombersMetal = 1500.0f;
         float BomberMetalPerExtraAA = 600.0f;
-        int AAMaxVsBombers = 15;
+        int AAMaxVsBombers = 10;
+        // LRPCs (Bertha, Intimidator, Olympus) and the heavy ones only from this
+        // metal income (the 10 s minimum averaged over T2LabIncomeWindowSeconds):
+        // they went up too early.
+        float LRPCMinIncome = 125.0f;
+        // Nanos: while the metal bank holds NanoBankShare of storage, or there
+        // are fewer than one nano per NanoMetalPerNano of metal income, the T2
+        // constructors (and T1 constructors before T2) add nanos at the labs.
+        float NanoBankShare = 0.9f;
+        float NanoMetalPerNano = 10.0f;
+        // Mex porc: the commander puts an LLT by every mex it takes beyond
+        // CommanderMexLLTMinDistance from the start; T1 constructors by every
+        // MexLLTEveryNth one beyond MexLLTMinDistance. Skipped when one of ours stands within
+        // CrewPorcCover.
+        float MexLLTMinDistance = 500.0f;
+        float CommanderMexLLTMinDistance = 250.0f;   // the commander porcs almost every mex it takes
+        int MexLLTEveryNth = 2;
+        // Commander escape: an enemy group worth CommanderFleeMetal or more
+        // within CommanderFleeRangeMult x the commander's weapon range sends it
+        // home (a builder patrol at the start) for CommanderFleeSeconds.
+        float CommanderFleeMetal = 600.0f;
+        float CommanderFleeRangeMult = 2.0f;
+        int CommanderFleeSeconds = 20;
+        // Scout lab: once the T2 lab stands and metal income reaches
+        // ScoutLabMinIncome, until the gantry is framed, a T1 bot lab is
+        // rebuilt and makes only the cheapest scout (tick / grunt / goblin),
+        // each sent alone at an enemy start (they take turns), for sight.
+        bool ScoutLab = true;
+        float ScoutLabMinIncome = 60.0f;
         // T2 AA bots guard the most valuable roster unit with fewer than this
         // many AA guards (manager/land_army.as MakeAAGuardTask).
         int AAPerVip = 2;
@@ -345,14 +374,17 @@ namespace Global {
         int ArmyWaveSize = 12;
         int ArmyWaveMinSize = 6;
         int ArmyWaveFormMaxSeconds = 90;
-        // An enemy group worth this much metal within BaseAlarmRadius of our
-        // start sends what is gathered at it at once, if that is at least
-        // BaseAlarmMinUnits (fewer hold the rally). At 1600 and no minimum it
-        // fired 19 times by minute 12 on All That Glitters and sent units out
-        // one at a time.
-        float BaseAlarmMinCost = 300.0f;
-        float BaseAlarmRadius = 1000.0f;
-        int BaseAlarmMinUnits = 3;
+        // Base defence: an enemy group worth DefendMinCost or more within
+        // DefendRadius of our start (or of a T2 lab or gantry of ours) puts
+        // everything at the rally, and every unit that asks meanwhile, into
+        // one native defend squad there. It holds until no such group has been
+        // seen for DefendClearSeconds; then the defenders go back to the rally
+        // and the wave they were forming carries on. (Sending the rally at the
+        // enemy as a wave fired 19 times by minute 12 on All That Glitters at
+        // 1600 and sent units out one at a time.)
+        float DefendMinCost = 300.0f;
+        float DefendRadius = 1200.0f;
+        int DefendClearSeconds = 10;
     }
 
     namespace Spam {
@@ -641,8 +673,8 @@ namespace Global {
             int SpamPadsMax = 2;                            // D-109: small 2x2 forward turret pads at the lab row's ends
             float ConverterStarveEnergyShare = 0.5f;        // D-107: the energy bank under this share of storage (or stalling) means the converters cannot stay on (BAR's conversion level is 75% by default)
             // D-175: shared by ALL roles; keep the Tech namespace for existing overrides.
-            float TeamShareMetalAbove = 0.95f;              // D-106: our metal bank over this share of storage triggers the team economy check and a donation
-            float TeamShareMetalBudget = 0.20f;             // D-106: at most this share of our metal storage is given per donation, the lowest-filled teammate first
+            float TeamShareMetalAbove = 0.80f;              // D-106 (Marish owner: 80 %): our metal bank over this share of storage triggers the team economy check and a donation
+            float TeamShareMetalBudget = 0.20f;             // D-106 (Marish: of our metal, not storage): at most this share is given per donation, the lowest-filled teammate first
             float TeamShareCheckSeconds = 5.0f;             // D-106: a donation at most this often (the engine's share command settles each slow update)
             float TeamShareMinAmount = 25.0f;               // D-106: smaller gifts are not sent
             float AfusFundedShare = 0.85f;                  // D-105: the advanced lab is not reclaimed when bank + income x the advanced fusion's remaining build time covers this share of its cost

@@ -459,7 +459,7 @@
 		"attribute": ["siege"]
 	},
 	"armsnipe": {
-		"role": ["anti_heavy"]
+		"role": ["artillery"], "attribute": ["siege"]
 	},
 	"armamph": {
 		"role": ["raider", "anti_air"]
