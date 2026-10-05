@@ -236,6 +236,39 @@ namespace Global {
     // MetalIncomeForGantry.
     namespace LandArmy {
         float ArmadaPawnIncome = 14.0f;      // ticks -> pawns (10 switched to pawns too soon after the rush)
+        // Rezbots (armrectr / cornecro / legrezbot) sprinkled into the T1 bot
+        // lab's output after the rush: RezFirst, plus one per RezPerArmyUnits
+        // roster units made, at most RezMax alive. They resurrect, then
+        // reclaim, within RezRadius of the rally point, where the waves form.
+        // T2 production (measured 2026-10-04, 8v8 at bonus 100: one T2 lab
+        // per team made 89 T2 constructors, 93 radar/jammer/AA bots and 25
+        // combat units, while banks sat full at +100-200 income and pull
+        // 20-60). T2 bot labs: 1, plus one per IncomePerExtraT2Lab metal
+        // income above the first lab's gate, at most MaxT2Labs. While the bank
+        // holds ProductionBankShare of storage (or ProductionMinBank), T2
+        // constructors build the gantry (FRONT's MetalIncomeForGantry), then
+        // the next T2 lab, then nanos at the labs.
+        int MaxT2Labs = 3;
+        float IncomePerExtraT2Lab = 60.0f;
+        float ProductionBankShare = 0.3f;
+        float ProductionMinBank = 1500.0f;
+        float ProductionNanoShake = 200.0f;
+        // T2 constructors alive: T2ConMin, plus one per IncomePerT2Con metal
+        // income, at most T2ConMax (FRONT's own cap allowed 5 per +40).
+        int T2ConMin = 2;
+        float IncomePerT2Con = 50.0f;
+        int T2ConMax = 6;
+        // Radar and jammer bots each: SupportFirstSensor, plus one per
+        // ArmyMetalPerSensor of army metal, at most SupportMax.
+        int SupportFirstSensor = 1;
+        float ArmyMetalPerSensor = 3000.0f;
+        // and at most one of each kind per SensorGapSeconds: they die fast at
+        // the front, and the lab rebuilt Armada's radar bot 95 times in 24 min
+        int SensorGapSeconds = 60;
+        int RezFirst = 1;
+        int RezPerArmyUnits = 8;
+        int RezMax = 4;
+        float RezRadius = 1500.0f;
         float ArmadaMaceIncome = 20.0f;      // pawns -> maces & rocketeers
         float CortexT1Income = 15.0f;        // grunts -> thugs & aggravators
         float LegionT1Income = 15.0f;        // goblins -> satyrs & karkinos
@@ -302,6 +335,24 @@ namespace Global {
         int FinalWaveSize = 10;
         int WaveFormMaxSeconds = 120;
         int FinalWaveMaxSeconds = 180;
+        // Army waves: after the early tier every roster combat unit (and every
+        // unit back from repair) gathers at the rally and leaves with the rest
+        // as one native attack squad: ArmyWaveSize gather, or ArmyWaveMinSize
+        // after ArmyWaveFormMaxSeconds, or whatever is there after twice that.
+        // Native's own defend-then-attack squads promoted one strong unit at a
+        // time, and repaired units walked back into the fight one by one.
+        bool ArmyWaves = true;
+        int ArmyWaveSize = 12;
+        int ArmyWaveMinSize = 6;
+        int ArmyWaveFormMaxSeconds = 90;
+        // An enemy group worth this much metal within BaseAlarmRadius of our
+        // start sends what is gathered at it at once, if that is at least
+        // BaseAlarmMinUnits (fewer hold the rally). At 1600 and no minimum it
+        // fired 19 times by minute 12 on All That Glitters and sent units out
+        // one at a time.
+        float BaseAlarmMinCost = 300.0f;
+        float BaseAlarmRadius = 1000.0f;
+        int BaseAlarmMinUnits = 3;
     }
 
     namespace Spam {

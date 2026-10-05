@@ -295,18 +295,37 @@ namespace LandArmy {
         return d !is null && AABots.find(d.GetName()) >= 0;
     }
 
+    int armyMade = 0;   // roster units finished so far (the rezbot sprinkle counts them)
+
+    void BuildRoster()
+    {
+        if (!roster.isEmpty()) return;
+        Load();
+        for (uint i = 0; i < sequences.length(); ++i)
+            for (uint j = 0; j < sequences[i].steps.length(); ++j)
+                for (uint k = 0; k < sequences[i].steps[j].units.length(); ++k)
+                    roster.set(sequences[i].steps[j].units[k], true);
+    }
+
+    // A land roster combat unit, any side (Rush's army waves take these).
+    bool IsArmyUnit(const CCircuitDef@ d)
+    {
+        if (d is null) return false;
+        BuildRoster();
+        return roster.exists(d.GetName());
+    }
+
     // Military::AiUnitAdded / AiUnitRemoved
     void OnUnitAdded(CCircuitUnit@ u)
     {
         if (u is null || u.circuitDef is null) return;
-        if (roster.isEmpty()) {
-            Load();
-            for (uint i = 0; i < sequences.length(); ++i)
-                for (uint j = 0; j < sequences[i].steps.length(); ++j)
-                    for (uint k = 0; k < sequences[i].steps[j].units.length(); ++k)
-                        roster.set(sequences[i].steps[j].units[k], true);
+        BuildRoster();
+        if (RadarBots.find(u.circuitDef.GetName()) >= 0) radarAdded = ai.frame;
+        if (JammerBots.find(u.circuitDef.GetName()) >= 0) jammerAdded = ai.frame;
+        if (roster.exists(u.circuitDef.GetName())) {
+            army.set("" + u.id, int(u.id));
+            ++armyMade;
         }
-        if (roster.exists(u.circuitDef.GetName())) army.set("" + u.id, int(u.id));
     }
 
     void OnUnitRemoved(CCircuitUnit@ u)
@@ -365,11 +384,156 @@ namespace LandArmy {
         return t;
     }
 
+    // Radar and jammer bots grow with the army they cover: at 5 each from the
+    // start, the T2 lab made 10 sensors next to 3 combat units (bonus 100).
+    int SensorCap()
+    {
+        const int cap = Global::LandArmy::SupportFirstSensor + int(aiMilitaryMgr.armyCost / Global::LandArmy::ArmyMetalPerSensor);
+        return (cap > Global::LandArmy::SupportMax) ? Global::LandArmy::SupportMax : cap;
+    }
+
+    int radarAdded = -100000;
+    int jammerAdded = -100000;
+
     void ApplySupportCaps()
     {
-        CapKind(RadarBots, Global::LandArmy::SupportMax);
-        CapKind(JammerBots, Global::LandArmy::SupportMax);
+        const int sensors = SensorCap();
+        const int gap = Global::LandArmy::SensorGapSeconds * SECOND;
+        CapKind(RadarBots, (ai.frame - radarAdded < gap) ? 0 : sensors);    // 0: no room, none more for now
+        CapKind(JammerBots, (ai.frame - jammerAdded < gap) ? 0 : sensors);
         CapKind(AABots, AACap());
+    }
+
+    // ---- T2 production -----------------------------------------------------
+    // See Global::LandArmy::MaxT2Labs. Native's factory makes a constructor on
+    // half its picks while build power trails income, so the richer the team
+    // the more of the T2 lab's time went into T2 constructors that then took
+    // native's default jobs; and one T2 lab could not spend +100 metal.
+    int lastT2LabCap = -1;
+    int prodLog = -100000;
+
+    int T2LabsWanted(float income)
+    {
+        const float over = income - Global::RoleSettings::Front::MinimumMetalIncomeForFirstT2Lab;
+        int n = 1 + ((over > 0.0f) ? int(over / Global::LandArmy::IncomePerExtraT2Lab) : 0);
+        return (n > Global::LandArmy::MaxT2Labs) ? Global::LandArmy::MaxT2Labs : n;
+    }
+
+    void ApplyT2ConstructorCap(float income)
+    {
+        if (Global::AISettings::Role != AiRole::FRONT) return;
+        int cap = Global::LandArmy::T2ConMin + int(AiMax(0.0f, income) / Global::LandArmy::IncomePerT2Con);
+        if (cap > Global::LandArmy::T2ConMax) cap = Global::LandArmy::T2ConMax;
+        CapKind(UnitHelpers::GetAllT2BotConstructors(), cap);
+    }
+
+    int CountBuiltOrFramed(const array<string> &in names)
+    {
+        int n = 0;
+        for (uint i = 0; i < names.length(); ++i) {
+            CCircuitDef@ d = ai.GetCircuitDef(names[i]);
+            if (d !is null) n += d.count + aiBuilderMgr.GetUnfinishedCount(d);
+        }
+        return n;
+    }
+
+    // A finished T2 lab or gantry of ours for the next nano: they take turns.
+    CCircuitUnit@ NanoHost(int turn)
+    {
+        array<CCircuitUnit@> hosts;
+        array<Id>@ ids = ai.GetOwnedUnitIds();
+        for (uint i = 0; i < ids.length(); ++i) {
+            CCircuitUnit@ f = ai.GetTeamUnit(ids[i]);
+            if (f is null || f.circuitDef is null || f.GetBuildProgress() < 1.0f) continue;
+            const string n = f.circuitDef.GetName();
+            if (UnitHelpers::IsT2BotLab(n) || UnitHelpers::GetAllLandGantries().find(n) >= 0) hosts.insertLast(f);
+        }
+        return (hosts.length() == 0) ? null : hosts[uint(turn) % hosts.length()];
+    }
+
+    void LogProduction(const string &in what)
+    {
+        if (ai.frame - prodLog < 20 * SECOND) return;
+        prodLog = ai.frame;
+        GenericHelpers::LogUtil("[LandArmy] floating metal " + int(aiEconomyMgr.metal.current) + "/" + int(aiEconomyMgr.metal.storage)
+            + " at +" + int(Economy::GetMinMetalIncomeLast10s()) + ": " + what, 1);
+    }
+
+    // FRONT's T2 constructors, before their own jobs: while metal floats,
+    // more production (gantry, T2 lab, nanos at them). Null otherwise.
+    IUnitTask@ ProductionTask(CCircuitUnit@ u, const string &in side)
+    {
+        if (u is null || Global::AISettings::Role != AiRole::FRONT) return null;
+        const float bank = aiEconomyMgr.metal.current;
+        if (bank < Global::LandArmy::ProductionMinBank
+            && bank < aiEconomyMgr.metal.storage * Global::LandArmy::ProductionBankShare) return null;
+        const float income = Economy::GetMinMetalIncomeLast10s();
+
+        array<string> gantries = UnitHelpers::GetAllLandGantries();
+        if (income >= Global::RoleSettings::Front::MetalIncomeForGantry && CountBuiltOrFramed(gantries) == 0) {
+            IUnitTask@ g = Builder::EnqueueLandGantry(side);
+            if (g !is null) { LogProduction("gantry"); return g; }
+        }
+        array<string> labs = UnitHelpers::GetAllT2BotLabs();
+        const int labsHave = CountBuiltOrFramed(labs);
+        if (labsHave > 0 && labsHave < T2LabsWanted(income)) {
+            IUnitTask@ l = Builder::EnqueueT2BotLabIfNeeded(side, Factory::GetPreferredFactoryPos(), SQUARE_SIZE * 24, 300 * SECOND);
+            if (l !is null) { LogProduction("T2 lab " + (labsHave + 1) + " of " + T2LabsWanted(income)); return l; }
+        }
+        CCircuitUnit@ host = NanoHost(CountBuiltOrFramed(UnitHelpers::GetT1NanoUnitNames()));
+        if (host !is null) {
+            IUnitTask@ n = Builder::EnqueueT1Nano(side, host.GetPos(ai.frame), Global::LandArmy::ProductionNanoShake, 120 * SECOND);
+            if (n !is null) { LogProduction("nano at " + host.circuitDef.GetName() + "(" + host.id + ")"); return n; }
+        }
+        return null;
+    }
+
+    // ---- Rezbots -----------------------------------------------------------
+    // See Global::LandArmy::RezFirst. Factory weights alone (0.05 against 1.0
+    // per combat unit) made none in 14 test games.
+    array<string> RezBots = {"armrectr", "cornecro", "legrezbot"};
+    IUnitTask@ rezPending = null;
+    int rezTurn = 0;
+
+    bool IsRezBot(const CCircuitDef@ d) { return d !is null && RezBots.find(d.GetName()) >= 0; }
+
+    string RezBotFor(const string &in side)
+    {
+        return (side == "armada") ? "armrectr" : (side == "cortex") ? "cornecro" : "legrezbot";
+    }
+
+    int RezTarget()
+    {
+        const int n = Global::LandArmy::RezFirst + armyMade / Global::LandArmy::RezPerArmyUnits;
+        return (n > Global::LandArmy::RezMax) ? Global::LandArmy::RezMax : n;
+    }
+
+    // Front_FactoryAiMakeTask, for a T1 bot lab once the rush is over.
+    IUnitTask@ RezFactoryTask(CCircuitUnit@ lab)
+    {
+        if (lab is null || lab.circuitDef is null || Global::AISettings::Role != AiRole::FRONT || Rush::Active()) return null;
+        if (!UnitHelpers::IsT1BotLab(lab.circuitDef.GetName())) return null;
+        if (rezPending !is null && !rezPending.IsDead()) return null;   // one at a time; the lab carries on meanwhile
+        CCircuitDef@ d = ai.GetCircuitDef(RezBotFor(Global::AISettings::Side));
+        if (d is null || !d.IsAvailable(ai.frame) || !lab.circuitDef.CanBuild(d)) return null;
+        if (CountBuiltOrFramed(RezBots) + aiFactoryMgr.GetPendingRecruitCount(d) >= RezTarget()) return null;
+        @rezPending = aiFactoryMgr.Enqueue(TaskS::Recruit(Task::RecruitType::BUILDPOWER, Task::Priority::NORMAL, d, lab.GetPos(ai.frame), 64.0f));
+        if (rezPending !is null)
+            GenericHelpers::LogUtil("[LandArmy] rezbot " + d.GetName() + " " + (d.count + 1) + " of " + RezTarget() + " (" + armyMade + " army units made)", 1);
+        return rezPending;
+    }
+
+    // Front_BuilderAiMakeTask, before anything else: a rezbot resurrects, and
+    // reclaims every other turn, within RezRadius of the rally where the
+    // waves form and the fights near our side leave their wrecks.
+    IUnitTask@ RezBotTask(CCircuitUnit@ u)
+    {
+        if (u is null || !IsRezBot(u.circuitDef) || Global::AISettings::Role != AiRole::FRONT) return null;
+        const AIFloat3 at = Rush::Enabled() ? Rush::RallyPos() : Global::Map::StartPos;
+        ++rezTurn;
+        if (rezTurn % 2 == 1)
+            return aiBuilderMgr.Enqueue(TaskB::Resurrect(Task::Priority::NORMAL, at, 0.0f, 60 * SECOND, Global::LandArmy::RezRadius));
+        return aiBuilderMgr.Enqueue(TaskB::Reclaim(Task::Priority::NORMAL, at, 0.0f, 60 * SECOND, Global::LandArmy::RezRadius, true));
     }
 
     // ---- T2 lab gate and T1 lab retirement -------------------------------
@@ -434,7 +598,20 @@ namespace LandArmy {
                 + Global::LandArmy::T2LabIncomeWindowSeconds + " s)", 1);
         }
         array<string> t2 = UnitHelpers::GetAllT2BotLabs();
-        for (uint i = 0; i < t2.length(); ++i) SetAllowed(t2[i], t2Allowed);
+        if (Global::AISettings::Role == AiRole::FRONT) {
+            // the first lab on the income gate, more as income grows (ProductionTask builds them)
+            const int cap = !t2Allowed ? 0 : t2Begun ? T2LabsWanted(income) : 1;
+            if (cap != lastT2LabCap && t2Begun) {
+                GenericHelpers::LogUtil("[LandArmy] T2 lab cap " + cap + " at +" + int(income) + " metal income", 1);
+                lastT2LabCap = cap;
+            }
+            for (uint i = 0; i < t2.length(); ++i) {
+                CCircuitDef@ d = ai.GetCircuitDef(t2[i]);
+                if (d !is null && d.maxThisUnit != cap) d.maxThisUnit = cap;
+            }
+        } else {
+            for (uint i = 0; i < t2.length(); ++i) SetAllowed(t2[i], t2Allowed);
+        }
         array<string> t1 = UnitHelpers::GetAllT1BotLabs();
         for (uint i = 0; i < t1.length(); ++i) SetAllowed(t1[i], !t2Begun);
         if (!t2Begun || Global::AISettings::Role != AiRole::FRONT) return;
@@ -495,5 +672,6 @@ namespace LandArmy {
             for (uint i = 0; i < rush.length(); ++i) SetAllowed(rush[i], true);
         }
         ApplySupportCaps();
+        ApplyT2ConstructorCap(income);
     }
 }

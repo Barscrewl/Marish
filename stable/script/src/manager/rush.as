@@ -44,6 +44,23 @@ only then hands production to LandArmy's income-staged roster:
              whose squad is gone falls back to the native default.
   end        the queue complete, the lab lost, or MaxSeconds elapsed.
 
+After the rush, waves (Tick):
+  early      the first tier's units (ticks and pawns, grunts, goblins)
+             gather at the rally, WaveMinSize to WaveMaxSize by income, and
+             go along the route to the enemy start; a full FinalWaveSize
+             wave leaves before the lab moves on (LandArmy::ApplyRoster).
+  army       every roster combat unit after that gathers the same way and
+             leaves as one native attack squad (CAttackTask: target choice,
+             regroup on the leader) at ArmyWaveSize, or ArmyWaveMinSize after
+             ArmyWaveFormMaxSeconds, or whatever is there after twice that.
+  regroup    units retreat at 60 % health (behaviour.json "retreat"). A
+             squad member that asks for a task again is back from repair, or
+             its squad broke up: it leaves the squad and waits at the rally
+             for the next wave, so repaired units no longer stream back into
+             the fight one by one.
+  alarm      an enemy group of BaseAlarmMinCost within BaseAlarmRadius of our
+             start sends whatever is at the rally straight at it.
+
 Settings live in Global::Rush.
 
 ******************************************************************************/
@@ -74,9 +91,15 @@ namespace Rush {
     // Early waves: the T1 lab's first-tier units after the rush (Armada ticks
     // and pawns, Cortex grunts, Legion goblins) gather at the rally and leave
     // together. See WaveTarget and LandArmy::ApplyRoster's final-wave gate.
+    // Army waves (Global::Rush::ArmyWaves): after the early tier every roster
+    // combat unit gathers the same way, and so does every squad member that
+    // asks for a task again (back from repair, or its squad broke up): it
+    // waits for the next wave instead of walking back into the fight alone.
     array<int> waveForming;
     int waveFormingSince = -1;
     int waves = 0;
+    int returners = 0;
+    int alarmLog = -100000;
     bool finalRequested = false;   // LandArmy wants the next tier: one last full wave first
     bool finalSent = false;
     int finalSince = -1;
@@ -286,6 +309,34 @@ namespace Rush {
         return sq.route;
     }
 
+    // An army wave leaves the rally as one native attack squad: CAttackTask
+    // picks the target and regroups on its leader, so the wave travels and
+    // hits as a ball. Units moved by script are not checked against
+    // CanAssignTo, so mixed speeds stay in one squad. Called from Tick only.
+    void LaunchArmyWave(const string &in why)
+    {
+        Squad@ sq = Squad();
+        @sq.raid = aiMilitaryMgr.Enqueue(TaskF::Common(Task::FightType::ATTACK));
+        if (sq.raid is null) return;
+        ++waves;
+        sq.fight = Task::FightType::ATTACK;
+        sq.label = "army wave " + waves;
+        const int idx = int(squadList.length());
+        float metal = 0.0f;
+        for (uint i = 0; i < waveForming.length(); ++i) {
+            CCircuitUnit@ m = ai.GetTeamUnit(waveForming[i]);
+            if (m is null || !aiMilitaryMgr.TransferUnit(m, sq.raid)) continue;
+            sq.ids.insertLast(int(m.id));
+            squadOf.set("" + m.id, idx);
+            if (m.circuitDef !is null) metal += m.circuitDef.costM;
+        }
+        squadList.insertLast(sq);
+        waveForming.resize(0);
+        waveFormingSince = -1;
+        GenericHelpers::LogUtil("[Rush] " + sq.label + " of " + sq.ids.length() + " (" + int(metal) + " metal) attacks ("
+            + why + "); " + returners + " repaired unit(s) regrouped so far", 1);
+    }
+
     IUnitTask@ LaunchRaid(CCircuitUnit@ newcomer, const string &in why)
     {
         ++squads;
@@ -304,12 +355,23 @@ namespace Rush {
         return n == "leggob";
     }
 
+    // Past the early tier, with army waves on: every roster unit waves.
+    bool ArmyPhase() { return Global::Rush::ArmyWaves && !LandArmy::EarlyTier(); }
+
+    bool IsWaveUnit(const CCircuitDef@ d)
+    {
+        if (d is null) return false;
+        if (IsEarlyUnit(d) && LandArmy::EarlyTier()) return true;
+        return Global::Rush::ArmyWaves && LandArmy::IsArmyUnit(d);
+    }
+
     // Wave size: WaveMinSize at no income, rising to WaveMaxSize as metal
     // income nears the next tier's threshold (LandArmy::NextTierIncome); the
     // last wave before the switch is FinalWaveSize.
     int WaveTarget()
     {
         if (finalRequested && !finalSent) return Global::Rush::FinalWaveSize;
+        if (ArmyPhase()) return Global::Rush::ArmyWaveSize;
         const float next = LandArmy::NextTierIncome();
         float p = (next > 0.0f) ? Economy::GetMinMetalIncomeLast10s() / next : 1.0f;
         p = AiMax(0.0f, AiMin(1.0f, p));
@@ -350,10 +412,21 @@ namespace Rush {
         int s = -1;
         if (squadOf.get(key, s) && s >= 0 && s < int(squadList.length())) {
             Squad@ sq = squadList[s];
-            if (sq.raid !is null && !sq.raid.IsDead()) return sq.raid;
-            if (sq.raid is null && sq.route !is null && !sq.route.IsDead()) return sq.route;
-            squadOf.delete(key);   // the squad is over: native takes it from here
-            return null;
+            squadOf.delete(key);
+            const int at = sq.ids.find(int(u.id));
+            if (at >= 0) sq.ids.removeAt(at);
+            // A squad member asking again has left its squad: it retreated
+            // (60 % health) and was repaired, or the squad broke up under its
+            // losses. With army waves it regroups for the next wave at the
+            // rally instead of walking back into the fight alone; without
+            // them it rejoins its squad if that still fights.
+            if (Global::Rush::ArmyWaves && IsWaveUnit(u.circuitDef)) {
+                ++returners;
+            } else {
+                if (sq.raid !is null && !sq.raid.IsDead()) { squadOf.set(key, s); sq.ids.insertLast(int(u.id)); return sq.raid; }
+                if (sq.raid is null && sq.route !is null && !sq.route.IsDead()) { squadOf.set(key, s); sq.ids.insertLast(int(u.id)); return sq.route; }
+                return null;   // the squad is over: native takes it from here
+            }
         }
         if (raiders.exists(key)) {
             if (forming.find(int(u.id)) < 0) forming.insertLast(int(u.id));
@@ -364,9 +437,10 @@ namespace Rush {
             if (int(forming.length()) >= Global::Rush::RaidSquadSize) raidDue = true;
             return RallyTask();
         }
-        // An early wave unit: our side's first tier (the rush's own scouts and
-        // raiders were handled above), while the lab is still on that tier.
-        if (!Enabled() || !IsEarlyUnit(u.circuitDef) || !LandArmy::EarlyTier()) return null;
+        // A wave unit: our side's first tier while the lab is still on it (the
+        // rush's own scouts and raiders were handled above), and with army
+        // waves every roster combat unit after that.
+        if (!Enabled() || !IsWaveUnit(u.circuitDef)) return null;
         if (waveForming.find(int(u.id)) < 0) waveForming.insertLast(int(u.id));
         if (waveFormingSince < 0) waveFormingSince = ai.frame;
         if (int(waveForming.length()) >= WaveTarget()) waveDue = true;   // launched from Tick, as above
@@ -413,6 +487,14 @@ namespace Rush {
         }
     }
 
+    bool BaseAlarm()
+    {
+        const AIFloat3 home = Global::Map::StartPos;
+        const AIFloat3 g = aiEnemyMgr.GetNearestGroupPos(home, Global::Rush::BaseAlarmMinCost);
+        const float r = Global::Rush::BaseAlarmRadius;
+        return g.x >= 0.0f && MapHelpers::SqDist(g, home) < r * r;
+    }
+
     void Prune(array<int>@ ids)
     {
         for (uint i = 0; i < ids.length(); )
@@ -456,10 +538,31 @@ namespace Rush {
         Prune(waveForming);
         if (waveForming.length() == 0) { waveFormingSince = -1; waveDue = false; return; }
         if (waveFormingSince < 0) waveFormingSince = ai.frame;
+        const int n = int(waveForming.length());
+        const int waited = ai.frame - waveFormingSince;
+        // The rally holds its ground; an enemy group at our base gets what is there
+        if (n >= Global::Rush::BaseAlarmMinUnits && BaseAlarm()) {
+            if (ai.frame - alarmLog > 30 * SECOND) {
+                alarmLog = ai.frame;
+                GenericHelpers::LogUtil("[Rush] enemy group near our start: the " + n + " unit(s) at the rally go now", 1);
+            }
+            LaunchArmyWave("enemy near our start");
+            return;
+        }
+        if (ArmyPhase()) {
+            waveDue = false;
+            const int maxWait = Global::Rush::ArmyWaveFormMaxSeconds * SECOND;
+            if (n >= WaveTarget()) LaunchArmyWave(n + " gathered");
+            else if (waited > maxWait && n >= Global::Rush::ArmyWaveMinSize)
+                LaunchArmyWave("waited " + Global::Rush::ArmyWaveFormMaxSeconds + " s");
+            else if (waited > 2 * maxWait)
+                LaunchArmyWave("waited " + (2 * Global::Rush::ArmyWaveFormMaxSeconds) + " s");
+            return;
+        }
         if (waveDue) {
             waveDue = false;
             const int target = WaveTarget();
-            if (int(waveForming.length()) >= target) { LaunchWave(null, target + " gathered"); return; }
+            if (n >= target) { LaunchWave(null, target + " gathered"); return; }
         }
         if (!LandArmy::EarlyTier()) LaunchWave(null, "the lab moved to the next tier");
         else if (ai.frame - waveFormingSince > Global::Rush::WaveFormMaxSeconds * SECOND

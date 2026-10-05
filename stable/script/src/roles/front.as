@@ -344,6 +344,9 @@ namespace RoleFront {
         // before anything else, constructors included (the queue has three)
         IUnitTask@ rush = Rush::FactoryTask(u);
         if (rush !is null) return rush;
+        // then a rezbot now and then (LandArmy::RezFactoryTask)
+        IUnitTask@ rez = LandArmy::RezFactoryTask(u);
+        if (rez !is null) return rez;
 
         // T1 Bot Lab enforcement
         if (UnitHelpers::IsT1BotLab(factoryName)) {
@@ -553,6 +556,10 @@ namespace RoleFront {
         GenericHelpers::LogUtil("[Front_BuilderAiMakeTask] called for builder", 3);
         if (builder is null) return null; // Defensive check
 
+        // Marish: rezbots resurrect and reclaim where the waves form, never build
+        IUnitTask@ rezJob = LandArmy::RezBotTask(builder);
+        if (rezJob !is null) return rezJob;
+
         // Pre-create and cache a single default task instance; never recreate.
         IUnitTask@ defaultTask = Builder::MakeDefaultTaskWithLog(builder.id, "FRONT");
 
@@ -629,6 +636,10 @@ namespace RoleFront {
             IUnitTask@ mex = Front_ExpandMex(builder, Global::RoleSettings::Front::ConstructorMexRadius);
             if (mex !is null) return mex;
         } else if (ctorTier == 2) {
+            // Marish: floating metal becomes production first, for every T2
+            // constructor: gantry, more T2 labs, nanos at them (LandArmy::ProductionTask)
+            IUnitTask@ prod = LandArmy::ProductionTask(builder, UnitHelpers::GetSideForUnitName(udef.GetName()));
+            if (prod !is null) return prod;
             // Mirror TECH role routing: handle primary/secondary T2 bot constructors explicitly
             bool isEnergyFull = aiEconomyMgr.isEnergyFull;
             float metalIncome = Economy::GetMinMetalIncomeLast10s();

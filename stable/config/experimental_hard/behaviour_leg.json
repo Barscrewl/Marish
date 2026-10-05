@@ -790,7 +790,7 @@
 					"vs": { "spam": 0}
 				},
 				"power": 1.0,
-				"retreat": 0
+				"retreat": 0.6
 			},
 			"legshot": {
 				"role": ["riot"],

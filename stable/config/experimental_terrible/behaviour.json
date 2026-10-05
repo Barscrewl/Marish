@@ -36,7 +36,7 @@
 		// If unit's health drops below specified percent it will retreat
 		"retreat": {
 			"builder": [0.8, 0.89, 1.0],  // [<min default>, <max default>, <UnitDef modifier>] for all builders
-			"fighter": [0, 0.20, 1.0],  // [<min default>, <max default>, <UnitDef modifier>] for all not-builder units
+			"fighter": [0.6, 0.6, 1.0],  // [<min default>, <max default>, <UnitDef modifier>] for all not-builder units
 			"shield": [0.25, 0.55]  // [<empty>, <full>] shield power
 		},
 	
@@ -1450,7 +1450,7 @@
 				"role": ["raider", "spam", "anti_spam"],
 				"attribute": ["scout", "rare", "spam"],
 				"ignore": true,
-				"retreat": 0
+				"retreat": 0.6
 			},
 			"armrectr": {
 				"role": ["support", "spam"],
@@ -1467,7 +1467,7 @@
 				"role": ["assault"],
 				"threat": {"air": 0.0, "surf": 0.0, "water": 0.0, "default": 0.0},
 				"power": 1.0,
-				"retreat": 0
+				"retreat": 0.6
 			},
 			"armjeth": {
 				"role": ["anti_air"],
@@ -1996,7 +1996,7 @@
 				"attribute": ["scout", "rare", "spam"],
 				"threat": {"air": 0.0, "surf": 0.0, "water": 0.0, "default": 0.0},
 				"power": 1.0,
-				"retreat": 0
+				"retreat": 0.6
 			},
 			"cornecro": {
 				"role": ["rezzer", "spam"],
@@ -2125,7 +2125,7 @@
 					"vs": { "spam": 0}
 				},
 				"power": 1.0,
-				"retreat": 0
+				"retreat": 0.6
 			},
 			"corkarg": {
 				"role": ["raider", "heavy"],
@@ -2144,7 +2144,7 @@
 				"role": ["assault", "heavy"],
 				"attribute": ["melee", "solo"],
 				"power": 1,
-				"retreat": 0,
+				"retreat": 0.6,
 				"threat": {"air": 0.1, "water": 0, "surf": 2,
 					"vs": {"artillery": 0, "anti_air": 0, "riot": 0, "anti_heavy": 2, "super": 2, "spam": 0}	
 				}
