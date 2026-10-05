@@ -2121,6 +2121,21 @@ namespace Builder {
 	IUnitTask@ AiMakeTask(CCircuitUnit@ u) {
 		IUnitTask@ t = null;
 		GenericHelpers::LogUtil("[BUILDER] AiMakeTask called for builder id=" + u.id, 4);
+		// Marish (FRONT, SEA): a construction turret that lands in the builder
+		// module patrols where it stands - the engine then has it assist, repair
+		// and reclaim everything in reach - and never takes native's default
+		// jobs. Decided before anything reads u.task. Turrets are the factory
+		// manager's (factory assistants); the 2026-10-04 crashes (four 8v8 games
+		// and the owner's All That Glitters game) came from TurretsOnReclaim
+		// putting them on a builder reclaim task: once it ended they were owned
+		// by both managers, a task was freed under one, and its next ask here
+		// crashed reading u.task (the D-050 check below). That pull is gone
+		// (manager/land_army.as); this is the safety net. TECH and AIR keep
+		// their own turret handling.
+		if (u.circuitDef !is null && !u.circuitDef.IsMobile()
+			&& (Global::AISettings::Role == AiRole::FRONT || Global::AISettings::Role == AiRole::SEA)) {
+			return aiBuilderMgr.Enqueue(TaskB::Patrol(Task::Priority::LOW, u.GetPos(ai.frame), Global::LandArmy::TurretPatrolSeconds * SECOND));
+		}
 		// Finish what you started (D-050). Native re-evaluates a builder's task
 		// every few seconds by asking for a new one and swapping if the KIND
 		// differs. With the energy-assist rung answering "repair the solar"

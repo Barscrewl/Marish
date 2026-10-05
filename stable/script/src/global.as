@@ -269,6 +269,9 @@ namespace Global {
         // reads the sliding 10 s minimum averaged over this many seconds, so a
         // stretch of reclaim does not open it.
         int T2LabIncomeWindowSeconds = 60;
+        // A construction turret (FRONT, SEA) patrols where it stands for this long,
+        // then asks again (manager/builder.as AiMakeTask).
+        int TurretPatrolSeconds = 120;
     }
 
     // Marish opening (manager/rush.as), NightmareAI's: the first T1 bot lab

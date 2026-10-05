@@ -384,21 +384,6 @@ namespace LandArmy {
     // roles/tech_build.as ReclaimT1Lab). Losing the T2 lab lifts both caps.
     array<int> retiredT1Labs;
     int reclaimDeferLog = -100000;
-    int turretsPulledAt = -100000;
-    int pullTurretsFor = -1;   // a retired lab whose reclaim the turrets should join
-
-    // Economy update: the turrets in reach join a retired lab's reclaim (once
-    // per 30 s at most).
-    void PullTurrets()
-    {
-        if (pullTurretsFor < 0 || ai.frame - turretsPulledAt < 30 * SECOND) return;
-        const int id = pullTurretsFor;
-        pullTurretsFor = -1;
-        if (ai.GetTeamUnit(id) is null) return;
-        turretsPulledAt = ai.frame;
-        const int n = aiBuilderMgr.TurretsOnReclaim(id, Global::RoleSettings::Tech::ReclaimTurretMargin, true);
-        GenericHelpers::LogUtil("[LandArmy] reclaiming T1 lab " + id + " for the T2 lab; " + n + " turret(s) join", 1);
-    }
     bool t2GateLogged = false;
 
     // The T2 lab's income: the sliding 10 s minimum averaged over the last
@@ -468,8 +453,8 @@ namespace LandArmy {
     }
 
     // A retired T1 lab within T1LabReclaimRadius of the builder, reclaimed
-    // once the metal bank has room for its metal (past the cap it is lost);
-    // the construction turrets in reach join the reclaim.
+    // once the metal bank has room for its metal (past the cap it is lost).
+    // Mobile builders only: turrets are never pulled onto it (see below).
     IUnitTask@ ReclaimT1LabTask(CCircuitUnit@ u)
     {
         if (u is null || retiredT1Labs.length() == 0) return null;
@@ -489,10 +474,9 @@ namespace LandArmy {
                 return null;
             }
             IUnitTask@ t = aiBuilderMgr.Enqueue(TaskB::Reclaim(Task::Priority::HIGH, lab, 180 * SECOND));
-            // The turrets join from the economy update (PullTurrets), never from
-            // here: this runs inside a builder's AiMakeTask, and moving other
-            // builders' tasks there is how SMRTBARb's access violations began.
-            if (t !is null) pullTurretsFor = int(lab.id);
+            // No TurretsOnReclaim here: Marish's turrets belong to the factory
+            // manager, and that builder-manager call left them owned by both,
+            // which crashed four 8v8 games and the owner's (2026-10-04).
             return t;
         }
         return null;
@@ -503,7 +487,6 @@ namespace LandArmy {
     {
         ApplyFactoryBans();
         ApplyLabGates(income);
-        PullTurrets();
         ApplyRoster(income);
         // The opening (manager/rush.as) builds its scouts and raiders whatever the step says
         Rush::Tick();
